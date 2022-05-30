@@ -1,3 +1,5 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-Stingray = "2045e982-6adb-4e09-8364-0d2cc8a3fe4f"
+
+[compat]
+Documenter = "0.27"
