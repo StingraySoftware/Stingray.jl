@@ -1,0 +1,407 @@
+function compare_tables(table1, table2; rtol=0.001, discard = [])
+
+    s_discard = Symbol.(discard)
+
+    for key in propertynames(table1)
+        if key in s_discard
+            continue
+        end
+        oe, oc = getproperty(table1,key), getproperty(table1,key)
+        if oe isa Integer || oe isa String
+            @assert oe==oc
+        elseif isnothing(oe)
+            @assert isnothing(oc)
+        else
+            @assert ≈(oe,oc,rtol=rtol)
+        end
+    end
+
+    table1 = Metadata.drop_metadata(table1)
+    table2 = Metadata.drop_metadata(table2)
+
+    for field in names(table1)
+        if field in discard
+            continue
+        end
+        oe, oc = table1[!,field], table2[!,field]
+
+        @assert ≈(oe,oc,rtol=rtol)
+    end
+    @test true
+end
+
+@testset "positive_fft_bins" begin
+    freq = fftfreq(11)
+    good = freq .> 0
+    goodbins = positive_fft_bins(11)
+    @test freq[good]==freq[goodbins]
+end
+
+@testset "test_coherence" begin
+
+    fid = h5open(joinpath(@__DIR__ ,"data","sample_variable_lc.h5"),"r")
+    data = (fid["dataset1"][1:10000]) .* 1000.0
+    close(fid)
+
+    data1 = rand.(Poisson.(data))
+    data2 = rand.(Poisson.(data))
+    ft1 = fft(data1)
+    ft2 = fft(data2)
+    dt = 0.01
+    N = length(data)
+    mean = Statistics.mean(data)
+    meanrate = mean / dt
+    freq = fftfreq(length(data), 1/dt)
+    good = (freq .> 0 .&& freq .< 0.1)
+    ft1, ft2 = ft1[good], ft2[good]
+    cross = normalize_periodograms(
+        ft1 .* conj(ft2), dt, N, mean_flux = mean, norm="abs", power_type="all")
+    pds1 = normalize_periodograms(
+        ft1 .* conj(ft1), dt, N, mean_flux = mean, norm="abs", power_type="real")
+    pds2 = normalize_periodograms(
+        ft2 .* conj(ft2), dt, N, mean_flux = mean, norm="abs", power_type="real")
+
+    p1noise = poisson_level(meanrate=meanrate, norm="abs")
+    p2noise = poisson_level(meanrate=meanrate, norm="abs")
+
+    @testset "test_intrinsic_coherence" begin
+        coh = estimate_intrinsic_coherence(
+            cross, pds1, pds2, p1noise, p2noise, N)
+        @test all(.≈(coh, 1, atol=0.001))
+    end
+
+    @testset "test_raw_high_coherence" begin
+        coh = raw_coherence(cross, pds1, pds2, p1noise, p2noise, N)
+        @test all(.≈(coh, 1, atol=0.001))
+    end
+
+    @testset "test_raw_low_coherence" begin
+        nbins = 2
+        C, P1, P2 = cross[1:nbins], pds1[1:nbins], pds2[1:nbins]
+        bsq = bias_term(P1, P2, p1noise, p2noise, N)
+        # must be lower than bsq!
+        low_coh_cross = rand.(Normal.(bsq.^0.5 / 10, bsq.^0.5 / 100)) .+ 0.0im
+        coh = raw_coherence(low_coh_cross, P1, P2, p1noise, p2noise, N)
+        @test all(coh .== 0)
+    end
+
+    @testset "test_raw_high_bias" begin
+        C = [12986.0 + 8694.0im]
+        P1 = [476156.0]
+        P2 = [482751.0]
+        P1noise = 495955
+        P2noise = 494967
+    
+        coh = raw_coherence(C, P1, P2, P1noise, P2noise, 499; intrinsic_coherence=1)
+        coh_sngl = raw_coherence(C[1], P1[1], P2[1], P1noise, P2noise, 499; intrinsic_coherence=1)
+        @test coh==real(C .* conj(C))./ (P1 .* P2)
+        @test coh_sngl==real(C .* conj(C))[1] / (P1[1] * P2[1])
+    end
+    
+end
+
+@testset "test_fourier" begin
+    dt = 1
+    len = 100
+    ctrate = 10000
+    N = Int64(len / dt)
+    dt = len / N
+    times = sort(rand(Uniform(0, len), len * ctrate))
+    gti = [[0 len];;]
+    bins = LinRange(0, len, N + 1)
+    counts = fit(Histogram, times, bins).weights
+    errs = fill!(similar(counts),1) * sqrt(ctrate)
+    bin_times = (bins[1:end-1] + bins[2:end]) / 2
+    segment_size = 20.0
+    times2 = sort(rand(Uniform(0, len), len * ctrate))
+    counts2 = fit(Histogram, times2, bins).weights
+    errs2 = fill!(similar(counts2),1) * sqrt(ctrate)
+
+    @test get_average_ctrate(times, gti, segment_size) == ctrate
+    @test get_average_ctrate(bin_times, gti, segment_size; counts=counts) == ctrate
+
+    @testset "test_fts_from_segments_cts_and_events_are_equal" begin
+        N = Int64(round(segment_size / dt))
+        fts_evts = [
+            f for f in get_flux_iterable_from_segments(times, gti, segment_size, n_bin=N)
+        ]
+        fts_cts = [
+            f
+            for f in get_flux_iterable_from_segments(
+                bin_times, gti, segment_size, fluxes=counts
+            )
+        ]
+        for (fe, fc) in zip(fts_evts, fts_cts)
+            @test fe==fc
+        end
+    end
+
+    @testset "test_avg_pds_bad_input" begin
+        _times = rand(Uniform(0,1000),1)
+        out_ev = avg_pds_from_events(_times, gti, segment_size, dt,silent = true)
+        @test isnothing(out_ev)
+    end
+
+    @testset "test_avg_cs_bad_input" for return_auxil in [true, false]
+        _times1 = rand(Uniform(0,1000),1)
+        _times2 = rand(Uniform(0,1000),1)
+        out_ev = avg_cs_from_events(_times1, _times2, gti,
+                                    segment_size, dt, silent = true, return_auxil=return_auxil)
+        @test isnothing(out_ev) 
+    end
+
+    @testset "test_avg_pds_use_common_mean_similar_stats" for norm in ["frac", "abs", "none", "leahy"]
+        out_comm = avg_pds_from_events(
+            times,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=true,
+            silent=true,
+            fluxes=nothing,
+        ).power
+        out = avg_pds_from_events(
+            times,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=false,
+            silent=true,
+            fluxes=nothing,
+        ).power
+        @test std(out_comm)≈std(out) rtol=0.1
+    end
+
+    @testset "test_avg_cs_use_common_mean_similar_stats" for norm in ["frac", "abs", "none", "leahy"]
+        out_comm = avg_cs_from_events(
+            times,
+            times2,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=true,
+            silent=true,
+        ).power
+        out = avg_cs_from_events(
+            times,
+            times2,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=false,
+            silent=true,
+        ).power
+        @test std(out_comm)≈std(out) rtol=0.1
+    end
+
+    @testset "test_avg_pds_cts_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]
+        out_ev = avg_pds_from_events(
+            times,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=use_common_mean,
+            silent=true,
+            fluxes=nothing,
+        )
+        out_ct = avg_pds_from_events(
+            bin_times,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=use_common_mean,
+            silent=true,
+            fluxes=counts,
+        )
+        compare_tables(out_ev, out_ct)
+    end
+
+    @testset "test_avg_pds_cts_and_err_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]       
+        out_ev = avg_pds_from_events(
+            times,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=use_common_mean,
+            silent=true,
+            fluxes=nothing,
+        )
+        out_ct = avg_pds_from_events(
+            bin_times,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=use_common_mean,
+            silent=true,
+            fluxes=counts,
+            errors=errs,
+        )
+        # The variance is not _supposed_ to be equal, when we specify errors
+        if use_common_mean
+            compare_tables(out_ev, out_ct, rtol=0.01, discard=["variance"])
+        else
+            compare_tables(out_ev, out_ct, rtol=0.1, discard=["variance"])
+        end
+    end
+
+    @testset "test_avg_cs_cts_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]
+        out_ev = avg_cs_from_events(
+            times,
+            times2,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=use_common_mean,
+            silent=true,
+        )
+        out_ct = avg_cs_from_events(
+            bin_times,
+            bin_times,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=use_common_mean,
+            silent=true,
+            fluxes1=counts,
+            fluxes2=counts2,
+        )
+        if use_common_mean
+            compare_tables(out_ev, out_ct, rtol=0.01)
+        else
+            compare_tables(out_ev, out_ct, rtol=0.1)
+        end
+    end
+
+    @testset "test_avg_cs_cts_and_err_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]
+        out_ev = avg_cs_from_events(
+            times,
+            times2,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=use_common_mean,
+            silent=true,
+        )
+        out_ct = avg_cs_from_events(
+            bin_times,
+            bin_times,
+            gti,
+            segment_size,
+            dt,
+            norm=norm,
+            use_common_mean=use_common_mean,
+            silent=true,
+            fluxes1=counts,
+            fluxes2=counts2,
+            errors1=errs,
+            errors2=errs2,
+        )
+        discard = [m for m in propertynames(out_ev) if m == Symbol("variance")]
+
+        if use_common_mean
+            compare_tables(out_ev, out_ct, rtol=0.01, discard=discard)
+        else
+            compare_tables(out_ev, out_ct, rtol=0.1, discard=discard)
+        end
+    end
+end
+
+@testset "test_norm" begin
+    mean = var = 100000
+    N = 1000000
+    dt = 0.2
+    meanrate = mean / dt
+    lc = rand(Poisson(mean),N)
+    pds = abs.(fft(lc)).^2
+    freq = fftfreq(N, dt)
+    good = 2:floor(Int,N/2)
+
+    pdsabs = normalize_abs(pds, dt, size(lc,1))
+    pdsfrac = normalize_frac(pds, dt, size(lc,1), mean)
+    pois_abs = poisson_level(meanrate=meanrate, norm="abs")
+    pois_frac = poisson_level(meanrate=meanrate, norm="frac")
+
+    @test Statistics.mean(pdsabs[good])≈pois_abs rtol=0.02
+    @test Statistics.mean(pdsfrac[good])≈pois_frac rtol=0.02
+
+    mean = var = 100000.
+    N = 800000
+    dt = 0.2
+    df = 1 / (N * dt)
+    freq = fftfreq(N, dt)
+    good = freq .> 0
+    meanrate = mean / dt
+    lc = rand(Poisson(mean),N)
+    nph = sum(lc)
+    pds = (abs.(fft(lc)) .^ 2)[good]
+    lc_bksub = lc .- mean
+    pds_bksub = (abs.(fft(lc_bksub)) .^ 2)[good]
+    lc_renorm = lc / mean
+    pds_renorm = (abs.(fft(lc_renorm)) .^ 2)[good]
+    lc_renorm_bksub = lc_renorm .- 1
+    pds_renorm_bksub = (abs.(fft(lc_renorm_bksub)) .^ 2)[good]
+
+    @testset "test_leahy_bksub_var_vs_standard" begin
+        """Test that the Leahy norm. does not change with background-subtracted lcs"""
+        leahyvar = normalize_leahy_from_variance(pds_bksub, Statistics.var(lc_bksub), N)
+        leahy = 2 * pds / sum(lc)
+        ratio = Statistics.mean(leahyvar./leahy)
+        @test ratio≈1 rtol=0.01
+    end
+    @testset "test_abs_bksub" begin
+        ratio = normalize_abs(pds_bksub, dt, N) ./ normalize_abs(pds, dt, N)
+        @test Statistics.mean(ratio)≈1 rtol=0.01
+    end
+    @testset "test_frac_renorm_constant" begin
+        ratio = normalize_frac(pds_renorm, dt, N, 1) ./ normalize_frac(pds, dt, N, mean)
+        @test Statistics.mean(ratio)≈1 rtol=0.01
+    end
+    @testset "test_frac_to_abs_ctratesq" begin
+        ratio = (
+            normalize_frac(pds, dt, N, mean)
+            ./ normalize_abs(pds, dt, N)
+            .* meanrate ^ 2
+        )
+        @test Statistics.mean(ratio)≈1 rtol=0.01
+    end
+    @testset "test_total_variance" begin
+        vdk_total_variance = sum((lc .- mean) .^ 2)
+        ratio = Statistics.mean(pds) / vdk_total_variance
+        @test Statistics.mean(ratio)≈1 rtol=0.01
+    end
+    @testset "test_poisson_level_$(norm)" for norm in ["abs", "frac", "leahy"]
+        pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm=norm)
+        @test Statistics.mean(pdsnorm)≈poisson_level(meanrate=meanrate, norm=norm) rtol=0.01
+    end
+
+    @testset "test_poisson_level_real_$(norm)" for norm in ["abs", "frac", "leahy"]
+        pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm=norm, power_type = "real")
+        @test Statistics.mean(pdsnorm)≈poisson_level(meanrate=meanrate, norm=norm) rtol=0.01
+    end
+
+    @testset "test_poisson_level_absolute_$(norm)" for norm in ["abs", "frac", "leahy"]
+        pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm=norm, power_type = "abs")
+        @test Statistics.mean(pdsnorm)≈poisson_level(meanrate=meanrate, norm=norm) rtol=0.01
+    end
+
+    @testset "test_normalize_with_variance" begin
+        pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, variance = var, norm="leahy")
+        @test Statistics.mean(pdsnorm)≈2 rtol=0.01
+    end
+
+    @testset "test_normalize_none" begin
+        pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm="none")
+        @test Statistics.mean(pdsnorm)≈Statistics.mean(pds) rtol=0.01
+    end
+end

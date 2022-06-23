@@ -3,6 +3,15 @@ uuid = "2045e982-6adb-4e09-8364-0d2cc8a3fe4f"
 authors = ["Aman Pandey"]
 version = "0.1.0"
 
+[deps]
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+ResumableFunctions = "c5292f4c-5179-55e1-98c5-05642aab7184"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+ProgressBars = "49802e3a-d2f1-5c88-81d8-b72133a6f568"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Metadata = "4fb893c1-3164-4f58-823a-cb4c64eabb4f"
+
 [compat]
 julia = "1.7"
 
