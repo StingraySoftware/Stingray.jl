@@ -1,9 +1,9 @@
-function time_intervals_from_gtis(gtis, segment_size; fraction_step=1,
-                                epsilon=1e-5)  
-    spectrum_start_times = Float64.([])
+function time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real;
+                                  fraction_step::Real=1, epsilon::Real=1e-5)  
+    spectrum_start_times = Float64[]
 
-    gti_low = gtis[:,1]
-    gti_up = gtis[:,2]
+    gti_low = @view gtis[:,1]
+    gti_up = @view gtis[:,2]
 
     for (g1,g2) in zip(gti_low,gti_up)
         if g2 - g1 + epsilon < segment_size
@@ -11,13 +11,13 @@ function time_intervals_from_gtis(gtis, segment_size; fraction_step=1,
         end
 
         newtimes = range(g1, g2 - segment_size + epsilon, step=Float64(segment_size) * fraction_step)
-        spectrum_start_times = append!(spectrum_start_times,
-                      newtimes)
+        append!(spectrum_start_times,newtimes)
     end
     return spectrum_start_times, spectrum_start_times .+ segment_size
 end
 
-function calculate_segment_bin_start(startbin, stopbin, nbin; fraction_step=1)
+function calculate_segment_bin_start(startbin::Integer, stopbin::Integer,
+                                     nbin::Integer; fraction_step::Real=1)
     st = floor.(range(startbin, stopbin, step=Int64(nbin * fraction_step)))
     if st[end] == stopbin
         st = st[1:end-1]
@@ -28,8 +28,9 @@ function calculate_segment_bin_start(startbin, stopbin, nbin; fraction_step=1)
     return st
 end
 
-function bin_intervals_from_gtis(gtis, segment_size, time; dt=nothing, fraction_step=1,
-                                 epsilon=0.001)
+function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real,
+                                 time::AbstractVector{<:Real}; dt=nothing, 
+                                 fraction_step::Real=1, epsilon::Real=0.001)
     if isnothing(dt)
         dt = Statistics.median(diff(time))
     end
@@ -37,10 +38,10 @@ function bin_intervals_from_gtis(gtis, segment_size, time; dt=nothing, fraction_
     epsilon_times_dt = epsilon * dt
     nbin = Int64(round(segment_size / dt))
 
-    spectrum_start_bins = Int64.([])
+    spectrum_start_bins = Int64[]
 
-    gti_low = gtis[:, 1] .+ (dt / 2 - epsilon_times_dt)
-    gti_up = gtis[:, 2] .- (dt / 2 - epsilon_times_dt)
+    gti_low = (@view gtis[:, 1]) .+ (dt / 2 - epsilon_times_dt)
+    gti_up = (@view gtis[:, 2]) .- (dt / 2 - epsilon_times_dt)
 
     for (g0, g1) in zip(gti_low, gti_up)
         if (g1 - g0 .+ (dt + epsilon_times_dt)) < segment_size
@@ -64,13 +65,14 @@ function bin_intervals_from_gtis(gtis, segment_size, time; dt=nothing, fraction_
         newbins = calculate_segment_bin_start(
             startbin, stopbin, nbin, fraction_step=fraction_step)
         
-        spectrum_start_bins = append!(spectrum_start_bins,newbins)
-    end
-    #@assert length(spectrum_start_bins) > 0 
+        append!(spectrum_start_bins,newbins)
+    end 
     return spectrum_start_bins, spectrum_start_bins.+nbin 
 end
 
-@resumable function generate_indices_of_segment_boundaries_unbinned(times, gti, segment_size)
+@resumable function generate_indices_of_segment_boundaries_unbinned(times::AbstractVector{<:Real},
+                                                                    gti::AbstractMatrix{<:Real},
+                                                                    segment_size::Real)
     start, stop = time_intervals_from_gtis(gti, segment_size)
 
     startidx = searchsortedfirst.(Ref(times), start)
@@ -81,8 +83,9 @@ end
     end
 end
 
-@resumable function generate_indices_of_segment_boundaries_binned(times, gti, segment_size;
-                                                       dt=nothing)
+@resumable function generate_indices_of_segment_boundaries_binned(times::AbstractVector{<:Real},
+                                                                  gti::AbstractMatrix{<:Real},
+                                                                  segment_size::Real; dt=nothing)
     startidx, stopidx = bin_intervals_from_gtis(gti, segment_size, times;
                                                 dt=dt)
 
