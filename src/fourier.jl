@@ -1,16 +1,12 @@
-function positive_fft_bins(n_bin; include_zero = false)
+function positive_fft_bins(n_bin::Integer; include_zero::Bool = false)
     minbin = 2
     if include_zero
         minbin = 1
     end
-
-    if n_bin%2 == 0
-        return (minbin : floor(Int, n_bin / 2))
-    end
-    return (minbin : floor(Int, (n_bin+1)/ 2))
+    return (minbin : (n_bin+1) ÷ 2)
 end
 
-function poisson_level(;norm = "frac", meanrate = nothing, n_ph = nothing, backrate = 0)
+function poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrate::Real = 0.0)
     if norm == "abs"
         return 2.0 * meanrate
     elseif norm == "frac"
@@ -19,10 +15,13 @@ function poisson_level(;norm = "frac", meanrate = nothing, n_ph = nothing, backr
         return 2.0
     elseif norm == "none"
         return float(n_ph)
+    else 
+        throw(ArgumentError("Incorrect Arguments"))
     end
 end
 
-function normalize_frac(unnorm_power, dt, n_bin, mean_flux; background_flux=0.0)
+function normalize_frac(unnorm_power, dt::Real, n_bin::Integer, 
+                        mean_flux::Real; background_flux::Real=0.0)
     if background_flux > 0
         power = unnorm_power * 2. * dt / ((mean_flux - background_flux) ^ 2 *
                                           n_bin)
@@ -33,21 +32,20 @@ function normalize_frac(unnorm_power, dt, n_bin, mean_flux; background_flux=0.0)
     return power
 end
 
-function normalize_abs(unnorm_power, dt, n_bin)
-    return unnorm_power * 2.0 / n_bin / dt
-end
+normalize_abs(unnorm_power:: AbstractVector{<:Number}, dt::Real, n_bin::Integer) = 
+unnorm_power * 2.0 / n_bin / dt
 
-function normalize_leahy_from_variance(unnorm_power, variance, n_bin)
-    return unnorm_power * 2.0 / (variance * n_bin)
-end
+normalize_leahy_from_variance(unnorm_power:: AbstractVector{<:Number}, 
+                              variance::Real, n_bin::Integer) = 
+                                unnorm_power * 2.0 / (variance * n_bin)
 
-function normalize_leahy_poisson(unnorm_power, n_ph)
-    return unnorm_power * 2.0 / n_ph
-end
+normalize_leahy_poisson(unnorm_power:: AbstractVector{<:Number}, 
+                        n_ph::Real) = unnorm_power * 2.0 / n_ph
 
-function normalize_periodograms(unnorm_power, dt, n_bin; mean_flux=nothing, n_ph=nothing,
-    variance=nothing, background_flux=0.0, norm="frac",
-    power_type="all")
+function normalize_periodograms(unnorm_power:: AbstractVector{<:Number}, dt::Real, 
+                                n_bin::Integer; mean_flux=nothing, n_ph=nothing,
+                                variance=nothing, background_flux::Real=0.0, 
+                                norm::String="frac",power_type::String="all")
     
     if norm == "leahy" && !isnothing(variance)
         pds = normalize_leahy_from_variance(unnorm_power, variance, n_bin)
@@ -61,6 +59,8 @@ function normalize_periodograms(unnorm_power, dt, n_bin; mean_flux=nothing, n_ph
         pds = normalize_abs(unnorm_power, dt, n_bin)
     elseif norm == "none"
         pds = unnorm_power
+    else 
+        throw(ArgumentError("Incorrect Arguments"))
     end
 
     if power_type == "all"
@@ -69,38 +69,49 @@ function normalize_periodograms(unnorm_power, dt, n_bin; mean_flux=nothing, n_ph
         return real(pds)
     elseif power_type in ["abs", "absolute"]
         return abs.(pds)
+    else 
+        throw(ArgumentError("Incorrect Arguments"))
     end
 
 end
 
-function bias_term(power1, power2, power1_noise, power2_noise, n_ave;
-                   intrinsic_coherence=1.0)
+function bias_term(power1::T, power2::T, power1_noise::Real, 
+                   power2_noise::Real, n_ave::Integer;
+                   intrinsic_coherence::Real=1.0) where {T<:Union{AbstractVector{<:Real},Real}}
     
     if n_ave > 500
-        return 0.0 .* power1
+        return 0.0 * power1
     end
-    bsq = power1 .* power2 - intrinsic_coherence * (power1 .- power1_noise) .* (power2 .- power2_noise)
-    return bsq / n_ave
+    return @. power1 * power2 - intrinsic_coherence * (power1 - power1_noise) * (power2 - power2_noise) / n_ave
 end
 
-function raw_coherence(cross_power, power1, power2, power1_noise, power2_noise,
-                       n_ave; intrinsic_coherence=1.0)
+function _raw_coherence_single(cross_power::Number, power1::Real, power2::Real, 
+                               power1_noise::Real, power2_noise::Real, 
+                               n_ave::Integer; intrinsic_coherence::Real=1.0)
+
     bsq = bias_term(power1, power2, power1_noise, power2_noise, n_ave;
                     intrinsic_coherence=intrinsic_coherence)
     num = real(cross_power .* conj(cross_power)) - bsq
-    if num isa Array{T} where T<:Any
-        num[num .< 0] = real(cross_power .* conj(cross_power))[num .< 0]
-    elseif num < 0
+    if num < 0
         num = real(cross_power * conj(cross_power))
     end
-    den = power1 .* power2
-    return num ./ den
+    den = power1 * power2
+    return num / den
 end
 
-function _estimate_intrinsic_coherence_single(cross_power, power1, power2,
-                                             power1_noise, power2_noise, n_ave)
-    new_coherence = 1
-    old_coherence = 0
+raw_coherence(cross_power::T1, power1::T2, power2::T2, power1_noise::Real, 
+              power2_noise::Real, n_ave::Integer;
+              intrinsic_coherence::Real=1.0) where 
+              {T1<:Union{AbstractVector{<:Number},Number},T2<:Union{AbstractVector{<:Real},Real}} = 
+                    _raw_coherence_single.(cross_power, power1, power2, 
+                                       power1_noise, power2_noise, n_ave;
+                                       intrinsic_coherence)
+
+function _estimate_intrinsic_coherence_single(cross_power::Complex, power1::Real,
+                                              power2::Real, power1_noise::Real, 
+                                              power2_noise::Real, n_ave::Integer)
+    new_coherence = 1.0
+    old_coherence = 0.0
     count = 0
     while (!(≈(new_coherence, old_coherence, atol=0.01)) && count< 40)
         old_coherence = new_coherence
@@ -111,22 +122,24 @@ function _estimate_intrinsic_coherence_single(cross_power, power1, power2,
         if num < 0
             num = real(cross_power * conj(cross_power))
         end
-        new_coherence::Float64 = num / den
+        new_coherence = num / den
         count += 1
     end
     return new_coherence                                       
 end
 
-function estimate_intrinsic_coherence(cross_power, power1, power2, power1_noise,
-                                      power2_noise, n_ave)
-    new_coherence = _estimate_intrinsic_coherence_single.(
-        cross_power, power1, power2, power1_noise, power2_noise, n_ave)
-    return new_coherence
-end
+estimate_intrinsic_coherence(cross_power:: AbstractVector{<:Complex}, 
+                             power1:: AbstractVector{<:Real}, power2:: AbstractVector{<:Real}, 
+                             power1_noise::Real, power2_noise::Real, n_ave::Integer)= 
+                                _estimate_intrinsic_coherence_single.(
+                                    cross_power, power1, power2, 
+                                    power1_noise, power2_noise, n_ave)
 
-function error_on_averaged_cross_spectrum(cross_power, seg_power, ref_power, n_ave,
-                                          seg_power_noise, ref_power_noise;
-                                          common_ref="false")
+function error_on_averaged_cross_spectrum(cross_power:: AbstractVector{<:Complex}, 
+                                          seg_power:: AbstractVector{<:Real}, 
+                                          ref_power:: AbstractVector{<:Real}, n_ave::Integer,
+                                          seg_power_noise::Real, ref_power_noise::Real;
+                                          common_ref::Bool=false)
     two_n_ave = 2 * n_ave
     if common_ref
         Gsq = (cross_power * conj(cross_power)).real
@@ -156,23 +169,26 @@ function error_on_averaged_cross_spectrum(cross_power, seg_power, ref_power, n_a
     return dRe, dIm, dphi, dG
 end
 
-function cross_to_covariance(cross_power, ref_power, ref_power_noise, delta_nu)
-    return cross_power * sqrt(delta_nu ./ (ref_power .- ref_power_noise))
+function cross_to_covariance(cross_power:: AbstractVector{<:Complex}, 
+                             ref_power:: AbstractVector{<:Real}, 
+                             ref_power_noise::Real, 
+                             delta_nu::T) where {T<:Union{AbstractVector{<:Real},Real}}
+    return cross_power .* sqrt.(delta_nu ./ (ref_power .- ref_power_noise))
 end
 
-function _which_segment_idx_fun(;binned=false, dt=nothing)
-    if (!binned)
-        fun = generate_indices_of_segment_boundaries_unbinned
+function _which_segment_idx_fun(;binned::Bool=false, dt=nothing)
+    if binned
+        return (args...) -> generate_indices_of_segment_boundaries_binned(args...; dt=dt)
     else
         # Define a new function, so that we can pass the correct dt as an
         # argument.
-        fun(args...; kwargs...) = generate_indices_of_segment_boundaries_binned(args...; dt=dt)
+        return generate_indices_of_segment_boundaries_unbinned 
     end
-    return fun
 end
 
-function get_average_ctrate(times, gti, segment_size; counts= nothing)::Float64
-    n_ph = 0
+function get_average_ctrate(times:: AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
+                            segment_size::Real; counts= nothing)
+    n_ph = 0.0
     n_intvs = 0
     binned = !isnothing(counts)
     func = _which_segment_idx_fun(;binned)
@@ -188,8 +204,10 @@ function get_average_ctrate(times, gti, segment_size; counts= nothing)::Float64
     return (n_ph / (n_intvs * segment_size))
 end
 
-@resumable function get_flux_iterable_from_segments(times, gti, segment_size; n_bin=nothing,
-                                         fluxes=nothing, errors=nothing)
+@resumable function get_flux_iterable_from_segments(times:: AbstractVector{<:Real}, 
+                                                    gti::AbstractMatrix{<:Real}, 
+                                                    segment_size::Real; n_bin=nothing,
+                                                    fluxes=nothing, errors=nothing)
     dt = nothing
     binned = !isnothing(fluxes)
     if binned
@@ -217,11 +235,12 @@ end
     end
 end
 
-function avg_pds_from_iterable(flux_iterable, dt; norm="frac", use_common_mean=true,
-                               silent=false)
+function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac", 
+                               use_common_mean::Bool=true,
+                               silent::Bool=false)
     local_show_progress = show_progress
     if silent
-        local_show_progress = (a)->a
+        local_show_progress = identity
     end
 
     # Initialize stuff
@@ -235,7 +254,7 @@ function avg_pds_from_iterable(flux_iterable, dt; norm="frac", use_common_mean=t
     n_bin = nothing
 
     for flux in local_show_progress(flux_iterable)
-        if isnothing(flux) || all(flux .== 0)
+        if isnothing(flux) || all(iszero,flux)
             continue
         end
 
@@ -336,8 +355,8 @@ function avg_pds_from_iterable(flux_iterable, dt; norm="frac", use_common_mean=t
     return results
 end
 
-function avg_cs_from_iterables_quick(flux_iterable1,flux_iterable2,
-                                    dt; norm="frac")
+function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
+                                     dt::Real; norm::String="frac")
     unnorm_cross = unnorm_pds1 = unnorm_pds2 = nothing
     n_ave = 0
     fgt0 = n_bin = freq = nothing
@@ -345,7 +364,7 @@ function avg_cs_from_iterables_quick(flux_iterable1,flux_iterable2,
     sum_of_photons1 = sum_of_photons2 = 0
 
     for (flux1, flux2) in zip(flux_iterable1, flux_iterable2)
-        if isnothing(flux1) || isnothing(flux2) || all(flux1 .== 0) || all(flux2 .== 0)
+        if isnothing(flux1) || isnothing(flux2) || all(iszero,flux1) || all(iszero,flux2)
             continue
         end
 
@@ -440,13 +459,14 @@ end
 function avg_cs_from_iterables(
     flux_iterable1,
     flux_iterable2,
-    dt;
-    norm="frac",
-    use_common_mean=true,
-    silent=false,
-    fullspec=false,
-    power_type="all",
-    return_auxil=false)
+    dt::Real;
+    norm::String="frac",
+    use_common_mean::Bool=true,
+    silent::Bool=false,
+    fullspec::Bool=false,
+    power_type::String="all",
+    return_auxil::Bool=false)
+    
     local_show_progress = show_progress
     if silent
         local_show_progress = (a) -> a
@@ -461,7 +481,7 @@ function avg_cs_from_iterables(
 
     for (flux1, flux2) in local_show_progress(zip(flux_iterable1,
                                                 flux_iterable2))
-        if isnothing(flux1) || isnothing(flux2) || all(flux1 == 0) || all(flux2 == 0)
+        if isnothing(flux1) || isnothing(flux2) || all(iszero,flux1) || all(iszero,flux2)
             continue
         end
 
@@ -549,14 +569,17 @@ function avg_cs_from_iterables(
                 unnorm_power, dt, n_bin; mean_flux = mean, n_ph=n_ph, norm=norm,
                 power_type=power_type, variance=variance
             )
-            p1_seg = normalize_periodograms(
-                unnorm_pd1, dt, n_bin; mean_flux = mean1, n_ph=n_ph1, norm=norm,
-                power_type=power_type, variance=variance1
+
+            if return_auxil
+                p1_seg = normalize_periodograms(
+                    unnorm_pd1, dt, n_bin; mean_flux = mean1, n_ph=n_ph1, norm=norm,
+                    power_type=power_type, variance=variance1
+                )
+                p2_seg = normalize_periodograms(
+                    unnorm_pd2, dt, n_bin; mean_flux = mean2, n_ph=n_ph2, norm=norm,
+                    power_type=power_type, variance=variance2
             )
-            p2_seg = normalize_periodograms(
-                unnorm_pd2, dt, n_bin; mean_flux = mean2, n_ph=n_ph2, norm=norm,
-                power_type=power_type, variance=variance2
-            )
+            end
         end
         # Initialize or accumulate final averaged spectra
         cross = sum_if_not_none_or_initialize(cross, cs_seg)
@@ -679,9 +702,10 @@ function avg_cs_from_iterables(
     
 end
 
-function avg_pds_from_events(times, gti, segment_size, dt; norm="frac",
-                            use_common_mean=true, silent=false, fluxes=nothing,
-                            errors=nothing)
+function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
+                             segment_size::Real, dt::Real; norm::String="frac",
+                             use_common_mean::Bool=true, silent::Bool=false, 
+                             fluxes=nothing, errors=nothing)
     if isnothing(segment_size)
         segment_size = max(gti) - min(gti)
     end
@@ -701,10 +725,12 @@ function avg_pds_from_events(times, gti, segment_size, dt; norm="frac",
     
 end
 
-function avg_cs_from_events(times1, times2, gti, segment_size, dt; norm="frac",
-                       use_common_mean=true, fullspec=false, silent=false,
-                       power_type="all", fluxes1=nothing, fluxes2=nothing,
-                       errors1=nothing, errors2=nothing, return_auxil=false)
+function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVector{<:Real}, 
+                            gti::AbstractMatrix{<:Real}, segment_size::Real, dt::Real; 
+                            norm::String="frac", use_common_mean::Bool=true, 
+                            fullspec::Bool=false, silent::Bool=false,
+                            power_type::String="all", fluxes1=nothing, fluxes2=nothing,
+                            errors1=nothing, errors2=nothing, return_auxil=false)
     if isnothing(segment_size) 
         segment_size = max(gti) - min(gti)
     end
@@ -719,8 +745,8 @@ function avg_cs_from_events(times1, times2, gti, segment_size, dt; norm="frac",
         times2, gti, segment_size; n_bin, fluxes=fluxes2, errors=errors2
     )
 
-    is_events = all([isnothing(val) for val in (fluxes1, fluxes2, errors1,
-                                                errors2)])
+    is_events = all(isnothing,(fluxes1, fluxes2, errors1,
+                                                errors2))
 
     if (is_events
             && silent

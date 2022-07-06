@@ -1,6 +1,7 @@
 function compare_tables(table1, table2; rtol=0.001, discard = [])
 
     s_discard = Symbol.(discard)
+    test_result = true
 
     for key in propertynames(table1)
         if key in s_discard
@@ -8,11 +9,20 @@ function compare_tables(table1, table2; rtol=0.001, discard = [])
         end
         oe, oc = getproperty(table1,key), getproperty(table1,key)
         if oe isa Integer || oe isa String
-            @assert oe==oc
+            if !(oe==oc) 
+                test_result = false
+                break
+            end
         elseif isnothing(oe)
-            @assert isnothing(oc)
+            if !(isnothing(oc)) 
+                test_result = false
+                break
+            end
         else
-            @assert ≈(oe,oc,rtol=rtol)
+            if !(≈(oe,oc,rtol=rtol)) 
+                test_result = false
+                break
+            end
         end
     end
 
@@ -25,9 +35,12 @@ function compare_tables(table1, table2; rtol=0.001, discard = [])
         end
         oe, oc = table1[!,field], table2[!,field]
 
-        @assert ≈(oe,oc,rtol=rtol)
+        if !(≈(oe,oc,rtol=rtol)) 
+            test_result = false
+            break
+        end
     end
-    @test true
+    @test test_result
 end
 
 @testset "positive_fft_bins" begin
@@ -61,8 +74,8 @@ end
     pds2 = normalize_periodograms(
         ft2 .* conj(ft2), dt, N, mean_flux = mean, norm="abs", power_type="real")
 
-    p1noise = poisson_level(meanrate=meanrate, norm="abs")
-    p2noise = poisson_level(meanrate=meanrate, norm="abs")
+    p1noise = poisson_level("abs",meanrate=meanrate)
+    p2noise = poisson_level("abs",meanrate=meanrate)
 
     @testset "test_intrinsic_coherence" begin
         coh = estimate_intrinsic_coherence(
@@ -307,7 +320,7 @@ end
             errors1=errs,
             errors2=errs2,
         )
-        discard = [m for m in propertynames(out_ev) if m == Symbol("variance")]
+        discard = [m for m in propertynames(out_ev) if m == :variance]
 
         if use_common_mean
             compare_tables(out_ev, out_ct, rtol=0.01, discard=discard)
@@ -323,14 +336,14 @@ end
     dt = 0.2
     meanrate = mean / dt
     lc = rand(Poisson(mean),N)
-    pds = abs.(fft(lc)).^2
+    pds = abs2.(fft(lc))
     freq = fftfreq(N, dt)
     good = 2:floor(Int,N/2)
 
     pdsabs = normalize_abs(pds, dt, size(lc,1))
     pdsfrac = normalize_frac(pds, dt, size(lc,1), mean)
-    pois_abs = poisson_level(meanrate=meanrate, norm="abs")
-    pois_frac = poisson_level(meanrate=meanrate, norm="frac")
+    pois_abs = poisson_level("abs", meanrate=meanrate)
+    pois_frac = poisson_level("frac", meanrate=meanrate)
 
     @test Statistics.mean(pdsabs[good])≈pois_abs rtol=0.02
     @test Statistics.mean(pdsfrac[good])≈pois_frac rtol=0.02
@@ -344,16 +357,15 @@ end
     meanrate = mean / dt
     lc = rand(Poisson(mean),N)
     nph = sum(lc)
-    pds = (abs.(fft(lc)) .^ 2)[good]
+    pds = (abs2.(fft(lc)))[good]
     lc_bksub = lc .- mean
-    pds_bksub = (abs.(fft(lc_bksub)) .^ 2)[good]
+    pds_bksub = (abs2.(fft(lc_bksub)))[good]
     lc_renorm = lc / mean
-    pds_renorm = (abs.(fft(lc_renorm)) .^ 2)[good]
+    pds_renorm = (abs2.(fft(lc_renorm)))[good]
     lc_renorm_bksub = lc_renorm .- 1
-    pds_renorm_bksub = (abs.(fft(lc_renorm_bksub)) .^ 2)[good]
+    pds_renorm_bksub = (abs2.(fft(lc_renorm_bksub)))[good]
 
     @testset "test_leahy_bksub_var_vs_standard" begin
-        """Test that the Leahy norm. does not change with background-subtracted lcs"""
         leahyvar = normalize_leahy_from_variance(pds_bksub, Statistics.var(lc_bksub), N)
         leahy = 2 * pds / sum(lc)
         ratio = Statistics.mean(leahyvar./leahy)
@@ -382,17 +394,17 @@ end
     end
     @testset "test_poisson_level_$(norm)" for norm in ["abs", "frac", "leahy"]
         pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm=norm)
-        @test Statistics.mean(pdsnorm)≈poisson_level(meanrate=meanrate, norm=norm) rtol=0.01
+        @test Statistics.mean(pdsnorm)≈poisson_level(norm, meanrate=meanrate) rtol=0.01
     end
 
     @testset "test_poisson_level_real_$(norm)" for norm in ["abs", "frac", "leahy"]
         pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm=norm, power_type = "real")
-        @test Statistics.mean(pdsnorm)≈poisson_level(meanrate=meanrate, norm=norm) rtol=0.01
+        @test Statistics.mean(pdsnorm)≈poisson_level(norm, meanrate=meanrate) rtol=0.01
     end
 
     @testset "test_poisson_level_absolute_$(norm)" for norm in ["abs", "frac", "leahy"]
         pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm=norm, power_type = "abs")
-        @test Statistics.mean(pdsnorm)≈poisson_level(meanrate=meanrate, norm=norm) rtol=0.01
+        @test Statistics.mean(pdsnorm)≈poisson_level(norm, meanrate=meanrate) rtol=0.01
     end
 
     @testset "test_normalize_with_variance" begin

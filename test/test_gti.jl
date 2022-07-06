@@ -1,21 +1,18 @@
 @testset "test_time_intervals_from_gtis" begin
-    """Test the division of start and end times to calculate spectra."""
         start_times, stop_times = time_intervals_from_gtis([[0 400]; [1022 1200];
-                                      [1210 1220];], 128)
+                                  [1210 1220];], 128)
         @test start_times == [0, 128, 256, 1022]
         @test stop_times == start_times .+ 128
 end
 
 @testset "test_time_intervals_from_gtis_frac" begin
-    """Test the division of start and end times to calculate spectra."""
         start_times, stop_times = time_intervals_from_gtis([[0 400]; [1022 1200];
-                                      [1210 1220];], 128, fraction_step=0.5)
+                                  [1210 1220];], 128, fraction_step=0.5)
         @test start_times == [0, 64, 128, 192, 256, 1022]
         @test stop_times == start_times .+ 128
 end
 
 @testset "test_bin_intervals_from_gtis" begin
-    """Test the division of start and end times to calculate spectra."""
     times = range(0.5, 12.5)
     start_bins, stop_bins = bin_intervals_from_gtis([[0 5]; [6 8];], 2, times)
 
@@ -24,7 +21,6 @@ end
 end
 
 @testset "test_bin_intervals_from_gtis_2" begin
-    """Test the division of start and end times to calculate spectra."""
     dt = 0.1
     tstart = 0
     tstop = 100
@@ -35,7 +31,6 @@ end
 end
 
 @testset "test_bin_intervals_from_gtis_frac" begin
-    """Test the division of start and end times to calculate spectra."""
     times = range(0.5, 12.5)
     start_bins, stop_bins = bin_intervals_from_gtis([[0 5]; [6 8];], 2, times, fraction_step=0.5)
 
