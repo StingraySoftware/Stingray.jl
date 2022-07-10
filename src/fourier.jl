@@ -16,33 +16,33 @@ function poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrat
     elseif norm == "none"
         return float(n_ph)
     else 
-        throw(ArgumentError("Incorrect Arguments"))
+        throw(ArgumentError("Unknown value for norm: $norm"))
     end
 end
 
-function normalize_frac(unnorm_power, dt::Real, n_bin::Integer, 
+function normalize_frac(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer, 
                         mean_flux::Real; background_flux::Real=0.0)
     if background_flux > 0
-        power = unnorm_power * 2. * dt / ((mean_flux - background_flux) ^ 2 *
+        power = unnorm_power * 2 * dt / ((mean_flux - background_flux) ^ 2 *
                                           n_bin)
     else
         # Note: this corresponds to eq. 3 in Uttley+14
-        power = unnorm_power * 2. * dt / (mean_flux ^ 2 * n_bin)
+        power = unnorm_power * 2 * dt / (mean_flux ^ 2 * n_bin)
     end
     return power
 end
 
-normalize_abs(unnorm_power:: AbstractVector{<:Number}, dt::Real, n_bin::Integer) = 
-unnorm_power * 2.0 / n_bin / dt
+normalize_abs(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer) = 
+    unnorm_power * 2 / n_bin / dt
 
-normalize_leahy_from_variance(unnorm_power:: AbstractVector{<:Number}, 
+normalize_leahy_from_variance(unnorm_power::AbstractVector{<:Number}, 
                               variance::Real, n_bin::Integer) = 
-                                unnorm_power * 2.0 / (variance * n_bin)
+    unnorm_power * 2 / (variance * n_bin)
 
-normalize_leahy_poisson(unnorm_power:: AbstractVector{<:Number}, 
-                        n_ph::Real) = unnorm_power * 2.0 / n_ph
+normalize_leahy_poisson(unnorm_power::AbstractVector{<:Number}, n_ph::Real) = 
+    unnorm_power * 2 / n_ph
 
-function normalize_periodograms(unnorm_power:: AbstractVector{<:Number}, dt::Real, 
+function normalize_periodograms(unnorm_power::AbstractVector{<:Number}, dt::Real, 
                                 n_bin::Integer; mean_flux=nothing, n_ph=nothing,
                                 variance=nothing, background_flux::Real=0.0, 
                                 norm::String="frac",power_type::String="all")
@@ -60,7 +60,7 @@ function normalize_periodograms(unnorm_power:: AbstractVector{<:Number}, dt::Rea
     elseif norm == "none"
         pds = unnorm_power
     else 
-        throw(ArgumentError("Incorrect Arguments"))
+        throw(ArgumentError("Unknown value for norm: $norm"))
     end
 
     if power_type == "all"
@@ -70,28 +70,28 @@ function normalize_periodograms(unnorm_power:: AbstractVector{<:Number}, dt::Rea
     elseif power_type in ["abs", "absolute"]
         return abs.(pds)
     else 
-        throw(ArgumentError("Incorrect Arguments"))
+        throw(ArgumentError("Unknown value for power_type: $power_type"))
     end
 
 end
 
-function bias_term(power1::T, power2::T, power1_noise::Real, 
+function bias_term(power1::Real, power2::Real, power1_noise::Real, 
                    power2_noise::Real, n_ave::Integer;
-                   intrinsic_coherence::Real=1.0) where {T<:Union{AbstractVector{<:Real},Real}}
+                   intrinsic_coherence::Real=1.0)
     
     if n_ave > 500
         return 0.0 * power1
     end
-    return @. power1 * power2 - intrinsic_coherence * (power1 - power1_noise) * (power2 - power2_noise) / n_ave
+    return power1 * power2 - intrinsic_coherence * (power1 - power1_noise) * (power2 - power2_noise) / n_ave
 end
 
-function _raw_coherence_single(cross_power::Number, power1::Real, power2::Real, 
+function raw_coherence(cross_power::Number, power1::Real, power2::Real, 
                                power1_noise::Real, power2_noise::Real, 
                                n_ave::Integer; intrinsic_coherence::Real=1.0)
 
     bsq = bias_term(power1, power2, power1_noise, power2_noise, n_ave;
                     intrinsic_coherence=intrinsic_coherence)
-    num = real(cross_power .* conj(cross_power)) - bsq
+    num = real(cross_power * conj(cross_power)) - bsq
     if num < 0
         num = real(cross_power * conj(cross_power))
     end
@@ -99,15 +99,7 @@ function _raw_coherence_single(cross_power::Number, power1::Real, power2::Real,
     return num / den
 end
 
-raw_coherence(cross_power::T1, power1::T2, power2::T2, power1_noise::Real, 
-              power2_noise::Real, n_ave::Integer;
-              intrinsic_coherence::Real=1.0) where 
-              {T1<:Union{AbstractVector{<:Number},Number},T2<:Union{AbstractVector{<:Real},Real}} = 
-                    _raw_coherence_single.(cross_power, power1, power2, 
-                                       power1_noise, power2_noise, n_ave;
-                                       intrinsic_coherence)
-
-function _estimate_intrinsic_coherence_single(cross_power::Complex, power1::Real,
+function estimate_intrinsic_coherence(cross_power::Complex, power1::Real,
                                               power2::Real, power1_noise::Real, 
                                               power2_noise::Real, n_ave::Integer)
     new_coherence = 1.0
@@ -115,7 +107,7 @@ function _estimate_intrinsic_coherence_single(cross_power::Complex, power1::Real
     count = 0
     while (!(≈(new_coherence, old_coherence, atol=0.01)) && count< 40)
         old_coherence = new_coherence
-        bsq = bias_term(power1, power2, power1_noise, power2_noise,
+        bsq = bias_term.(power1, power2, power1_noise, power2_noise,
                         n_ave, intrinsic_coherence=new_coherence)
         den = (power1 - power1_noise) * (power2 - power2_noise)
         num = real(cross_power * conj(cross_power)) - bsq
@@ -128,52 +120,52 @@ function _estimate_intrinsic_coherence_single(cross_power::Complex, power1::Real
     return new_coherence                                       
 end
 
-estimate_intrinsic_coherence(cross_power:: AbstractVector{<:Complex}, 
-                             power1:: AbstractVector{<:Real}, power2:: AbstractVector{<:Real}, 
-                             power1_noise::Real, power2_noise::Real, n_ave::Integer)= 
-                                _estimate_intrinsic_coherence_single.(
-                                    cross_power, power1, power2, 
-                                    power1_noise, power2_noise, n_ave)
-
 function error_on_averaged_cross_spectrum(cross_power:: AbstractVector{<:Complex}, 
                                           seg_power:: AbstractVector{<:Real}, 
                                           ref_power:: AbstractVector{<:Real}, n_ave::Integer,
                                           seg_power_noise::Real, ref_power_noise::Real;
                                           common_ref::Bool=false)
+
+    if n_ave < 30
+        @warn "n_ave is below 30. Please note that the error bars 
+        on the quantities derived from the cross spectrum 
+        are only reliable for a large number of averaged 
+        powers."
+    end
+    
     two_n_ave = 2 * n_ave
     if common_ref
-        Gsq = (cross_power * conj(cross_power)).real
-        bsq = bias_term(seg_power, ref_power, seg_power_noise, ref_power_noise,
+        Gsq = real.(cross_power .* conj(cross_power))
+        bsq = bias_term.(seg_power, ref_power, seg_power_noise, ref_power_noise,
                         n_ave)
-        frac = (Gsq - bsq) / (ref_power - ref_power_noise)
+        frac = @. (Gsq - bsq) / (ref_power - ref_power_noise)
         power_over_2n = ref_power / two_n_ave
 
         # Eq. 18
-        dRe = dIm = dG = sqrt(power_over_2n * (seg_power - frac))
+        dRe = dIm = dG = @. sqrt(power_over_2n * (seg_power - frac))
         # Eq. 19
-        dphi = sqrt(power_over_2n * (seg_power / (Gsq - bsq) -
+        dphi = @. sqrt(power_over_2n * (seg_power / (Gsq - bsq) -
                        1 / (ref_power - ref_power_noise)))
 
     else
-        PrPs = ref_power * seg_power
-        dRe = sqrt((PrPs + cross_power.real ^ 2 - cross_power.imag ^ 2) /
+        PrPs = ref_power .* seg_power
+        dRe = @. sqrt((PrPs + real(cross_power) ^ 2 - imag(cross_power) ^ 2) /
                       two_n_ave)
-        dIm = sqrt((PrPs - cross_power.real ^ 2 + cross_power.imag ^ 2) /
+        dIm = @. sqrt((PrPs - real(cross_power) ^ 2 + imag(cross_power) ^ 2) /
                       two_n_ave)
-        gsq = raw_coherence(cross_power, seg_power, ref_power,
+        gsq = raw_coherence.(cross_power, seg_power, ref_power,
                             seg_power_noise, ref_power_noise, n_ave)
-        dphi = sqrt((1 - gsq) / (2 * gsq * n_ave))
-        dG = sqrt(PrPs / n_ave)
+        dphi = @. sqrt((1 - gsq) / (2 * gsq * n_ave))
+        dG = sqrt.(PrPs ./ n_ave)
     end
 
     return dRe, dIm, dphi, dG
 end
 
-function cross_to_covariance(cross_power:: AbstractVector{<:Complex}, 
-                             ref_power:: AbstractVector{<:Real}, 
-                             ref_power_noise::Real, 
-                             delta_nu::T) where {T<:Union{AbstractVector{<:Real},Real}}
-    return cross_power .* sqrt.(delta_nu ./ (ref_power .- ref_power_noise))
+function cross_to_covariance(cross_power::Complex, ref_power::Real, 
+                             ref_power_noise::Real, delta_nu::Real)
+    # To be used with dot broadcast when need an array 
+    return cross_power * sqrt(delta_nu / (ref_power - ref_power_noise))
 end
 
 function _which_segment_idx_fun(;binned::Bool=false, dt=nothing)
@@ -290,7 +282,7 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
         end
 
         # No need for the negative frequencies
-        unnorm_power = unnorm_power[fgt0]
+        unnorm_power = keepat!(unnorm_power,fgt0)
 
         # If the user wants to normalize using the mean of the total
         # lightcurve, normalize it here
@@ -394,7 +386,7 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
         sum_of_photons2 += n_ph2
 
         # Take only positive frequencies
-        unnorm_power = unnorm_power[fgt0]
+        unnorm_power = keepat!(unnorm_power,fgt0)
 
         # Initialize or accumulate final averaged spectrum
         unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross,
@@ -543,10 +535,10 @@ function avg_cs_from_iterables(
         # Take only positive frequencies unless the user wants the full
         # spectrum
         if !(fullspec)
-            unnorm_power = unnorm_power[fgt0]
+            unnorm_power = keepat!(unnorm_power,fgt0)
             if return_auxil
-                unnorm_pd1 = unnorm_pd1[fgt0]
-                unnorm_pd2 = unnorm_pd2[fgt0]
+                unnorm_pd1 = keepat!(unnorm_pd1,fgt0)
+                unnorm_pd2 = keepat!(unnorm_pd2,fgt0)
             end
         end
 
@@ -709,7 +701,7 @@ function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix
     if isnothing(segment_size)
         segment_size = max(gti) - min(gti)
     end
-    n_bin = Int64(round(segment_size / dt))
+    n_bin = round(Int,segment_size / dt)
     dt = segment_size / n_bin
 
     flux_iterable = get_flux_iterable_from_segments(times, gti, segment_size;
@@ -734,7 +726,7 @@ function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVe
     if isnothing(segment_size) 
         segment_size = max(gti) - min(gti)
     end
-    n_bin = Int64(round(segment_size / dt))
+    n_bin = round(Int, segment_size / dt)
     # adjust dt
     dt = segment_size / n_bin
 

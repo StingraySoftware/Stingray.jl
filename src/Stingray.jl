@@ -13,6 +13,7 @@ export normalize_periodograms
 export bias_term
 export raw_coherence
 export estimate_intrinsic_coherence
+export error_on_averaged_cross_spectrum
 export get_average_ctrate
 export get_flux_iterable_from_segments
 export avg_pds_from_events
