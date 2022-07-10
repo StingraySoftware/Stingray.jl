@@ -10,7 +10,7 @@ function time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Re
             continue
         end
 
-        newtimes = range(g1, g2 - segment_size + epsilon, step=Float64(segment_size) * fraction_step)
+        newtimes = range(g1, g2 - segment_size + epsilon, step = segment_size* fraction_step)
         append!(spectrum_start_times,newtimes)
     end
     return spectrum_start_times, spectrum_start_times .+ segment_size
@@ -18,12 +18,12 @@ end
 
 function calculate_segment_bin_start(startbin::Integer, stopbin::Integer,
                                      nbin::Integer; fraction_step::Real=1)
-    st = floor.(range(startbin, stopbin, step=Int64(nbin * fraction_step)))
+    st = floor.(range(startbin, stopbin, step=Int(nbin * fraction_step)))
     if st[end] == stopbin
-        st = st[1:end-1]
+        pop!(st)
     end
     if st[end] + nbin > stopbin
-        return st[1:end-1]
+        pop!(st)
     end
     return st
 end
@@ -36,12 +36,12 @@ function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Rea
     end
 
     epsilon_times_dt = epsilon * dt
-    nbin = Int64(round(segment_size / dt))
+    nbin = round(Int, segment_size / dt)
 
-    spectrum_start_bins = Int64[]
+    spectrum_start_bins = Int[]
 
-    gti_low = (@view gtis[:, 1]) .+ (dt / 2 - epsilon_times_dt)
-    gti_up = (@view gtis[:, 2]) .- (dt / 2 - epsilon_times_dt)
+    gti_low = @view(gtis[:, 1]) .+ (dt ./ 2 .- epsilon_times_dt)
+    gti_up = @view(gtis[:, 2]) .- (dt ./ 2 .- epsilon_times_dt)
 
     for (g0, g1) in zip(gti_low, gti_up)
         if (g1 - g0 .+ (dt + epsilon_times_dt)) < segment_size

@@ -45,9 +45,8 @@ end
 
 @testset "positive_fft_bins" begin
     freq = fftfreq(11)
-    good = freq .> 0
     goodbins = positive_fft_bins(11)
-    @test freq[good]==freq[goodbins]
+    @test filter(x -> x >0, freq) == freq[goodbins]
 end
 
 @testset "test_coherence" begin
@@ -65,8 +64,9 @@ end
     mean = Statistics.mean(data)
     meanrate = mean / dt
     freq = fftfreq(length(data), 1/dt)
-    good = (freq .> 0 .&& freq .< 0.1)
-    ft1, ft2 = ft1[good], ft2[good]
+    good = 0 .< freq .< 0.1
+    keepat!(ft1, good)
+    keepat!(ft2, good)
     cross = normalize_periodograms(
         ft1 .* conj(ft2), dt, N, mean_flux = mean, norm="abs", power_type="all")
     pds1 = normalize_periodograms(
@@ -78,24 +78,24 @@ end
     p2noise = poisson_level("abs",meanrate=meanrate)
 
     @testset "test_intrinsic_coherence" begin
-        coh = estimate_intrinsic_coherence(
+        coh = estimate_intrinsic_coherence.(
             cross, pds1, pds2, p1noise, p2noise, N)
-        @test all(.≈(coh, 1, atol=0.001))
+        @test all(x -> isapprox(x, 1; atol=0.001), coh)
     end
 
     @testset "test_raw_high_coherence" begin
-        coh = raw_coherence(cross, pds1, pds2, p1noise, p2noise, N)
-        @test all(.≈(coh, 1, atol=0.001))
+        coh = raw_coherence.(cross, pds1, pds2, p1noise, p2noise, N)
+        @test all(x -> isapprox(x, 1; atol=0.001), coh)
     end
 
     @testset "test_raw_low_coherence" begin
         nbins = 2
         C, P1, P2 = cross[1:nbins], pds1[1:nbins], pds2[1:nbins]
-        bsq = bias_term(P1, P2, p1noise, p2noise, N)
+        bsq = bias_term.(P1, P2, p1noise, p2noise, N)
         # must be lower than bsq!
-        low_coh_cross = rand.(Normal.(bsq.^0.5 / 10, bsq.^0.5 / 100)) .+ 0.0im
-        coh = raw_coherence(low_coh_cross, P1, P2, p1noise, p2noise, N)
-        @test all(coh .== 0)
+        low_coh_cross = @. rand(Normal(bsq^0.5 / 10, bsq^0.5 / 100)) + 0.0im
+        coh = raw_coherence.(low_coh_cross, P1, P2, p1noise, p2noise, N)
+        @test all(iszero,coh)
     end
 
     @testset "test_raw_high_bias" begin
@@ -105,7 +105,7 @@ end
         P1noise = 495955
         P2noise = 494967
     
-        coh = raw_coherence(C, P1, P2, P1noise, P2noise, 499; intrinsic_coherence=1)
+        coh = raw_coherence.(C, P1, P2, P1noise, P2noise, 499; intrinsic_coherence=1)
         coh_sngl = raw_coherence(C[1], P1[1], P2[1], P1noise, P2noise, 499; intrinsic_coherence=1)
         @test coh==real(C .* conj(C))./ (P1 .* P2)
         @test coh_sngl==real(C .* conj(C))[1] / (P1[1] * P2[1])
@@ -117,7 +117,7 @@ end
     dt = 1
     len = 100
     ctrate = 10000
-    N = Int64(len / dt)
+    N = len ÷ dt
     dt = len / N
     times = sort(rand(Uniform(0, len), len * ctrate))
     gti = [[0 len];;]
@@ -134,19 +134,16 @@ end
     @test get_average_ctrate(bin_times, gti, segment_size; counts=counts) == ctrate
 
     @testset "test_fts_from_segments_cts_and_events_are_equal" begin
-        N = Int64(round(segment_size / dt))
-        fts_evts = [
-            f for f in get_flux_iterable_from_segments(times, gti, segment_size, n_bin=N)
-        ]
-        fts_cts = [
-            f
-            for f in get_flux_iterable_from_segments(
-                bin_times, gti, segment_size, fluxes=counts
-            )
-        ]
-        for (fe, fc) in zip(fts_evts, fts_cts)
-            @test fe==fc
-        end
+        N = round(Int, segment_size / dt)
+        fts_evts = collect(get_flux_iterable_from_segments(times, gti, segment_size, n_bin=N))
+        fts_cts = collect(get_flux_iterable_from_segments(
+                bin_times, gti, segment_size, fluxes=counts))
+        @test fts_evts == fts_cts
+    end
+
+    @testset "test_error_on_averaged_cross_spectrum_low_nave" begin
+        @test_logs (:warn,r"n_ave is below 30."
+        ) error_on_averaged_cross_spectrum([4 + 1.0im], [2], [4], 29, 2, 2)
     end
 
     @testset "test_avg_pds_bad_input" begin
@@ -338,17 +335,17 @@ end
     lc = rand(Poisson(mean),N)
     pds = abs2.(fft(lc))
     freq = fftfreq(N, dt)
-    good = 2:floor(Int,N/2)
+    good = 2:(N÷2)
 
     pdsabs = normalize_abs(pds, dt, size(lc,1))
     pdsfrac = normalize_frac(pds, dt, size(lc,1), mean)
     pois_abs = poisson_level("abs", meanrate=meanrate)
     pois_frac = poisson_level("frac", meanrate=meanrate)
 
-    @test Statistics.mean(pdsabs[good])≈pois_abs rtol=0.02
-    @test Statistics.mean(pdsfrac[good])≈pois_frac rtol=0.02
+    @test Statistics.mean(keepat!(pdsabs,good))≈pois_abs rtol=0.02
+    @test Statistics.mean(keepat!(pdsfrac,good))≈pois_frac rtol=0.02
 
-    mean = var = 100000.
+    mean = var = 100000.0
     N = 800000
     dt = 0.2
     df = 1 / (N * dt)
@@ -357,13 +354,13 @@ end
     meanrate = mean / dt
     lc = rand(Poisson(mean),N)
     nph = sum(lc)
-    pds = (abs2.(fft(lc)))[good]
+    pds = keepat!(abs2.(fft(lc)),good)
     lc_bksub = lc .- mean
-    pds_bksub = (abs2.(fft(lc_bksub)))[good]
+    pds_bksub = keepat!(abs2.(fft(lc_bksub)),good)
     lc_renorm = lc / mean
-    pds_renorm = (abs2.(fft(lc_renorm)))[good]
+    pds_renorm = keepat!(abs2.(fft(lc_renorm)),good)
     lc_renorm_bksub = lc_renorm .- 1
-    pds_renorm_bksub = (abs2.(fft(lc_renorm_bksub)))[good]
+    pds_renorm_bksub = keepat!(abs2.(fft(lc_renorm_bksub)),good)
 
     @testset "test_leahy_bksub_var_vs_standard" begin
         leahyvar = normalize_leahy_from_variance(pds_bksub, Statistics.var(lc_bksub), N)
@@ -383,7 +380,7 @@ end
         ratio = (
             normalize_frac(pds, dt, N, mean)
             ./ normalize_abs(pds, dt, N)
-            .* meanrate ^ 2
+            .* meanrate .^ 2
         )
         @test Statistics.mean(ratio)≈1 rtol=0.01
     end
