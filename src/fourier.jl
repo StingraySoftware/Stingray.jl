@@ -142,20 +142,20 @@ function error_on_averaged_cross_spectrum(cross_power:: AbstractVector{<:Complex
         power_over_2n = ref_power / two_n_ave
 
         # Eq. 18
-        dRe = dIm = dG = @. sqrt(power_over_2n * (seg_power - frac))
+        dRe = dIm = dG = @. NaNMath.sqrt(power_over_2n * (seg_power - frac))
         # Eq. 19
-        dphi = @. sqrt(power_over_2n * (seg_power / (Gsq - bsq) -
+        dphi = @. NaNMath.sqrt(power_over_2n * (seg_power / (Gsq - bsq) -
                        1 / (ref_power - ref_power_noise)))
 
     else
         PrPs = ref_power .* seg_power
-        dRe = @. sqrt((PrPs + real(cross_power) ^ 2 - imag(cross_power) ^ 2) /
+        dRe = @. NaNMath.sqrt((PrPs + real(cross_power) ^ 2 - imag(cross_power) ^ 2) /
                       two_n_ave)
-        dIm = @. sqrt((PrPs - real(cross_power) ^ 2 + imag(cross_power) ^ 2) /
+        dIm = @. NaNMath.sqrt((PrPs - real(cross_power) ^ 2 + imag(cross_power) ^ 2) /
                       two_n_ave)
         gsq = raw_coherence.(cross_power, seg_power, ref_power,
                             seg_power_noise, ref_power_noise, n_ave)
-        dphi = @. sqrt((1 - gsq) / (2 * gsq * n_ave))
+        dphi = @. NaNMath.sqrt((1 - gsq) / (2 * gsq * n_ave))
         dG = sqrt.(PrPs ./ n_ave)
     end
 
@@ -763,7 +763,7 @@ function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVe
             silent=silent,
             fullspec=fullspec,
             power_type=power_type,
-            return_auxil=return_auxil,
+            return_auxil=return_auxil
         )
     end
     if !isnothing(results)
