@@ -1,6 +1,6 @@
 module Stingray
 
-using ResumableFunctions, StatsBase, Statistics, DataFrames, FFTW, Metadata
+using ResumableFunctions, StatsBase, Statistics, DataFrames, FFTW, Metadata, NaNMath
 using ProgressBars: tqdm as show_progress 
 
 include("fourier.jl")

@@ -141,9 +141,9 @@ end
         @test fts_evts == fts_cts
     end
 
-    @testset "test_error_on_averaged_cross_spectrum_low_nave" begin
+    @testset "test_error_on_averaged_cross_spectrum_low_nave" for common_ref in [true, false]
         @test_logs (:warn,r"n_ave is below 30."
-        ) error_on_averaged_cross_spectrum([4 + 1.0im], [2], [4], 29, 2, 2)
+        ) error_on_averaged_cross_spectrum([4 + 1.0im], [2], [4], 29, 2, 2; common_ref=common_ref)
     end
 
     @testset "test_avg_pds_bad_input" begin
@@ -184,7 +184,9 @@ end
         @test std(out_comm)≈std(out) rtol=0.1
     end
 
-    @testset "test_avg_cs_use_common_mean_similar_stats" for norm in ["frac", "abs", "none", "leahy"]
+    @testset "test_avg_cs_use_common_mean_similar_stats" for 
+        norm in ["frac", "abs", "none", "leahy"], 
+        return_auxil in [true, false], fullspec in [true,false]
         out_comm = avg_cs_from_events(
             times,
             times2,
@@ -194,6 +196,8 @@ end
             norm=norm,
             use_common_mean=true,
             silent=true,
+            fullspec=fullspec,
+            return_auxil=return_auxil
         ).power
         out = avg_cs_from_events(
             times,
@@ -204,6 +208,8 @@ end
             norm=norm,
             use_common_mean=false,
             silent=true,
+            fullspec=fullspec,
+            return_auxil=return_auxil
         ).power
         @test std(out_comm)≈std(out) rtol=0.1
     end
@@ -389,19 +395,19 @@ end
         ratio = Statistics.mean(pds) / vdk_total_variance
         @test Statistics.mean(ratio)≈1 rtol=0.01
     end
-    @testset "test_poisson_level_$(norm)" for norm in ["abs", "frac", "leahy"]
+    @testset "test_poisson_level_$(norm)" for norm in ["abs", "frac", "leahy","none"]
         pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm=norm)
-        @test Statistics.mean(pdsnorm)≈poisson_level(norm, meanrate=meanrate) rtol=0.01
+        @test Statistics.mean(pdsnorm)≈poisson_level(norm; meanrate=meanrate, n_ph=nph) rtol=0.01
     end
 
-    @testset "test_poisson_level_real_$(norm)" for norm in ["abs", "frac", "leahy"]
+    @testset "test_poisson_level_real_$(norm)" for norm in ["abs", "frac", "leahy","none"]
         pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm=norm, power_type = "real")
-        @test Statistics.mean(pdsnorm)≈poisson_level(norm, meanrate=meanrate) rtol=0.01
+        @test Statistics.mean(pdsnorm)≈poisson_level(norm; meanrate=meanrate, n_ph=nph) rtol=0.01
     end
 
-    @testset "test_poisson_level_absolute_$(norm)" for norm in ["abs", "frac", "leahy"]
+    @testset "test_poisson_level_absolute_$(norm)" for norm in ["abs", "frac", "leahy","none"]
         pdsnorm = normalize_periodograms(pds, dt, N; mean_flux=mean, n_ph=nph, norm=norm, power_type = "abs")
-        @test Statistics.mean(pdsnorm)≈poisson_level(norm, meanrate=meanrate) rtol=0.01
+        @test Statistics.mean(pdsnorm)≈poisson_level(norm; meanrate=meanrate, n_ph=nph) rtol=0.01
     end
 
     @testset "test_normalize_with_variance" begin

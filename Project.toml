@@ -13,6 +13,7 @@ ProgressBars = "49802e3a-d2f1-5c88-81d8-b72133a6f568"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Metadata = "4fb893c1-3164-4f58-823a-cb4c64eabb4f"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
 
 [compat]
 julia = "1.7"
@@ -24,6 +25,7 @@ ProgressBars = "1.4"
 DataFrames = "1.3"
 Metadata = "0.3"
 HDF5 = "0.16"
+NaNMath = "0.3"
 
 
 [extras]
