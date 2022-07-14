@@ -90,7 +90,7 @@ end
 
     @testset "test_raw_low_coherence" begin
         nbins = 2
-        C, P1, P2 = cross[1:nbins], pds1[1:nbins], pds2[1:nbins]
+        C, P1, P2 = @view(cross[1:nbins]), @view(pds1[1:nbins]), @view(pds2[1:nbins])
         bsq = bias_term.(P1, P2, p1noise, p2noise, N)
         # must be lower than bsq!
         low_coh_cross = @. rand(Normal(bsq^0.5 / 10, bsq^0.5 / 100)) + 0.0im
@@ -124,7 +124,7 @@ end
     bins = LinRange(0, len, N + 1)
     counts = fit(Histogram, times, bins).weights
     errs = fill!(similar(counts),1) * sqrt(ctrate)
-    bin_times = (bins[1:end-1] + bins[2:end]) / 2
+    bin_times = (@view(bins[1:end-1]) + @view(bins[2:end])) / 2
     segment_size = 20.0
     times2 = sort(rand(Uniform(0, len), len * ctrate))
     counts2 = fit(Histogram, times2, bins).weights
@@ -370,7 +370,7 @@ end
 
     @testset "test_leahy_bksub_var_vs_standard" begin
         leahyvar = normalize_leahy_from_variance(pds_bksub, Statistics.var(lc_bksub), N)
-        leahy = 2 * pds / sum(lc)
+        leahy =  2 .* pds ./ sum(lc)
         ratio = Statistics.mean(leahyvar./leahy)
         @test ratio≈1 rtol=0.01
     end
