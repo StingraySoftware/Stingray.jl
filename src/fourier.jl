@@ -23,24 +23,24 @@ end
 function normalize_frac(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer, 
                         mean_flux::Real; background_flux::Real=0.0)
     if background_flux > 0
-        power = unnorm_power * 2 * dt / ((mean_flux - background_flux) ^ 2 *
+        power = @. unnorm_power * 2 * dt / ((mean_flux - background_flux) ^ 2 *
                                           n_bin)
     else
         # Note: this corresponds to eq. 3 in Uttley+14
-        power = unnorm_power * 2 * dt / (mean_flux ^ 2 * n_bin)
+        power = @. unnorm_power * 2 * dt / (mean_flux ^ 2 * n_bin)
     end
     return power
 end
 
 normalize_abs(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer) = 
-    unnorm_power * 2 / n_bin / dt
+    @. unnorm_power * 2 / n_bin / dt
 
 normalize_leahy_from_variance(unnorm_power::AbstractVector{<:Number}, 
                               variance::Real, n_bin::Integer) = 
-    unnorm_power * 2 / (variance * n_bin)
+    @. unnorm_power * 2 / (variance * n_bin)
 
 normalize_leahy_poisson(unnorm_power::AbstractVector{<:Number}, n_ph::Real) = 
-    unnorm_power * 2 / n_ph
+    @. unnorm_power * 2 / n_ph
 
 function normalize_periodograms(unnorm_power::AbstractVector{<:Number}, dt::Real, 
                                 n_bin::Integer; mean_flux=nothing, n_ph=nothing,
@@ -80,7 +80,7 @@ function bias_term(power1::Real, power2::Real, power1_noise::Real,
                    intrinsic_coherence::Real=1.0)
     
     if n_ave > 500
-        return 0.0 * power1
+        return 0.0
     end
     return power1 * power2 - intrinsic_coherence * (power1 - power1_noise) * (power2 - power2_noise) / n_ave
 end
@@ -170,10 +170,9 @@ end
 
 function _which_segment_idx_fun(;binned::Bool=false, dt=nothing)
     if binned
+        # Return a function, so that we can pass the correct dt as an argument.
         return (args...) -> generate_indices_of_segment_boundaries_binned(args...; dt=dt)
     else
-        # Define a new function, so that we can pass the correct dt as an
-        # argument.
         return generate_indices_of_segment_boundaries_unbinned 
     end
 end
@@ -189,7 +188,7 @@ function get_average_ctrate(times:: AbstractVector{<:Real}, gti::AbstractMatrix{
         if !(binned)
             n_ph += idx1 - idx0
         else
-            n_ph += sum(counts[idx0+1:idx1])
+            n_ph += sum(@view counts[idx0+1:idx1])
         end
         n_intvs += 1
     end
@@ -203,7 +202,7 @@ end
     dt = nothing
     binned = !isnothing(fluxes)
     if binned
-        dt = Statistics.median(diff(times[1:100]))
+        dt = Statistics.median(diff(@view times[1:100]))
     end
     fun = _which_segment_idx_fun(;binned, dt)
 
@@ -213,14 +212,12 @@ end
             continue
         end
         if !binned
-            event_times = times[idx0:idx1-1]
-            # astype here serves to avoid integer rounding issues in Windows,
-            # where long is a 32-bit integer.
-            cts = fit(Histogram,Float64.(event_times .- s);nbins=n_bin).weights
+            event_times = @view times[idx0:idx1-1]
+            cts = fit(Histogram,float.(event_times .- s);nbins=n_bin).weights
         else
-            cts = Float64.(fluxes[idx0+1:idx1])
+            cts = float.(@view fluxes[idx0+1:idx1])
             if !isnothing(errors)
-                cts = cts, errors[idx0+1:idx1]
+                cts = cts, @view errors[idx0+1:idx1]
             end
         end
         @yield cts
@@ -282,7 +279,7 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
         end
 
         # No need for the negative frequencies
-        unnorm_power = keepat!(unnorm_power,fgt0)
+        keepat!(unnorm_power,fgt0)
 
         # If the user wants to normalize using the mean of the total
         # lightcurve, normalize it here
@@ -304,7 +301,7 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
         n_ave += 1
     end
 
-    # If there were no good intervals, return None
+    # If there were no good intervals, return nothing
     if isnothing(cross)
         return nothing
     end
@@ -368,7 +365,7 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
 
         # At the first loop, we define the frequency array and the range of
         # positive frequency bins (after the first loop, cross will not be
-        # None anymore)
+        # nothing anymore)
         if isnothing(unnorm_cross)
             freq = fftfreq(n_bin, dt)
             fgt0 = positive_fft_bins(n_bin)
@@ -386,7 +383,7 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
         sum_of_photons2 += n_ph2
 
         # Take only positive frequencies
-        unnorm_power = keepat!(unnorm_power,fgt0)
+        keepat!(unnorm_power,fgt0)
 
         # Initialize or accumulate final averaged spectrum
         unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross,
@@ -395,7 +392,7 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
         n_ave += 1
     end
 
-    # If no valid intervals were found, return only `None`s
+    # If no valid intervals were found, return only `nothing`s
     if isnothing(unnorm_cross)
         return nothing
     end
@@ -410,7 +407,7 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
     common_mean = n_ph / n_bin
 
     # Transform the sums into averages
-    unnorm_cross /= n_ave
+    unnorm_cross ./= n_ave
 
     # Finally, normalize the cross spectrum (only if not already done on an
     # interval-to-interval basis)
@@ -503,7 +500,7 @@ function avg_cs_from_iterables(
 
         # At the first loop, we define the frequency array and the range of
         # positive frequency bins (after the first loop, cross will not be
-        # None anymore)
+        # nothing anymore)
         if isnothing(cross)
             freq = fftfreq(n_bin, dt)
             fgt0 = positive_fft_bins(n_bin)
@@ -520,7 +517,6 @@ function avg_cs_from_iterables(
 
         # Calculate the unnormalized cross spectrum
         unnorm_power = ft1 .* conj.(ft2)
-        unnorm_pd1 = unnorm_pd2 = 0
 
         # If requested, calculate the auxiliary PDSs
         if return_auxil
@@ -535,16 +531,18 @@ function avg_cs_from_iterables(
         # Take only positive frequencies unless the user wants the full
         # spectrum
         if !(fullspec)
-            unnorm_power = keepat!(unnorm_power,fgt0)
+            keepat!(unnorm_power,fgt0)
             if return_auxil
-                unnorm_pd1 = keepat!(unnorm_pd1,fgt0)
-                unnorm_pd2 = keepat!(unnorm_pd2,fgt0)
+                keepat!(unnorm_pd1,fgt0)
+                keepat!(unnorm_pd2,fgt0)
             end
         end
 
         cs_seg = unnorm_power
-        p1_seg = unnorm_pd1
-        p2_seg = unnorm_pd2
+        if return_auxil
+            p1_seg = unnorm_pd1
+            p2_seg = unnorm_pd2
+        end
 
         # If normalization has to be done interval by interval, do it here.
         if !(use_common_mean)
@@ -590,7 +588,7 @@ function avg_cs_from_iterables(
         n_ave += 1
     end
 
-    # If no valid intervals were found, return only `None`s
+    # If no valid intervals were found, return only `nothing`s
     if isnothing(cross)
         return nothing
     end
@@ -613,11 +611,11 @@ function avg_cs_from_iterables(
     end
 
     # Transform the sums into averages
-    cross /= n_ave
-    unnorm_cross /= n_ave
+    cross ./= n_ave
+    unnorm_cross ./= n_ave
     if return_auxil
-        unnorm_pds1 /= n_ave
-        unnorm_pds2 /= n_ave
+        unnorm_pds1 ./= n_ave
+        unnorm_pds2 ./= n_ave
     end
 
     # Finally, normalize the cross spectrum (only if not already done on an
