@@ -1,6 +1,6 @@
 using Stingray
 using Test
+using FFTW, Distributions, Statistics, StatsBase, Metadata, HDF5
 
-@testset "Stingray.jl" begin
-    @test typeof(2) <: Real
-end
+include("test_fourier.jl")
+include("test_gti.jl")
