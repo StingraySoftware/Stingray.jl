@@ -4,10 +4,10 @@ function get_total_gti_length(gti::AbstractMatrix{<:Real}; minlen::Real=0.0)
 end
 
 function load_gtis(fits_file::String, gtistring::String="GTI")
-    lchdulist = FITS(fits_file)
-    gtihdu = lchdulist[gtistring]
-    gti = get_gti_from_hdu(gtihdu)
-    close(lchdulist)
+    gti = FITS(fits_file) do lchdulist
+        gtihdu = lchdulist[gtistring]
+        get_gti_from_hdu(gtihdu)
+    end
     return gti
 end
 
@@ -32,7 +32,7 @@ function check_gtis(gti::AbstractMatrix)
 
     if ndims(gti) != 2 || size(gti,2) != 2
         throw(ArgumentError("Please check the formatting of the GTIs. 
-        They need to be provided as [[gti00 gti01]; [gti10 gti11]; ...]."))
+       They need to be provided as [[gti00 gti01]; [gti10 gti11]; ...]."))
     end
 
     gti_start = @view gti[:, 1]
@@ -44,7 +44,7 @@ function check_gtis(gti::AbstractMatrix)
         )) 
     end
 
-    if any(@view(gti_start[2:end]) < @view(gti_end[1:end-1]))
+    if any(@view(gti_start[begin+1:end]) < @view(gti_end[begin:end-1]))
         throw(ArgumentError(
             "This GTI has overlaps"
         ))
@@ -55,7 +55,7 @@ function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Re
                          safe_interval::AbstractVector{<:Real}=[0,0], min_length::Real=0,
                          dt::Real = -1, epsilon::Real = 0.001)
 
-    if length(times) == 0
+    if isempty(times)
         throw(ArgumentError("Passing an empty time array to create_gti_mask"))
     end
 
@@ -88,8 +88,8 @@ function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Re
         if limmax - limmin >= min_length
             new_gtis[ig][:] .= limmin, limmax
             for (i,t) in enumerate(times) 
-                if t >= (limmin + dt / 2 - epsilon_times_dt) && t <= (limmax - dt / 2 + epsilon_times_dt)
-                mask[i] = true
+                if (limmin + dt / 2 - epsilon_times_dt) <= t <= (limmax - dt / 2 + epsilon_times_dt)
+                    mask[i] = true
                 end
             end
             new_gti_mask[ig] = true
@@ -103,13 +103,12 @@ function create_gti_from_condition(time::AbstractVector{<:Real}, condition::Abst
     safe_interval::AbstractVector{<:Real}=[0,0], dt::AbstractVector{<:Real}=Float64[])
     
     if length(time) != length(condition)
-        throw(ArgumentError("The length of the condition and 
-        time arrays must be the same."))
+        throw(ArgumentError("The length of the condition and time arrays must be the same."))
     end
 
     idxs = contiguous_regions(condition)
 
-    if(isempty(dt))
+    if isempty(dt)
         dt = zero(time) .+ (time[2] .- time[1]) ./ 2
     end
 
@@ -157,14 +156,14 @@ function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}},
 end
 
 function get_btis(gtis::AbstractMatrix{<:Real})
-    if length(gtis) == 0
+    if isempty(gtis)
         throw(ArgumentError("Empty GTI and no valid start_time and stop_time"))
     end
     return get_btis(gtis, gtis[1,1], gtis[end,2])
 end
 
 function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real}
-    if length(gtis) == 0
+    if isempty(gtis)
         return T[start_time stop_time]
     end
     check_gtis(gtis)
