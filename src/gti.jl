@@ -1,3 +1,193 @@
+function get_total_gti_length(gti::AbstractMatrix{<:Real}; minlen::Real=0.0)
+    lengths = diff(gti; dims =2)
+    return sum(x->x > minlen ? x : zero(x), lengths)
+end
+
+function load_gtis(fits_file::String, gtistring::String="GTI")
+    gti = FITS(fits_file) do lchdulist
+        gtihdu = lchdulist[gtistring]
+        get_gti_from_hdu(gtihdu)
+    end
+    return gti
+end
+
+function get_gti_from_hdu(gtihdu::TableHDU)
+
+    if "START" in FITSIO.colnames(gtihdu)
+        startstr = "START"
+        stopstr = "STOP"
+    else
+        startstr = "Start"
+        stopstr = "Stop"
+    end
+
+    gtistart = read(gtihdu,startstr)
+    gtistop = read(gtihdu,stopstr)
+
+    return mapreduce(permutedims, vcat, 
+    [[a, b] for (a,b) in zip(gtistart, gtistop)])
+end
+
+function check_gtis(gti::AbstractMatrix)
+
+    if ndims(gti) != 2 || size(gti,2) != 2
+        throw(ArgumentError("Please check the formatting of the GTIs. 
+       They need to be provided as [[gti00 gti01]; [gti10 gti11]; ...]."))
+    end
+
+    gti_start = @view gti[:, 1]
+    gti_end = @view gti[:, 2]
+
+    if any(gti_end < gti_start)
+        throw(ArgumentError(
+            "The GTI end times must be larger than the GTI start times."
+        )) 
+    end
+
+    if any(@view(gti_start[begin+1:end]) < @view(gti_end[begin:end-1]))
+        throw(ArgumentError(
+            "This GTI has overlaps"
+        ))
+    end
+end
+
+function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Real};
+                         safe_interval::AbstractVector{<:Real}=[0,0], min_length::Real=0,
+                         dt::Real = -1, epsilon::Real = 0.001)
+
+    if isempty(times)
+        throw(ArgumentError("Passing an empty time array to create_gti_mask"))
+    end
+
+    check_gtis(gtis)
+    mask = zeros(Bool,length(times))
+
+    if min_length>0
+        gtis = gtis[min_length .< @view(gtis[:,2]) - @view(gtis[:,1]),:]
+            
+        if size(gtis,1) < 1
+            @warn "No GTIs longer than min_length $(min_length)"
+            return mask, gtis
+        end
+    end   
+
+    if dt < 0
+        dt = Statistics.median(diff(times))
+    end
+    epsilon_times_dt = epsilon * dt
+
+    new_gtis = [[0.0, 0.0] for _ in range(1,size(gtis,1))]
+    new_gti_mask = zeros(Bool, size(gtis,1))
+
+    gti_start = @view gtis[:, 1]
+    gti_end = @view gtis[:, 2]
+
+    for (ig,(limmin,limmax)) in enumerate(zip(gti_start,gti_end))
+        limmin += safe_interval[1]
+        limmax -= safe_interval[2]
+        if limmax - limmin >= min_length
+            new_gtis[ig][:] .= limmin, limmax
+            for (i,t) in enumerate(times) 
+                if (limmin + dt / 2 - epsilon_times_dt) <= t <= (limmax - dt / 2 + epsilon_times_dt)
+                    mask[i] = true
+                end
+            end
+            new_gti_mask[ig] = true
+        end
+    end
+
+    return mask, mapreduce(permutedims, vcat, keepat!(new_gtis,new_gti_mask))
+end
+
+function create_gti_from_condition(time::AbstractVector{<:Real}, condition::AbstractVector{Bool};
+    safe_interval::AbstractVector{<:Real}=[0,0], dt::AbstractVector{<:Real}=Float64[])
+    
+    if length(time) != length(condition)
+        throw(ArgumentError("The length of the condition and time arrays must be the same."))
+    end
+
+    idxs = contiguous_regions(condition)
+
+    if isempty(dt)
+        dt = zero(time) .+ (time[2] .- time[1]) ./ 2
+    end
+
+    gtis = Vector{Float64}[]
+    for idx in eachrow(idxs)
+        startidx = idx[1]
+        stopidx = idx[2] - 1
+
+        t0 = time[startidx] - dt[startidx] + safe_interval[1]
+        t1 = time[stopidx] + dt[stopidx] - safe_interval[2]
+        if t1 - t0 < 0
+            continue
+        end
+        push!(gtis,[t0, t1])
+    end
+    return mapreduce(permutedims, vcat, gtis)
+end
+
+function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}}, 
+                            operation::Function) where {T<:Real}
+
+    required_interval = nothing
+
+    for gti in gti_list
+        check_gtis(gti)
+
+        combined_gti = Interval{T}[]
+        for ig in eachrow(gti)
+            push!(combined_gti,Interval{Closed,Open}(ig[1],ig[2]))
+        end
+        if isnothing(required_interval)
+            required_interval = IntervalSet(combined_gti)
+        else
+            required_interval = operation(required_interval, IntervalSet(combined_gti))
+        end
+    end
+
+    final_gti = Vector{T}[]
+
+    for interval in required_interval.items
+        push!(final_gti, [first(interval), last(interval)])
+    end
+
+    return mapreduce(permutedims, vcat, final_gti)
+end
+
+function get_btis(gtis::AbstractMatrix{<:Real})
+    if isempty(gtis)
+        throw(ArgumentError("Empty GTI and no valid start_time and stop_time"))
+    end
+    return get_btis(gtis, gtis[1,1], gtis[end,2])
+end
+
+function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real}
+    if isempty(gtis)
+        return T[start_time stop_time]
+    end
+    check_gtis(gtis)
+
+    total_interval = Interval{T, Closed, Open}[Interval{T, Closed, Open}(start_time, stop_time)]
+    total_interval_set = IntervalSet(total_interval)
+
+    gti_interval = Interval{T, Closed, Open}[]
+    for ig in eachrow(gtis)
+        push!(gti_interval,Interval{T, Closed, Open}(ig[1],ig[2]))
+    end
+    gti_interval_set = IntervalSet(gti_interval)
+
+    bti_interval_set = setdiff(total_interval_set, gti_interval_set)
+
+    btis = Vector{T}[]
+
+    for interval in bti_interval_set.items
+        push!(btis, [first(interval), last(interval)])
+    end
+
+    return mapreduce(permutedims, vcat, btis)
+end
+
 function time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real;
                                   fraction_step::Real=1, epsilon::Real=1e-5)  
     spectrum_start_times = Float64[]
