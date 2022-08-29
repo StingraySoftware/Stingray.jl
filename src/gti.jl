@@ -21,8 +21,8 @@ function get_gti_from_hdu(gtihdu::TableHDU)
         stopstr = "Stop"
     end
 
-    gtistart = read(gtihdu,startstr)
-    gtistop = read(gtihdu,stopstr)
+    gtistart = FITSIO.read(gtihdu,startstr)
+    gtistop = FITSIO.read(gtihdu,stopstr)
 
     return mapreduce(permutedims, vcat, 
     [[a, b] for (a,b) in zip(gtistart, gtistop)])
@@ -152,7 +152,11 @@ function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}},
         push!(final_gti, [first(interval), last(interval)])
     end
 
-    return mapreduce(permutedims, vcat, final_gti)
+    if isempty(final_gti)
+        return reshape(Float64[],0,2)
+    else
+        return mapreduce(permutedims, vcat, final_gti)
+    end
 end
 
 function get_btis(gtis::AbstractMatrix{<:Real})

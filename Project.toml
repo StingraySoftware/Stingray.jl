@@ -16,6 +16,7 @@ HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
 FITSIO = "525bcba6-941b-5504-bd06-fd0dc1a4d2eb"
 Intervals = "d8418881-c3e1-53bb-8760-2df7ec849ed5"
+Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 
 [compat]
 julia = "1.7"
@@ -30,6 +31,7 @@ HDF5 = "0.16"
 FITSIO = "0.16"
 Intervals = "1.8"
 NaNMath = "0.3, 1"
+Parameters = "0.12"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
