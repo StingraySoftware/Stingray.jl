@@ -19,22 +19,22 @@ function load_events_from_fits(filename::String)
         end
         ev.gti = load_gtis(filename)
         header = FITSIO.read_header(eventHDU)
-        if "MJDREFI" in header.keys
+        if haskey(header,"MJDREFI") 
             ev.mjdref += header["MJDREFI"]
         end
-        if "MJDREFF" in header.keys
+        if haskey(header,"MJDREFF") 
             ev.mjdref += header["MJDREFF"]
         end
-        if "INSTRUME" in header.keys
+        if haskey(header,"INSTRUME") 
             ev.instr = header["INSTRUME"]
         end
-        if "TIMEREF" in header.keys
+        if haskey(header,"TIMEREF") 
             ev.timeref = header["TIMEREF"]
         end
-        if "TIMESYS" in header.keys
+        if haskey(header,"TIMESYS") 
             ev.timesys = header["TIMESYS"]
         end
-        if "PLEPHEM" in header.keys
+        if haskey(header,"PLEPHEM") 
             ev.ephem = header["PLEPHEM"]
         end
         ev
@@ -42,9 +42,26 @@ function load_events_from_fits(filename::String)
     return a
 end
 
-# TODO
 function write_events_to_fits(filename::String, ev::EventList)
-    # FITS(filename,"w") do event
-    #      FITSIO.write(event, ev)
-    # end
+    FITS(filename,"w") do hduList
+        
+        tkeys = String[]
+        values = []
+
+        for field in fieldnames(EventList)
+            fval = getfield(ev, field)
+            if !(fval isa AbstractVecOrMat)
+                push!(tkeys, String(field))
+                push!(values, fval)
+            end
+        end
+
+        header = FITSHeader(tkeys, values,fill("",length(tkeys)))
+
+        eventData = Dict("TIME"=>ev.time, "ENERGY"=>ev.energy, "PI"=>ev.PI);
+        FITSIO.write(hduList, eventData, header = header, name = "EVENTS")
+
+        gtiData = Dict("START"=>ev.gti[:,1], "STOP"=>ev.gti[:,2])
+        FITSIO.write(hduList, gtiData, name = "GTI")
+    end
 end

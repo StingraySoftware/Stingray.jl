@@ -1,5 +1,5 @@
 @testset "test_events" begin
-    times = [0.5, 1.5, 2.5, 3.5]
+    time = [0.5, 1.5, 2.5, 3.5]
     counts = [3000, 2000, 2200, 3600]
     counts_flat = [3000, 3000, 3000, 3000]
     spectrum = [[1, 2, 3, 4, 5, 6], [1000, 2040, 1000, 3000, 4020, 2070]]
@@ -95,6 +95,14 @@
             fname = joinpath(@__DIR__ ,"data","monol_testA.evt")
             ev = Stingray.read(fname, "fits")
             @test ev.mjdref == 55197.00076601852
+        end
+
+        @testset "test_io_with_fits" begin
+            ev = EventList(time=time, mjdref=54000)
+            Stingray.write(ev, "ev.fits", "fits")
+            new_ev = Stingray.read("ev.fits", "fits")
+            @test new_ev.time == time
+            rm("ev.fits")
         end
     end
 end

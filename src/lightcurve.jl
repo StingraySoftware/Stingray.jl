@@ -19,7 +19,7 @@ function make_lightcurves(toa::AbstractVector{<:Real}, dt::Float64; tseg::Real=0
     sort(toa)
     if isnothing(tstart)
         # if tstart is not set, assume light curve starts with first photon
-        tstart = toa[0]
+        tstart = toa[begin]
     end
 
     # compute the number of bins in the light curve
@@ -28,7 +28,7 @@ function make_lightcurves(toa::AbstractVector{<:Real}, dt::Float64; tseg::Real=0
     # are not throwing away good events.
 
     if isnothing(tseg)
-        tseg = toa[-1] - tstart
+        tseg = toa[end-1] - tstart
     end
 
     timebin = tseg ÷ dt
@@ -38,15 +38,16 @@ function make_lightcurves(toa::AbstractVector{<:Real}, dt::Float64; tseg::Real=0
     end
     
     tend = tstart + timebin * dt
-    good = (tstart <= toa) & (toa < tend)
+    good = tstart <= toa < tend
     if !use_hist
-        binned_toas = (toa[good] - tstart) ÷ dt
+        binned_toas = (keepat!(toa,good) .- tstart) .÷ dt
         counts = bincount(binned_toas, minlength=timebin)
         time = tstart + range(0.5, 0.5 + len(counts)) * dt
     else
         histbins = range(tstart, tend + dt, dt)
-        counts, histbins = histogram(toa[good], bins=histbins)
-        time = histbins[begin:end] + 0.5 * dt
+        counts, histbins = histogram(keepat!(toa,good), bins=histbins)
+        time = @view(histbins[begin:end-1]) + 0.5 * dt
+    end
 
     return Lightcurve(time, counts; gti=gti, mjdref=mjdref, dt=dt,
                       skip_checks=True, err_dist="poisson")
