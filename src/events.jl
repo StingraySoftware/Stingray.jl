@@ -1,3 +1,5 @@
+import Base: read, write, join, sort, sort!
+
 @with_kw mutable struct EventList{T1<:AbstractVector,T2<:AbstractVector,T3<:AbstractMatrix}
     time::T1
     energy::T2=Float64[]
@@ -6,7 +8,7 @@
     dt::Float64=0
     notes::String=""
     gti::T3=reshape(Float64[],0,2)
-    PI::Vector{Int64}=Int[]
+    PI::Vector{Int}=Int[]
     high_precision::Bool=false
     mission::String=""
     instr::String=""
@@ -17,11 +19,11 @@
     timesys::String=""
 end
 
-function read(filename::String, format::String)
+function read(::Type{EventList},filename::String, format::String)
     if format=="fits"
         return load_events_from_fits(filename)
     else
-        throw(ArgumentError("File not supported still."))
+        throw(ArgumentError("File format $(format) not supported still."))
     end
 end
 
@@ -29,19 +31,29 @@ function write(ev::EventList, filename::String, format::String)
     if format=="fits"
         write_events_to_fits(filename, ev)
     else
-        throw(ArgumentError("File not supported still."))
+        throw(ArgumentError("File format $(format) not supported still."))
     end
 end
 
+function from_lc(lc::LightCurve)
+    times = [lc.time[i] for i in 1:length(lc.time) for _ in 1:lc.counts[i]]
+    return EventList(time=times,gti=lc.gti)
+end
+
 function to_lc(ev::EventList, dt)
-    tstart = ev.gti[1][1]
-    tseg = ev.gti[end][end]
+    if isempty(ev.gti)
+        tstart=0
+        tseg=0
+    else
+        tstart = ev.gti[begin][begin]
+        tseg = ev.gti[end][end]-tstart
+    end
     return to_lc(ev, dt, tstart, tseg)
 end
 
 to_lc(ev::EventList, dt::Real,
-      tstart::Real, tseg::Real) = make_lightcurves(ev.time, dt, tstart=tstart,
-                                                   gti=ev.gti, tseg=tseg,
+      tstart::Real, tseg::Real) = make_lightcurves(ev.time, dt, ev.gti;
+                                                   tstart=tstart, tseg=tseg,
                                                    mjdref=ev.mjdref)
 
 function join(ev1::EventList, ev2::EventList)
@@ -93,15 +105,17 @@ function join(ev1::EventList, ev2::EventList)
         end
         new_ev.gti = operations_on_gtis([ev1.gti,ev2.gti], intersect)
         if isempty(new_ev.gti)
-            @warn "GTIs in these two event lists do not overlap at all.
-            Merging instead of returning an overlap"
+            @warn """
+            GTIs in these two event lists do not overlap at all.
+            Merging instead of returning an overlap.
+            """
             new_ev.gti = operations_on_gtis([ev1.gti,ev2.gti], union)
         end
     else
-        new_ev.gti = reshape([],0,2)
+        new_ev.gti = reshape(Float64[],0,2)
     end
 
-    for attr in [:mission, :instr]
+    for attr in (:mission, :instr)
         if getfield(ev1, attr) != getfield(ev2, attr)
             setfield!(new_ev, attr, string(getfield(ev1, attr),',',getfield(ev2, attr)))
         else

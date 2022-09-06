@@ -1,5 +1,5 @@
 function load_events_from_fits(filename::String)
-    a = FITS(filename) do hduList
+    FITS(filename) do hduList
         eventHDU = hduList["EVENTS"]
         cols = FITSIO.colnames(eventHDU)
         df = DataFrame(eventHDU)
@@ -39,7 +39,6 @@ function load_events_from_fits(filename::String)
         end
         ev
     end
-    return a
 end
 
 function write_events_to_fits(filename::String, ev::EventList)

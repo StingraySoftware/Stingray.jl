@@ -3,13 +3,28 @@
     counts = [3000, 2000, 2200, 3600]
     counts_flat = [3000, 3000, 3000, 3000]
     spectrum = [[1, 2, 3, 4, 5, 6], [1000, 2040, 1000, 3000, 4020, 2070]]
-    gti = [0, 4]
+    gti = [0 4]
 
     @testset "test_initialize_eventList" begin
         times = sort(rand(Uniform(1e8,1e8+100),101))
         ev = EventList(time=times, mjdref=54600)
         @test ev.time ≈ times atol = 1e-15
         @test ev.mjdref == 54600 
+    end
+
+    @testset "test_to_and_from_lightcurve" begin
+        @testset "test_from_lc" begin
+            lc = LightCurve(time=[0.5, 1.5, 2.5], counts=[2, 1, 2])
+            ev = from_lc(lc)
+            @test ev.time == [0.5, 0.5, 1.5, 2.5, 2.5]
+        end
+
+        @testset "test_to_lc" begin
+            ev = EventList(time=time, gti=gti)
+            lc = to_lc(ev, 1)
+            @test lc.time == [0.5, 1.5, 2.5, 3.5]
+            @test lc.gti == gti
+        end
     end
 
     @testset "test_join_events" begin
@@ -93,14 +108,14 @@
     @testset "Input/Output" begin
         @testset "test_fits_with_standard_file" begin
             fname = joinpath(@__DIR__ ,"data","monol_testA.evt")
-            ev = Stingray.read(fname, "fits")
+            ev = read(EventList, fname, "fits")
             @test ev.mjdref == 55197.00076601852
         end
 
         @testset "test_io_with_fits" begin
             ev = EventList(time=time, mjdref=54000)
-            Stingray.write(ev, "ev.fits", "fits")
-            new_ev = Stingray.read("ev.fits", "fits")
+            write(ev, "ev.fits", "fits")
+            new_ev = read(EventList, "ev.fits", "fits")
             @test new_ev.time == time
             rm("ev.fits")
         end
