@@ -34,11 +34,16 @@ function get_gti_from_hdu(gtihdu::TableHDU)
         stopstr = "Stop"
     end
 
-    gtistart = read(gtihdu,startstr)
-    gtistop = read(gtihdu,stopstr)
+    gtistart = FITSIO.read(gtihdu,startstr)
+    gtistop = FITSIO.read(gtihdu,stopstr)
 
-    return mapreduce(permutedims, vcat, 
-    [[a, b] for (a,b) in zip(gtistart, gtistop)])
+    final_gti = [[a, b] for (a,b) in zip(gtistart, gtistop)]
+
+    if isempty(final_gti)
+        return reshape(Float64[],0,2)
+    else
+        return mapreduce(permutedims, vcat, final_gti)
+    end
 end
 
 """
@@ -124,7 +129,13 @@ function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Re
         end
     end
 
-    return mask, mapreduce(permutedims, vcat, keepat!(new_gtis,new_gti_mask))
+    keepat!(new_gtis,new_gti_mask)
+
+    if isempty(new_gtis)
+        return mask, reshape(Float64[],0,2)
+    else
+        return mask, mapreduce(permutedims, vcat, new_gtis)
+    end
 end
 
 """
@@ -157,7 +168,11 @@ function create_gti_from_condition(time::AbstractVector{<:Real}, condition::Abst
         end
         push!(gtis,[t0, t1])
     end
-    return mapreduce(permutedims, vcat, gtis)
+    if isempty(gtis)
+        return reshape(Float64[],0,2)
+    else
+        return mapreduce(permutedims, vcat, gtis)
+    end
 end
 
 """
@@ -196,7 +211,11 @@ function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}},
         push!(final_gti, [first(interval), last(interval)])
     end
 
-    return mapreduce(permutedims, vcat, final_gti)
+    if isempty(final_gti)
+        return reshape(Float64[],0,2)
+    else
+        return mapreduce(permutedims, vcat, final_gti)
+    end
 end
 
 """
@@ -237,7 +256,11 @@ function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real
         push!(btis, [first(interval), last(interval)])
     end
 
-    return mapreduce(permutedims, vcat, btis)
+    if isempty(btis)
+        return reshape(Float64[],0,2)
+    else
+        return mapreduce(permutedims, vcat, btis)
+    end
 end
 
 """
