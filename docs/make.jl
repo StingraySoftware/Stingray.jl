@@ -14,11 +14,12 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "API Reference" => "api.md",
     ],
     strict=true,
     checkdocs=:export
 )
 
 deploydocs(;
-    repo="https://github.com/matteobachetti/Stingray.jl.git",
+    repo="https://github.com/StingraySoftware/Stingray.jl",
 )

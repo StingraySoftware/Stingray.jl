@@ -21,14 +21,13 @@ end
 """
     poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrate::Real = 0.0)
 Poisson (white)-noise level in a periodogram of pure counting noise.
-For Leahy normalization, this is:  
+* For Leahy normalization, this is:  
     P = 2
-For the fractional r.m.s. normalization, this is:  
-    ``P = \\frac{2}{\\mu}``
-where `\\mu` is the average count rate
-For the absolute r.m.s. normalization, this is:  
+* For the fractional r.m.s. normalization, this is:  
+    ``P = \\frac{2}{\\mu}`` where ``\\mu`` is the average count rate
+* For the absolute r.m.s. normalization, this is:  
     ``P = 2 \\mu``
-Finally, for the unnormalized periodogram, this is:  
+* Finally, for the unnormalized periodogram, this is:  
     ``P = N_{ph}``
 """
 function poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrate::Real = 0.0)
@@ -51,10 +50,10 @@ end
 
 Fractional rms normalization.
     ``P = \\frac{P_{Leahy}}{\\mu} = \\frac{2T}{N_{ph}^2}P_{unnorm}``
-where ``\\mu`` is the mean count rate, ``T` is the length of
-the observation, and ``N_{ph}` the number of photons.
-Alternative formulas found in the literature substitute ``T=N\\,dt`,
-``\\mu=N_{ph}/T`, which give equivalent results.
+where ``\\mu`` is the mean count rate, `T` is the length of
+the observation, and ``N_{ph}`` the number of photons.
+Alternative formulas found in the literature substitute ``T=N\\,dt``,
+``\\mu=N_{ph}/T``, which give equivalent results.
 If the background can be estimated, one can calculate the source rms
 normalized periodogram as
     ``P = P_{Leahy} * \\frac{\\mu}{(\\mu - \\beta)^2}``
@@ -139,8 +138,8 @@ normalize_leahy_poisson(unnorm_power::AbstractVector{<:Number}, n_ph::Real) =
                            norm::String="frac",power_type::String="all")
 
 Wrapper around all the normalize_NORM methods.
-Normalize the real part of the cross spectrum to Leahy, absolute rms^2,
-fractional rms^2 normalization, or not at all.
+Normalize the real part of the cross spectrum to Leahy (norm="leahy"), absolute ``{rms}^2`` 
+(norm="abs"), fractional ``{rms}^2`` (norm="frac") normalization, or not at all (norm="none").
 """
 function normalize_periodograms(unnorm_power::AbstractVector{<:Number}, dt::Real, 
                                 n_bin::Integer; mean_flux=nothing, n_ph=nothing,
@@ -181,8 +180,7 @@ end
               intrinsic_coherence::Real=1.0)
 
 Bias term needed to calculate the coherence.
-Introduced by
-Vaughan & Nowak 1997, ApJ 474, L43
+Introduced by Vaughan & Nowak 1997, ApJ 474, L43
 but implemented here according to the formulation in
 Ingram 2019, MNRAS 489, 392
 As recommended in the latter paper, returns 0 if n_ave > 500
@@ -202,7 +200,7 @@ end
                   power1_noise::Real, power2_noise::Real, 
                   n_ave::Integer; intrinsic_coherence::Real=1.0)
 
-Raw coherence estimations from cross and power spectra.
+Raw coherence estimations from cross and power spectra. To be used with dot broadcast for arrays.
 """
 function raw_coherence(cross_power::Number, power1::Real, power2::Real, 
                        power1_noise::Real, power2_noise::Real, 
@@ -223,9 +221,8 @@ end
                                  power2::Real, power1_noise::Real, 
                                  power2_noise::Real, n_ave::Integer)
 
-Estimate intrinsic coherence.
-Use the iterative procedure from sec. 5 of
-Ingram 2019, MNRAS 489, 392
+Estimate intrinsic coherence. To be used with dot broadcast for arrays.
+Use the iterative procedure from sec. 5 of Ingram 2019, MNRAS 489, 392
 """
 function estimate_intrinsic_coherence(cross_power::Complex, power1::Real,
                                       power2::Real, power1_noise::Real, 
@@ -256,8 +253,9 @@ end
                                      common_ref::Bool=false)
 
 Error on cross spectral quantities, From Ingram 2019.
-Note: this is only valid for a very large number of averaged powers.
-Beware if n_ave < 50 or so.
+!!! note
+    This is only valid for a very large number of averaged powers.
+    Beware if n_ave < 50 or so.
 """
 function error_on_averaged_cross_spectrum(cross_power:: AbstractVector{<:Complex}, 
                                           seg_power:: AbstractVector{<:Real}, 
@@ -337,10 +335,10 @@ end
 
 Calculate the average count rate during the observation.
 This function finds the same segments that the averaged periodogram
-functions (``avg_cs_from_iterables``, ``avg_pds_from_iterables`` etc) will
-use, and returns the mean count rate.
-If ``counts`` is ``None``, the input times are interpreted as events.
-Otherwise, the number of events is taken from ``counts``
+functions (`avg_cs_from_iterables`, `avg_pds_from_iterables` etc) will
+use, and returns the mean count rate. \n
+If `counts` is `None`, the input times are interpreted as events.
+Otherwise, the number of events is taken from `counts`
 """
 function get_average_ctrate(times:: AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
                             segment_size::Real; counts= nothing)
@@ -902,7 +900,7 @@ Calculate the average periodogram from a list of event times or a light
 curve.
 If the input is a light curve, the time array needs to be uniformly sampled
 inside GTIs (it can have gaps outside), and the fluxes need to be passed
-through the ``fluxes`` array.
+through the `fluxes` array.
 Otherwise, times are interpeted as photon arrival times.
 """
 function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
@@ -940,7 +938,7 @@ Calculate the average cross spectrum from a list of event times or a light
 curve.
 If the input is a light curve, the time arrays need to be uniformly sampled
 inside GTIs (they can have gaps outside), and the fluxes need to be passed
-through the ``fluxes1`` and ``fluxes2`` arrays.
+through the `fluxes1` and `fluxes2` arrays.
 Otherwise, times are interpeted as photon arrival times
 """
 function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVector{<:Real}, 

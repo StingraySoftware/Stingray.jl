@@ -1,3 +1,7 @@
+"""
+    sum_if_not_none_or_initialize(A,B)
+If A is None, define A as a copy of B. Otherwise, sum A + B.
+"""
 function sum_if_not_none_or_initialize(A,B)
     if isnothing(A) 
         return deepcopy((B))
@@ -5,6 +9,10 @@ function sum_if_not_none_or_initialize(A,B)
     return A + B
 end
 
+"""
+    contiguous_regions(condition::AbstractVector{Bool})
+Find contiguous ``True`` regions of the boolean array ``condition``
+"""
 function contiguous_regions(condition::AbstractVector{Bool})
     # Find the indicies of changes in "condition"
     d = diff(condition)
@@ -28,6 +36,12 @@ function contiguous_regions(condition::AbstractVector{Bool})
     return reshape(idx,2,length(idx) ÷ 2)'
 end
 
+"""
+    rebin_data(x::AbstractVector{<:Real}, y::AbstractVector{<:Integer}, dx_new::Real;
+               y_err::AbstractVector{<:Real}=Float64[], method::String = "sum", dx::Real=0)
+Rebin some data to an arbitrary new data resolution. Either sum
+the data points in the new bins or average them.
+"""
 function rebin_data(x::AbstractVector{<:Real}, y::AbstractVector{<:Integer}, dx_new::Real;
                     y_err::AbstractVector{<:Real}=Float64[], method::String = "sum", dx::Real=0)
     if isempty(y_err)

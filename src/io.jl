@@ -1,3 +1,8 @@
+"""
+    load_events_from_fits(filename::String)
+Loads event list from HDU EVENTS of file fits_file, with Good Time
+intervals.
+"""
 function load_events_from_fits(filename::String)
     FITS(filename) do hduList
         eventHDU = hduList["EVENTS"]
@@ -41,6 +46,10 @@ function load_events_from_fits(filename::String)
     end
 end
 
+"""
+    write_events_to_fits(filename::String, ev::EventList)
+Writes Event and GTI HDUs to a file from provided EventList
+"""
 function write_events_to_fits(filename::String, ev::EventList)
     FITS(filename,"w") do hduList
         

@@ -1,5 +1,18 @@
 import Base: read, write, join, sort, sort!
 
+"""
+    EventList(time::AbstractVector)
+    EventList(time::T1, energy::T2=Float64[], ncounts::Int=0, mjdref::Float64=0,
+              dt::Float64=0, notes::String="", gti::T3=reshape(Float64[],0,2)
+              PI::Vector{Int}=Int[], high_precision::Bool=false, mission::String=""
+              instr::String="", header::String="", detector_id::Vector{String}=String[]
+              ephem::String="", timeref::String="", timesys::String="") where 
+              {T1<:AbstractVector,T2<:AbstractVector,T3<:AbstractMatrix}
+Makes an event list object. Event lists generally correspond to individual events (e.g. photons)
+recorded by the detector, and their associated properties. For X-ray data where this type commonly occurs,
+events are time stamps of when a photon arrived in the detector, and (optionally) the photon energy associated
+with the event
+"""
 @with_kw mutable struct EventList{T1<:AbstractVector,T2<:AbstractVector,T3<:AbstractMatrix}
     time::T1
     energy::T2=Float64[]
@@ -19,6 +32,10 @@ import Base: read, write, join, sort, sort!
     timesys::String=""
 end
 
+"""
+    read(::Type{EventList},filename::String, format::String)
+Read the EventList struct from a file. Only FITS file is supported currently.
+"""
 function read(::Type{EventList},filename::String, format::String)
     if format=="fits"
         return load_events_from_fits(filename)
@@ -27,6 +44,10 @@ function read(::Type{EventList},filename::String, format::String)
     end
 end
 
+"""
+    write(ev::EventList, filename::String, format::String)
+Write EventList to a file following its format. Only FITS file is supported currently.
+"""
 function write(ev::EventList, filename::String, format::String)
     if format=="fits"
         write_events_to_fits(filename, ev)
@@ -35,11 +56,20 @@ function write(ev::EventList, filename::String, format::String)
     end
 end
 
+"""
+    from_lc(lc::LightCurve)
+Create an `EventList` object from a `Lightcurve` object. 
+"""
 function from_lc(lc::LightCurve)
     times = [lc.time[i] for i in 1:length(lc.time) for _ in 1:lc.counts[i]]
     return EventList(time=times,gti=lc.gti)
 end
 
+"""
+    to_lc(ev::EventList, dt)
+    to_lc(ev::EventList, dt::Real, tstart::Real, tseg::Real)
+Convert `EventList` object to a `Lightcurve` object.
+"""
 function to_lc(ev::EventList, dt)
     if isempty(ev.gti)
         tstart=0
@@ -56,6 +86,13 @@ to_lc(ev::EventList, dt::Real,
                                                    tstart=tstart, tseg=tseg,
                                                    mjdref=ev.mjdref)
 
+"""
+    join(ev1::EventList, ev2::EventList)
+Join two `EventList` objects into one.
+If both are empty, an empty `EventList` is returned.
+GTIs are crossed if the event lists are over a common time interval,
+and appended otherwise.
+"""
 function join(ev1::EventList, ev2::EventList)
     new_ev = EventList(time=vcat(ev1.time, ev2.time))
     if ev1.dt!=ev2.dt
@@ -127,7 +164,11 @@ function join(ev1::EventList, ev2::EventList)
 
     return new_ev
 end
-                                            
+        
+"""
+    sort(ev::EventList)
+Sort the event list in time and return a new event list.
+"""
 function sort(ev::EventList)
     order = sortperm(ev.time)
     new_ev = deepcopy(ev)
@@ -135,11 +176,19 @@ function sort(ev::EventList)
     return new_ev
 end
 
+"""
+    sort!(ev::EventList)
+Sort (in place) the event list in time.
+"""
 function sort!(ev::EventList)
     order = sortperm(ev.time)
     apply_mask(ev, order)
 end
 
+"""
+    apply_mask(ev::EventList, mask::AbstractVector{T};) where {T<:Union{Bool,Int}}
+Apply a mask to all array attributes of the event list
+"""
 function apply_mask(ev::EventList, mask::AbstractVector{T};) where {T<:Union{Bool,Int}}
     for field in fieldnames(EventList)
         fval = getfield(ev, field)

@@ -9,7 +9,7 @@ end
 
 """
     load_gtis(fits_file::String; gtistring::String="GTI")
-Load Good Time Intervals (GTIs) from `HDU EVENTS` of file `fits_file`.
+Load Good Time Intervals (GTIs) from `EVENTS` HDU of a `fits_file`.
 (File is expected to be in FITS format.)
 """
 function load_gtis(fits_file::String, gtistring::String="GTI")
@@ -81,8 +81,7 @@ end
     create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Real};
                     safe_interval::AbstractVector{<:Real}=[0,0], min_length::Real=0,
                     dt::Real = -1, epsilon::Real = 0.001)
-Create GTI mask, allowing for non-constant ``dt``.
-Assumes that no overlaps are present between GTIs.
+Create GTI mask assuming that no overlaps are present between GTIs.
 """
 function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Real};
                          safe_interval::AbstractVector{<:Real}=[0,0], min_length::Real=0,
@@ -139,8 +138,8 @@ function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Re
 end
 
 """
-create_gti_from_condition(time::AbstractVector{<:Real}, condition::AbstractVector{Bool};
-                          safe_interval::AbstractVector{<:Real}=[0,0], dt::AbstractVector{<:Real}=Float64[])
+    create_gti_from_condition(time::AbstractVector{<:Real}, condition::AbstractVector{Bool};
+                              safe_interval::AbstractVector{<:Real}=[0,0], dt::AbstractVector{<:Real}=Float64[])
 Create a GTI list from a time array and a boolean mask (``condition``).
 """
 function create_gti_from_condition(time::AbstractVector{<:Real}, condition::AbstractVector{Bool};
@@ -180,10 +179,10 @@ end
                        operation::Function) where {T<:Real}
 From a list of GTIs, extract intervals depending upon the operation argument.
 
-operation : intersect<br>
+* operation : intersect \n
 Returns the common intervals among all the GTIs.
 
-operation : union<br>
+* operation : union \n
 Returns the union of all intervals of the GTIs.
 """
 function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}}, 

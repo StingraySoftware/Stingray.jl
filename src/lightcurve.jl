@@ -1,3 +1,12 @@
+"""
+    LightCurve(time::AbstractVector)
+    LightCurve(time::T1, counts::Vector{Int}=Int[], err::Vector{Float64}=Float64[]
+               input_counts::Bool=true, gti::T2=reshape(Float64[],0,2), err_dist::String=""
+               mjdref::Float64=0, dt::Float64=0, skip_checks::Bool=false, low_memory::Bool=false
+               mission::String="", instr::String="", header::String="")
+Makes a light curve object from an array of time stamps and an
+array of counts.
+"""
 @with_kw mutable struct LightCurve{T1<:AbstractVector,T2<:AbstractMatrix}
     time::T1
     counts::Vector{Int}=Int[]
@@ -14,6 +23,14 @@
     header::String=""
 end
 
+"""
+    make_lightcurves(toa::AbstractVector{<:Real}, dt::Real, 
+                     gti::AbstractMatrix{<:Real}; tseg::Real=-1, 
+                     tstart::Real=-1, mjdref::Real=0)
+Make a light curve out of photon arrival times, with a given time resolution `dt`.
+Note that `dt` should be larger than the native time resolution of the instrument
+that has taken the data
+"""
 function make_lightcurves(toa::AbstractVector{<:Real}, dt::Real, 
                           gti::AbstractMatrix{<:Real}; tseg::Real=-1, 
                           tstart::Real=-1, mjdref::Real=0)
@@ -49,6 +66,16 @@ function make_lightcurves(toa::AbstractVector{<:Real}, dt::Real,
                       skip_checks=true, err_dist="poisson")
 end
 
+"""
+    rebin(lc::LightCurve, dt_new::Real; method::String = "sum")
+Rebin the light curve to a new time resolution. 
+
+!!! note 
+
+    Be aware that if the new resolution is not an integer multiple of the 
+    previous time resolution, the last bin will be cut off by the fraction
+    left over by the integer division.
+"""
 function rebin(lc::LightCurve, dt_new::Real; method::String = "sum")
     if dt_new<lc.dt
         throw(ArgumentError("New time resolution must be larger than old time resolution!"))
