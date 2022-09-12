@@ -91,7 +91,7 @@ end
     @testset "test_raw_low_coherence" begin
         nbins = 2
         C, P1, P2 = @view(cross[1:nbins]), @view(pds1[1:nbins]), @view(pds2[1:nbins])
-        bsq = bias_term.(P1, P2, p1noise, p2noise, N)
+        bsq = Stingray.bias_term.(P1, P2, p1noise, p2noise, N)
         # must be lower than bsq!
         low_coh_cross = @. rand(Normal(bsq^0.5 / 10, bsq^0.5 / 100)) + 0.0im
         coh = raw_coherence.(low_coh_cross, P1, P2, p1noise, p2noise, N)
@@ -135,8 +135,8 @@ end
 
     @testset "test_fts_from_segments_cts_and_events_are_equal" begin
         N = round(Int, segment_size / dt)
-        fts_evts = collect(get_flux_iterable_from_segments(times, gti, segment_size, n_bin=N))
-        fts_cts = collect(get_flux_iterable_from_segments(
+        fts_evts = collect(Stingray.get_flux_iterable_from_segments(times, gti, segment_size, n_bin=N))
+        fts_cts = collect(Stingray.get_flux_iterable_from_segments(
                 bin_times, gti, segment_size, fluxes=counts))
         @test fts_evts == fts_cts
     end
@@ -343,8 +343,8 @@ end
     freq = fftfreq(N, dt)
     good = 2:(N÷2)
 
-    pdsabs = normalize_abs(pds, dt, size(lc,1))
-    pdsfrac = normalize_frac(pds, dt, size(lc,1), mean)
+    pdsabs = Stingray.normalize_abs(pds, dt, size(lc,1))
+    pdsfrac = Stingray.normalize_frac(pds, dt, size(lc,1), mean)
     pois_abs = poisson_level("abs", meanrate=meanrate)
     pois_frac = poisson_level("frac", meanrate=meanrate)
 
@@ -369,23 +369,23 @@ end
     pds_renorm_bksub = keepat!(abs2.(fft(lc_renorm_bksub)),good)
 
     @testset "test_leahy_bksub_var_vs_standard" begin
-        leahyvar = normalize_leahy_from_variance(pds_bksub, Statistics.var(lc_bksub), N)
+        leahyvar = Stingray.normalize_leahy_from_variance(pds_bksub, Statistics.var(lc_bksub), N)
         leahy =  2 .* pds ./ sum(lc)
         ratio = Statistics.mean(leahyvar./leahy)
         @test ratio≈1 rtol=0.01
     end
     @testset "test_abs_bksub" begin
-        ratio = normalize_abs(pds_bksub, dt, N) ./ normalize_abs(pds, dt, N)
+        ratio = Stingray.normalize_abs(pds_bksub, dt, N) ./ Stingray.normalize_abs(pds, dt, N)
         @test Statistics.mean(ratio)≈1 rtol=0.01
     end
     @testset "test_frac_renorm_constant" begin
-        ratio = normalize_frac(pds_renorm, dt, N, 1) ./ normalize_frac(pds, dt, N, mean)
+        ratio = Stingray.normalize_frac(pds_renorm, dt, N, 1) ./ Stingray.normalize_frac(pds, dt, N, mean)
         @test Statistics.mean(ratio)≈1 rtol=0.01
     end
     @testset "test_frac_to_abs_ctratesq" begin
         ratio = (
-            normalize_frac(pds, dt, N, mean)
-            ./ normalize_abs(pds, dt, N)
+            Stingray.normalize_frac(pds, dt, N, mean)
+            ./ Stingray.normalize_abs(pds, dt, N)
             .* meanrate .^ 2
         )
         @test Statistics.mean(ratio)≈1 rtol=0.01

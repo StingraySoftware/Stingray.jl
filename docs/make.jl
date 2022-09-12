@@ -5,8 +5,6 @@ DocMeta.setdocmeta!(Stingray, :DocTestSetup, :(using Stingray); recursive=true)
 
 makedocs(;
     modules=[Stingray],
-    authors="Aman Pandey",
-    repo="https://github.com/matteobachetti/Stingray.jl/blob/{commit}{path}#{line}",
     sitename="Stingray.jl",
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", "false") == "true",
@@ -16,10 +14,12 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "API Reference" => "api.md",
     ],
+    strict=true,
+    checkdocs=:export
 )
 
 deploydocs(;
-    repo="https://github.com/matteobachetti/Stingray.jl",
-    devbranch="main",
+    repo="https://github.com/StingraySoftware/Stingray.jl",
 )

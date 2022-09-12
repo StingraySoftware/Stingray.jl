@@ -1,3 +1,15 @@
+"""
+    positive_fft_bins(n_bin::Integer; include_zero::Bool = false)
+
+Give the range of positive frequencies of a complex FFT.
+This assumes we are using FFTW, where the positive
+frequencies come before the negative ones, the Nyquist frequency is
+included in the negative frequencies but only in even number of bins,
+and so on.
+This is mostly to avoid using the ``freq > 0`` mask, which is
+memory-hungry and inefficient with large arrays. We use instead a
+UnitRange object, giving the range of bins of the positive frequencies
+"""
 function positive_fft_bins(n_bin::Integer; include_zero::Bool = false)
     minbin = 2
     if include_zero
@@ -6,6 +18,18 @@ function positive_fft_bins(n_bin::Integer; include_zero::Bool = false)
     return (minbin : (n_bin+1) ÷ 2)
 end
 
+"""
+    poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrate::Real = 0.0)
+Poisson (white)-noise level in a periodogram of pure counting noise.
+* For Leahy normalization, this is:  
+    P = 2
+* For the fractional r.m.s. normalization, this is:  
+    ``P = \\frac{2}{\\mu}`` where ``\\mu`` is the average count rate
+* For the absolute r.m.s. normalization, this is:  
+    ``P = 2 \\mu``
+* Finally, for the unnormalized periodogram, this is:  
+    ``P = N_{ph}``
+"""
 function poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrate::Real = 0.0)
     if norm == "abs"
         return 2.0 * meanrate
@@ -20,6 +44,30 @@ function poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrat
     end
 end
 
+"""
+    normalize_frac(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer, 
+                   mean_flux::Real; background_flux::Real=0.0)
+
+Fractional rms normalization.
+    ``P = \\frac{P_{Leahy}}{\\mu} = \\frac{2T}{N_{ph}^2}P_{unnorm}``
+where ``\\mu`` is the mean count rate, `T` is the length of
+the observation, and ``N_{ph}`` the number of photons.
+Alternative formulas found in the literature substitute ``T=N\\,dt``,
+``\\mu=N_{ph}/T``, which give equivalent results.
+If the background can be estimated, one can calculate the source rms
+normalized periodogram as
+    ``P = P_{Leahy} * \\frac{\\mu}{(\\mu - \\beta)^2}``
+or
+    ``P = \\frac{2T}{(N_{ph} - \\beta T)^2}P_{unnorm}``
+where ``\\beta`` is the background count rate.
+This is also called the Belloni or Miyamoto normalization.
+In this normalization, the periodogram is in units of
+``(rms/mean)^2 Hz^{-1}``, and the squared root of the
+integrated periodogram will give the fractional rms in the
+required frequency range.
+Belloni & Hasinger (1990) A&A 230, 103
+Miyamoto et al. (1991), ApJ 383, 784
+"""
 function normalize_frac(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer, 
                         mean_flux::Real; background_flux::Real=0.0)
     if background_flux > 0
@@ -32,16 +80,67 @@ function normalize_frac(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin:
     return power
 end
 
+"""
+    normalize_abs(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer)
+
+Absolute rms normalization.
+    ``P = P_{frac} * \\mu^2``
+where ``\\mu`` is the mean count rate, or equivalently
+    ``P = \\frac{2}{T}P_{unnorm}``
+In this normalization, the periodogram is in units of
+``rms^2 Hz^{-1}``, and the squared root of the
+integrated periodogram will give the absolute rms in the
+required frequency range.
+e.g. Uttley & McHardy, MNRAS 323, L26
+"""
 normalize_abs(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer) = 
     @. unnorm_power * 2 / n_bin / dt
 
+"""
+    normalize_leahy_from_variance(unnorm_power::AbstractVector{<:Number}, 
+                                  variance::Real, n_bin::Integer)
+
+Leahy+83 normalization, from the variance of the lc.
+
+``P = \\frac{P_{unnorm}}{N <\\delta{x}^2>}``
+
+In this normalization, the periodogram of a single light curve
+is distributed according to a chi squared distribution with two
+degrees of freedom.  
+In this version, the normalization is obtained by the variance
+of the light curve bins, instead of the more usual version with the
+number of photons. This allows to obtain this normalization also
+in the case of non-Poisson distributed data.
+"""
 normalize_leahy_from_variance(unnorm_power::AbstractVector{<:Number}, 
                               variance::Real, n_bin::Integer) = 
     @. unnorm_power * 2 / (variance * n_bin)
 
+"""
+    normalize_leahy_poisson(unnorm_power::AbstractVector{<:Number}, n_ph::Real)
+
+Leahy+83 normalization.
+
+``P = \\frac{2}{N_{ph}} P_{unnorm}``
+
+In this normalization, the periodogram of a single light curve
+is distributed according to a chi squared distribution with two
+degrees of freedom.  
+Leahy et al. 1983, ApJ 266, 160
+"""
 normalize_leahy_poisson(unnorm_power::AbstractVector{<:Number}, n_ph::Real) = 
     @. unnorm_power * 2 / n_ph
 
+"""
+    normalize_periodograms(unnorm_power::AbstractVector{<:Number}, dt::Real, 
+                           n_bin::Integer; mean_flux=nothing, n_ph=nothing,
+                           variance=nothing, background_flux::Real=0.0, 
+                           norm::String="frac",power_type::String="all")
+
+Wrapper around all the normalize_NORM methods.
+Normalize the real part of the cross spectrum to Leahy (norm="leahy"), absolute ``{rms}^2`` 
+(norm="abs"), fractional ``{rms}^2`` (norm="frac") normalization, or not at all (norm="none").
+"""
 function normalize_periodograms(unnorm_power::AbstractVector{<:Number}, dt::Real, 
                                 n_bin::Integer; mean_flux=nothing, n_ph=nothing,
                                 variance=nothing, background_flux::Real=0.0, 
@@ -75,6 +174,17 @@ function normalize_periodograms(unnorm_power::AbstractVector{<:Number}, dt::Real
 
 end
 
+"""
+    bias_term(power1::Real, power2::Real, power1_noise::Real, 
+              power2_noise::Real, n_ave::Integer;
+              intrinsic_coherence::Real=1.0)
+
+Bias term needed to calculate the coherence.
+Introduced by Vaughan & Nowak 1997, ApJ 474, L43
+but implemented here according to the formulation in
+Ingram 2019, MNRAS 489, 392
+As recommended in the latter paper, returns 0 if n_ave > 500
+"""
 function bias_term(power1::Real, power2::Real, power1_noise::Real, 
                    power2_noise::Real, n_ave::Integer;
                    intrinsic_coherence::Real=1.0)
@@ -85,9 +195,16 @@ function bias_term(power1::Real, power2::Real, power1_noise::Real,
     return power1 * power2 - intrinsic_coherence * (power1 - power1_noise) * (power2 - power2_noise) / n_ave
 end
 
+"""
+    raw_coherence(cross_power::Number, power1::Real, power2::Real, 
+                  power1_noise::Real, power2_noise::Real, 
+                  n_ave::Integer; intrinsic_coherence::Real=1.0)
+
+Raw coherence estimations from cross and power spectra. To be used with dot broadcast for arrays.
+"""
 function raw_coherence(cross_power::Number, power1::Real, power2::Real, 
-                               power1_noise::Real, power2_noise::Real, 
-                               n_ave::Integer; intrinsic_coherence::Real=1.0)
+                       power1_noise::Real, power2_noise::Real, 
+                       n_ave::Integer; intrinsic_coherence::Real=1.0)
 
     bsq = bias_term(power1, power2, power1_noise, power2_noise, n_ave;
                     intrinsic_coherence=intrinsic_coherence)
@@ -99,9 +216,17 @@ function raw_coherence(cross_power::Number, power1::Real, power2::Real,
     return num / den
 end
 
+"""
+    estimate_intrinsic_coherence(cross_power::Complex, power1::Real,
+                                 power2::Real, power1_noise::Real, 
+                                 power2_noise::Real, n_ave::Integer)
+
+Estimate intrinsic coherence. To be used with dot broadcast for arrays.
+Use the iterative procedure from sec. 5 of Ingram 2019, MNRAS 489, 392
+"""
 function estimate_intrinsic_coherence(cross_power::Complex, power1::Real,
-                                              power2::Real, power1_noise::Real, 
-                                              power2_noise::Real, n_ave::Integer)
+                                      power2::Real, power1_noise::Real, 
+                                      power2_noise::Real, n_ave::Integer)
     new_coherence = 1.0
     old_coherence = 0.0
     count = 0
@@ -120,6 +245,18 @@ function estimate_intrinsic_coherence(cross_power::Complex, power1::Real,
     return new_coherence                                       
 end
 
+"""
+    error_on_averaged_cross_spectrum(cross_power:: AbstractVector{<:Complex}, 
+                                     seg_power:: AbstractVector{<:Real}, 
+                                     ref_power:: AbstractVector{<:Real}, n_ave::Integer,
+                                     seg_power_noise::Real, ref_power_noise::Real;
+                                     common_ref::Bool=false)
+
+Error on cross spectral quantities, From Ingram 2019.
+!!! note
+    This is only valid for a very large number of averaged powers.
+    Beware if n_ave < 50 or so.
+"""
 function error_on_averaged_cross_spectrum(cross_power:: AbstractVector{<:Complex}, 
                                           seg_power:: AbstractVector{<:Real}, 
                                           ref_power:: AbstractVector{<:Real}, n_ave::Integer,
@@ -162,12 +299,27 @@ function error_on_averaged_cross_spectrum(cross_power:: AbstractVector{<:Complex
     return dRe, dIm, dphi, dG
 end
 
+"""
+    cross_to_covariance(cross_power::Complex, ref_power::Real, 
+                        ref_power_noise::Real, delta_nu::Real)
+
+Convert a cross spectrum into a covariance spectrum.
+"""
 function cross_to_covariance(cross_power::Complex, ref_power::Real, 
                              ref_power_noise::Real, delta_nu::Real)
     # To be used with dot broadcast when need an array 
     return cross_power * sqrt(delta_nu / (ref_power - ref_power_noise))
 end
 
+"""
+    _which_segment_idx_fun(;binned::Bool=false, dt=nothing)
+
+Select which segment index function from ``gti.py`` to use.
+If ``binned`` is ``False``, call the unbinned function.
+If ``binned`` is not ``True``, call the binned function.
+Note that in the binned function ``dt`` is an optional parameter.
+We pass it if the user specifies it.
+"""
 function _which_segment_idx_fun(;binned::Bool=false, dt=nothing)
     if binned
         # Return a function, so that we can pass the correct dt as an argument.
@@ -177,6 +329,17 @@ function _which_segment_idx_fun(;binned::Bool=false, dt=nothing)
     end
 end
 
+"""
+    get_average_ctrate(times:: AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
+                       segment_size::Real; counts= nothing)
+
+Calculate the average count rate during the observation.
+This function finds the same segments that the averaged periodogram
+functions (`avg_cs_from_iterables`, `avg_pds_from_iterables` etc) will
+use, and returns the mean count rate. \n
+If `counts` is `None`, the input times are interpreted as events.
+Otherwise, the number of events is taken from `counts`
+"""
 function get_average_ctrate(times:: AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
                             segment_size::Real; counts= nothing)
     n_ph = 0.0
@@ -224,6 +387,13 @@ end
     end
 end
 
+"""
+    avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac", 
+                          use_common_mean::Bool=true,
+                          silent::Bool=false)
+
+Calculate the average periodogram from an iterable of light curves
+"""
 function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac", 
                                use_common_mean::Bool=true,
                                silent::Bool=false)
@@ -344,6 +514,20 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
     return results
 end
 
+"""
+    avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
+                                dt::Real; norm::String="frac")
+
+Like `avg_cs_from_iterables`, with default options that make it quick.
+Assumes that:
+* the flux iterables return counts/bin, no other units
+* the mean is calculated over the whole light curve, and normalization
+  is done at the end
+* no auxiliary PDSs are returned
+* only positive frequencies are returned
+* the spectrum is complex, no real parts or absolutes
+* no progress bars
+"""
 function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
                                      dt::Real; norm::String="frac")
     unnorm_cross = unnorm_pds1 = unnorm_pds2 = nothing
@@ -445,6 +629,20 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
     return results
 end
 
+"""
+    avg_cs_from_iterables(
+        flux_iterable1,
+        flux_iterable2,
+        dt::Real;
+        norm::String="frac",
+        use_common_mean::Bool=true,
+        silent::Bool=false,
+        fullspec::Bool=false,
+        power_type::String="all",
+        return_auxil::Bool=false)
+
+Calculate the average cross spectrum from an iterable of light curves
+"""
 function avg_cs_from_iterables(
     flux_iterable1,
     flux_iterable2,
@@ -692,6 +890,19 @@ function avg_cs_from_iterables(
     
 end
 
+"""
+    avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
+                        segment_size::Real, dt::Real; norm::String="frac",
+                        use_common_mean::Bool=true, silent::Bool=false, 
+                        fluxes=nothing, errors=nothing)
+
+Calculate the average periodogram from a list of event times or a light
+curve.
+If the input is a light curve, the time array needs to be uniformly sampled
+inside GTIs (it can have gaps outside), and the fluxes need to be passed
+through the `fluxes` array.
+Otherwise, times are interpeted as photon arrival times.
+"""
 function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
                              segment_size::Real, dt::Real; norm::String="frac",
                              use_common_mean::Bool=true, silent::Bool=false, 
@@ -715,6 +926,21 @@ function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix
     
 end
 
+"""
+    avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVector{<:Real}, 
+                       gti::AbstractMatrix{<:Real}, segment_size::Real, dt::Real; 
+                       norm::String="frac", use_common_mean::Bool=true, 
+                       fullspec::Bool=false, silent::Bool=false,
+                       power_type::String="all", fluxes1=nothing, fluxes2=nothing,
+                       errors1=nothing, errors2=nothing, return_auxil=false)
+                       
+Calculate the average cross spectrum from a list of event times or a light
+curve.
+If the input is a light curve, the time arrays need to be uniformly sampled
+inside GTIs (they can have gaps outside), and the fluxes need to be passed
+through the `fluxes1` and `fluxes2` arrays.
+Otherwise, times are interpeted as photon arrival times
+"""
 function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVector{<:Real}, 
                             gti::AbstractMatrix{<:Real}, segment_size::Real, dt::Real; 
                             norm::String="frac", use_common_mean::Bool=true, 

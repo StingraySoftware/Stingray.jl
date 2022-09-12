@@ -1,8 +1,17 @@
+"""
+    get_total_gti_length(gti::AbstractMatrix{<:Real}; minlen::Real=0.0)
+Calculate the total exposure during Good Time Intervals.
+"""
 function get_total_gti_length(gti::AbstractMatrix{<:Real}; minlen::Real=0.0)
     lengths = diff(gti; dims =2)
     return sum(x->x > minlen ? x : zero(x), lengths)
 end
 
+"""
+    load_gtis(fits_file::String; gtistring::String="GTI")
+Load Good Time Intervals (GTIs) from `EVENTS` HDU of a `fits_file`.
+(File is expected to be in FITS format.)
+"""
 function load_gtis(fits_file::String, gtistring::String="GTI")
     gti = FITS(fits_file) do lchdulist
         gtihdu = lchdulist[gtistring]
@@ -11,6 +20,10 @@ function load_gtis(fits_file::String, gtistring::String="GTI")
     return gti
 end
 
+"""
+    get_gti_from_hdu(gtihdu::TableHDU)
+Get the GTIs from a given FITS extension.
+"""
 function get_gti_from_hdu(gtihdu::TableHDU)
 
     if "START" in FITSIO.colnames(gtihdu)
@@ -21,14 +34,27 @@ function get_gti_from_hdu(gtihdu::TableHDU)
         stopstr = "Stop"
     end
 
-    gtistart = read(gtihdu,startstr)
-    gtistop = read(gtihdu,stopstr)
+    gtistart = FITSIO.read(gtihdu,startstr)
+    gtistop = FITSIO.read(gtihdu,stopstr)
 
-    return mapreduce(permutedims, vcat, 
-    [[a, b] for (a,b) in zip(gtistart, gtistop)])
+    final_gti = [[a, b] for (a,b) in zip(gtistart, gtistop)]
+
+    if isempty(final_gti)
+        return reshape(Float64[],0,2)
+    else
+        return mapreduce(permutedims, vcat, final_gti)
+    end
 end
 
-function check_gtis(gti::AbstractMatrix)
+"""
+    check_gtis(gti::AbstractMatrix{<:Real})
+Check if GTIs are well-behaved.
+Check that:
+1. the shape of the GTI array is correct;
+2. no start > end
+3. no overlaps.
+"""
+function check_gtis(gti::AbstractMatrix{<:Real})
 
     if ndims(gti) != 2 || size(gti,2) != 2
         throw(ArgumentError("Please check the formatting of the GTIs. 
@@ -51,6 +77,12 @@ function check_gtis(gti::AbstractMatrix)
     end
 end
 
+"""
+    create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Real};
+                    safe_interval::AbstractVector{<:Real}=[0,0], min_length::Real=0,
+                    dt::Real = -1, epsilon::Real = 0.001)
+Create GTI mask assuming that no overlaps are present between GTIs.
+"""
 function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Real};
                          safe_interval::AbstractVector{<:Real}=[0,0], min_length::Real=0,
                          dt::Real = -1, epsilon::Real = 0.001)
@@ -96,9 +128,20 @@ function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Re
         end
     end
 
-    return mask, mapreduce(permutedims, vcat, keepat!(new_gtis,new_gti_mask))
+    keepat!(new_gtis,new_gti_mask)
+
+    if isempty(new_gtis)
+        return mask, reshape(Float64[],0,2)
+    else
+        return mask, mapreduce(permutedims, vcat, new_gtis)
+    end
 end
 
+"""
+    create_gti_from_condition(time::AbstractVector{<:Real}, condition::AbstractVector{Bool};
+                              safe_interval::AbstractVector{<:Real}=[0,0], dt::AbstractVector{<:Real}=Float64[])
+Create a GTI list from a time array and a boolean mask (``condition``).
+"""
 function create_gti_from_condition(time::AbstractVector{<:Real}, condition::AbstractVector{Bool};
     safe_interval::AbstractVector{<:Real}=[0,0], dt::AbstractVector{<:Real}=Float64[])
     
@@ -124,9 +167,24 @@ function create_gti_from_condition(time::AbstractVector{<:Real}, condition::Abst
         end
         push!(gtis,[t0, t1])
     end
-    return mapreduce(permutedims, vcat, gtis)
+    if isempty(gtis)
+        return reshape(Float64[],0,2)
+    else
+        return mapreduce(permutedims, vcat, gtis)
+    end
 end
 
+"""
+    operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}}, 
+                       operation::Function) where {T<:Real}
+From a list of GTIs, extract intervals depending upon the operation argument.
+
+* operation : intersect \n
+Returns the common intervals among all the GTIs.
+
+* operation : union \n
+Returns the union of all intervals of the GTIs.
+"""
 function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}}, 
                             operation::Function) where {T<:Real}
 
@@ -152,9 +210,21 @@ function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}},
         push!(final_gti, [first(interval), last(interval)])
     end
 
-    return mapreduce(permutedims, vcat, final_gti)
+    if isempty(final_gti)
+        return reshape(Float64[],0,2)
+    else
+        return mapreduce(permutedims, vcat, final_gti)
+    end
 end
 
+"""
+    get_btis(gtis::AbstractMatrix{<:Real})
+    get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real}
+
+From GTIs, obtain bad time intervals, i.e. the intervals *not* covered
+by the GTIs. Custom start and end times of the total interval can also 
+be provided.
+"""
 function get_btis(gtis::AbstractMatrix{<:Real})
     if isempty(gtis)
         throw(ArgumentError("Empty GTI and no valid start_time and stop_time"))
@@ -185,9 +255,23 @@ function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real
         push!(btis, [first(interval), last(interval)])
     end
 
-    return mapreduce(permutedims, vcat, btis)
+    if isempty(btis)
+        return reshape(Float64[],0,2)
+    else
+        return mapreduce(permutedims, vcat, btis)
+    end
 end
 
+"""
+    time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real;
+                            fraction_step::Real=1, epsilon::Real=1e-5)
+Compute start/stop times of equal time intervals, compatible with GTIs.
+Used to start each FFT/PDS/cospectrum from the start of a GTI,
+and stop before the next gap in data (end of GTI).
+
+Fraction step can be used to specify the ratio of time step and
+segment_size (default is 1)
+"""
 function time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real;
                                   fraction_step::Real=1, epsilon::Real=1e-5)  
     spectrum_start_times = Float64[]
@@ -206,6 +290,18 @@ function time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Re
     return spectrum_start_times, spectrum_start_times .+ segment_size
 end
 
+"""
+    calculate_segment_bin_start(startbin::Integer, stopbin::Integer,
+                                nbin::Integer; fraction_step::Real=1)
+Get the starting indices of intervals of equal length.
+
+A bit like `Base.range` with the stop argument excluded.
+It checks that the last number is at least ``nbin`` less 
+than ``stopbin``. Useful when getting starting intervals 
+of equal chunks of a binned light curve. It is possible 
+to make these intervals sliding, through the ``fraction_step``
+parameter.
+"""
 function calculate_segment_bin_start(startbin::Integer, stopbin::Integer,
                                      nbin::Integer; fraction_step::Real=1)
     st = floor.(range(startbin, stopbin, step=Int(nbin * fraction_step)))
@@ -218,6 +314,19 @@ function calculate_segment_bin_start(startbin::Integer, stopbin::Integer,
     return st
 end
 
+"""
+    bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real,
+                            time::AbstractVector{<:Real}; dt=nothing, 
+                            fraction_step::Real=1, epsilon::Real=0.001)
+
+Compute start/stop times of equal time intervals, compatible with GTIs,
+and map them to the indices of an array of time stamps.
+Used to start each FFT/PDS/cospectrum from the start of a GTI,
+and stop before the next gap in data (end of GTI).
+In this case, it is necessary to specify the time array containing the
+times of the light curve bins.
+Returns start and stop bins of the intervals to use for the PDS.
+"""
 function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real,
                                  time::AbstractVector{<:Real}; dt=nothing, 
                                  fraction_step::Real=1, epsilon::Real=0.001)
@@ -260,6 +369,17 @@ function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Rea
     return spectrum_start_bins, spectrum_start_bins.+nbin 
 end
 
+"""
+    generate_indices_of_segment_boundaries_unbinned(times::AbstractVector{<:Real},
+                                                    gti::AbstractMatrix{<:Real},
+                                                    segment_size::Real)
+
+Get the indices of events from different segments of the observation.
+This is a resumable function, yielding the boundaries of each segment and the
+corresponding indices in the time array.
+"""
+function generate_indices_of_segment_boundaries_unbinned end
+
 @resumable function generate_indices_of_segment_boundaries_unbinned(times::AbstractVector{<:Real},
                                                                     gti::AbstractMatrix{<:Real},
                                                                     segment_size::Real)
@@ -272,6 +392,17 @@ end
         @yield s, e, idx0, idx1
     end
 end
+
+"""
+    generate_indices_of_segment_boundaries_binned(times::AbstractVector{<:Real},
+                                                  gti::AbstractMatrix{<:Real},
+                                                  segment_size::Real; dt=nothing)
+
+Get the indices of binned times from different segments of the observation.
+This is a resumable function, yielding the boundaries of each segment and the
+corresponding indices in the time array
+""" 
+function generate_indices_of_segment_boundaries_binned end
 
 @resumable function generate_indices_of_segment_boundaries_binned(times::AbstractVector{<:Real},
                                                                   gti::AbstractMatrix{<:Real},
