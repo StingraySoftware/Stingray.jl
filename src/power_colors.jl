@@ -1,8 +1,10 @@
 using Plots
 using Interpolations
 using LinearAlgebra
-using colors
+using Colors
 using Statistics
+using StatsPlots  # Import StatsPlots for error bars
+using DataFrames  # Import DataFrames to handle error bars
 
 DEFAULT_COLOR_CONFIGURATION = Dict(
     "center" => [4.51920, 0.453724],
@@ -26,66 +28,66 @@ DEFAULT_COLOR_CONFIGURATION = Dict(
     )
 )
 
-using Interpolations
-
 function _get_rms_span_functions(configuration=DEFAULT_COLOR_CONFIGURATION)
     rms_spans = configuration["rms_spans"]
 
-    x = collect(keys(rms_spans))
-    ymin = [v[1] for v in values(rms_spans)]
-    ymax = [v[2] for v in values(rms_spans)]
+    # Extract and sort unique x-values
+    x = sort(unique(collect(keys(rms_spans))))
+    ymin = [rms_spans[x_val][1] for x_val in x]
+    ymax = [rms_spans[x_val][2] for x_val in x]
 
-    ymin_func = LinearInterpolation(x, ymin)
-    ymax_func = LinearInterpolation(x, ymax)
+    # Create interpolation functions
+    ymin_func = LinearInterpolation(x, ymin, extrapolation_bc=Flat())
+    ymax_func = LinearInterpolation(x, ymax, extrapolation_bc=Flat())
 
     return ymin_func, ymax_func
 end
-
-function _create_rms_hue_plot(; polar=false, plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
+#help needed failing one test {MethodError: no method matching -(::Vector{Float64}, ::Float64)
+For element-wise subtraction, use broadcasting with dot syntax: array .- scalar}
+function create_rms_hue_plot(; polar=false, plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
     if polar
         fig = plot(proj=:polar)
-        rlims!(fig, (0, 0.75))
+        ylims!(fig, (0.0, 0.75))
         yticks!(fig, [0, 0.25, 0.5, 0.75, 1])
-        grid!(fig, true)
+        plot!(fig, grid=true)
     else
-        fig = plot(xlims=(0, 360), ylims=(0, 0.7), xlabel="Hue", ylabel="Fractional rms")
+        fig = plot(xlims=(0, 360), ylims=(0.0, 0.7), xlabel="Hue", ylabel="Fractional rms")
     end
-
     if !plot_spans
         return fig
     end
-
-    ymin_func, ymax_func = _get_rms_span_functions(configuration)
-
+    ymin_func, ymax_func = get_rms_span_functions(configuration)
     for (state, details) in configuration["state_definitions"]
         color = parse(Colorant, details["color"])
         xmin, xmax = details["hue_limits"]
-
-        x_func = x -> x
+        
+        xs = collect(range(xmin, stop=xmax, length=20))
+        
         if polar
-            x_func = x -> deg2rad(x)
-        end
-
-        xs = range(x_func(xmin), stop=x_func(xmax), length=20)
-        ymin_vals = ymin_func(range(xmin, stop=xmax, length=20))
-        ymax_vals = ymax_func(range(xmin, stop=xmax, length=20))
-
-        plot!(fig, xs, ymin_vals, fill_between=(ymin_vals, ymax_vals), fillalpha=0.1, color=color, label="")
-
-        if xmin < 0 && !polar
-            xs_extra = range(x_func(xmin + 360), stop=x_func(360), length=20)
-            ymin_vals_extra = ymin_func(range(xmin, stop=0, length=20))
-            ymax_vals_extra = ymax_func(range(xmin, stop=0, length=20))
-            plot!(fig, xs_extra, ymin_vals_extra, fill_between=(ymin_vals_extra, ymax_vals_extra), fillalpha=0.1, color=color, label="")
-        end
-        if xmax > 360 && !polar
-            xs_extra = range(x_func(0), stop=x_func(xmax - 360), length=20)
-            ymin_vals_extra = ymin_func(range(360, stop=xmax, length=20))
-            ymax_vals_extra = ymax_func(range(360, stop=xmax, length=20))
-            plot!(fig, xs_extra, ymin_vals_extra, fill_between=(ymin_vals_extra, ymax_vals_extra), fillalpha=0.1, color=color, label="")
+            # For polar plots, handle each point individually to avoid broadcasting issues
+            xs_rad = [deg2rad(x) for x in xs]
+            y_mins = [ymin_func(x) for x in xs]
+            y_maxs = [ymax_func(x) for x in xs]
+            
+            # Plot the minimum line
+            plot!(fig, xs_rad, y_mins, color=color, label="", alpha=0.5)
+            # Plot the maximum line
+            plot!(fig, xs_rad, y_maxs, color=color, label="", alpha=0.5)
+            # Fill between the lines
+            for i in 1:(length(xs)-1)
+                x_section = [xs_rad[i], xs_rad[i+1], xs_rad[i+1], xs_rad[i]]
+                y_section = [y_mins[i], y_mins[i+1], y_maxs[i+1], y_maxs[i]]
+                plot!(fig, x_section, y_section, seriestype=:shape, color=color, fillalpha=0.1, linewidth=0, label="")
+            end
+        else
+            # For Cartesian plots, standard approach works
+            ymin_vals = [ymin_func(x) for x in xs]
+            ymax_vals = [ymax_func(x) for x in xs]
+            # Calculate ribbon values explicitly
+            ribbon_vals = [ymax - ymin for (ymax, ymin) in zip(ymax_vals, ymin_vals)]
+            plot!(fig, xs, ymin_vals, ribbon=ribbon_vals, fillalpha=0.1, color=color, label="")
         end
     end
-
     return fig
 end
 
@@ -99,17 +101,18 @@ function _limit_angle_to_360(angle)
     return angle
 end
 
-function _hue_line_data(center, angle, ref_angle=3 * pi / 4)
+function _hue_line_data(center, angle; ref_angle=3 * pi / 4)
     plot_angle = mod(-angle + ref_angle, 2 * pi)
 
     m = tan(plot_angle)
     if isinf(m)
         x = fill(center[1], 20)
-        y = range(-4, stop=4, length=20)
+        y = collect(range(-4, stop=4, length=20))
     else
-        x = range(0, stop=4, length=20) .* sign(cos(plot_angle)) .+ center[1]
-        y = center[2] .+ m .* (x .- center[1])
+        x = collect(range(0, stop=4, length=20) .* sign(cos(plot_angle)) .+ center[1])
+        y = collect(center[2] .+ m .* (x .- center[1]))
     end
+    return x, y
 end
 
 function _trace_states(ax, configuration=DEFAULT_COLOR_CONFIGURATION; kwargs...)
@@ -125,37 +128,37 @@ function _trace_states(ax, configuration=DEFAULT_COLOR_CONFIGURATION; kwargs...)
         txt_y = radius * sin(hue_angle) + center[2]
         annotate!(ax, txt_x, txt_y, text(state, :black, :center))
 
-        x0, y0 = _hue_line_data(center, deg2rad(hue0), ref_angle=configuration["ref_angle"])
+        x0, y0 = _hue_line_data(center, deg2rad(hue0); ref_angle=configuration["ref_angle"])
         next_angle = hue0 + 5.0
-        x1, y1 = _hue_line_data(center, deg2rad(hue0), ref_angle=configuration["ref_angle"])
+        x1, y1 = _hue_line_data(center, deg2rad(hue0); ref_angle=configuration["ref_angle"])
 
         while next_angle <= hue1
             x0, y0 = x1, y1
-            x1, y1 = _hue_line_data(center, deg2rad(next_angle), ref_angle=configuration["ref_angle"])
+            x1, y1 = _hue_line_data(center, deg2rad(next_angle); ref_angle=configuration["ref_angle"])
             
-            polygon!(ax, [x0[1], x0[end], x1[end]], [y0[1], y0[end], y1[end]], color=color, lw=0, label="")
+            plot!(ax, [x0[1], x0[end], x1[end], x0[1]], [y0[1], y0[end], y1[end], y0[1]], seriestype=:shape, color=color, lw=0, label="")
             next_angle += 5.0
         end
     end
 end
 
-function _create_pc_plot(xrange=[-2, 2], yrange=[-2, 2], plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
+function _create_pc_plot(; xrange=(-2, 2), yrange=(-2, 2), plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
     fig = plot()
     xlabel!("log_{10}PC1")
     ylabel!("log_{10}PC2")
     
     if !plot_spans
-        xlims!(xrange)
-        ylims!(yrange)
+        xlims!(xrange...)
+        ylims!(yrange...)
         return fig
     end
     
     center = log10.(configuration["center"])
-    xlims!(center[1] .+ xrange)
-    ylims!(center[2] .+ yrange)
+    xlims!(center[1] + xrange[1], center[1] + xrange[2])
+    ylims!(center[2] + yrange[1], center[2] + yrange[2])
     
     for angle in 0:20:360
-        x, y = _hue_line_data(center, deg2rad(angle), ref_angle=configuration["ref_angle"])
+        x, y = _hue_line_data(center, deg2rad(angle); ref_angle=configuration["ref_angle"])
         plot!(x, y, lw=0.2, ls=:dot, color=:black, alpha=0.3)
     end
     
@@ -165,7 +168,7 @@ function _create_pc_plot(xrange=[-2, 2], yrange=[-2, 2], plot_spans=false, confi
     limit_angles = [_limit_angle_to_360(angle) for angle in limit_angles]
     
     for angle in limit_angles
-        x, y = _hue_line_data(center, deg2rad(angle), ref_angle=configuration["ref_angle"])
+        x, y = _hue_line_data(center, deg2rad(angle); ref_angle=configuration["ref_angle"])
         plot!(x, y, lw=1, ls=:dot, color=:black, alpha=1)
     end
     
@@ -174,13 +177,13 @@ function _create_pc_plot(xrange=[-2, 2], yrange=[-2, 2], plot_spans=false, confi
     return fig
 end
 
-#using number instead of float64(julia) to allow broader values
+
 function plot_power_colors(
-    p1,
-    p1e,
-    p2,
-    p2e;
-    plot_spans=false,
+    p1::Number,
+    p1e::Number,
+    p2::Number,
+    p2e::Number;
+    plot_spans::Bool=false,
     configuration=DEFAULT_COLOR_CONFIGURATION
     )
     """
@@ -218,14 +221,23 @@ function plot_power_colors(
     
     fig = _create_pc_plot(plot_spans=plot_spans, configuration=configuration)
     
-    scatter!([p1], [p2], marker=:circle, color=:black, zorder=10)
-    errorbar!([p1], [p2], xerr=[p1e], yerr=[p2e], alpha=0.4, color=:black)
+    scatter!([p1], [p2], marker=:circle, color=:black)
+    
+    df = DataFrame(x=[p1], y=[p2], xerr=[p1e], yerr=[p2e])
+    
+    # Use error bars correctly without `permute`
+    plot!(df.x, df.y, ribbon=(df.yerr, df.yerr), lw=0, alpha=0.4, color=:black)
+    plot!(df.x, df.y, ribbon=(df.xerr, df.xerr), lw=0, alpha=0.4, color=:black)
     
     return fig
 end
 
-#add docstring for documentation
-function plot_hues(rms, 
+function hue_from_power_color(pc1, pc2)
+    return atan.(pc2, pc1)  # Compute hue as the angle from power color components
+end
+
+function plot_hues(
+    rms, 
     rmse, 
     pc1,
     pc2; 
@@ -269,9 +281,88 @@ function plot_hues(rms,
         hues = rad2deg.(hues)
     end
     
-    plot!(hues, rms, yerror=rmse, seriestype=:scatter, alpha=0.5)  # Correct error bars
+    scatter!(hues, rms, yerror=rmse, alpha=0.5)  # Correct error bars
     
     return ax
+end
+
+function integrate_power_in_frequency_range(
+    frequency,
+    power,
+    freq_range;
+    power_err=nothing,
+    df=nothing,
+    m=1,
+    poisson_power=0
+)
+    """
+    Integrate the power over a frequency range.
+
+    Parameters
+    ----------
+    frequency : Vector{Number}
+        The frequency array.
+    power : Vector{Number}
+        The power at each frequency.
+    freq_range : Tuple{Number, Number} or Vector{Number}
+        The frequency range over which to integrate.
+
+    Other Parameters
+    ----------------
+    power_err : Vector{Number}, optional
+        The error on the power.
+    df : Number, optional
+        The frequency resolution.
+    m : Int, optional
+        The number of power spectrum averages.
+    poisson_power : Number, optional
+        The Poisson noise level.
+
+    Returns
+    -------
+    variance : Number
+        The integrated power (variance) in the frequency range.
+    variance_err : Number
+        The error on the integrated power.
+    """
+    frequency = collect(frequency)
+    power = collect(power)
+    
+    # Ensure freq_range is a two-element vector
+    if length(freq_range) != 2
+        throw(ArgumentError("freq_range must have exactly 2 elements"))
+    end
+    
+    f0, f1 = freq_range
+
+    # Calculate frequency resolution if not provided
+    df = isnothing(df) ? median(diff(frequency)) : df
+    
+    # Define frequency range including bin width
+    input_frequency_low_edges = frequency .- df / 2
+    input_frequency_high_edges = frequency .+ df / 2
+    
+    # Find indices of frequencies within the required range
+    idx = findall((input_frequency_high_edges .>= f0) .& (input_frequency_low_edges .<= f1))
+    
+    if isempty(idx)
+        throw(ArgumentError("No frequencies found in the range ($f0, $f1)"))
+    end
+    
+    # Get power values within range
+    power_in_range = power[idx]
+    
+    # Handle errors if provided
+    power_err_in_range = isnothing(power_err) ? power_in_range ./ sqrt(m) : power_err[idx]
+    
+    # Calculate total variance (integrated power)
+    # For power spectral density, integration is multiplication by df
+    variance = sum(power_in_range .- poisson_power) * df
+    
+    # Error propagation for the sum
+    variance_err = sqrt(sum(power_err_in_range.^2)) * df
+    
+    return variance, variance_err
 end
 
 function power_color(
@@ -349,10 +440,14 @@ function power_color(
     input_frequency_low_edges = frequency .- df / 2
     input_frequency_high_edges = frequency .+ df / 2
 
-    minimum(freq_edges) < minimum(input_frequency_low_edges) &&
-        throw(ArgumentError("The minimum frequency is larger than the first frequency edge"))
-    maximum(freq_edges) > maximum(input_frequency_high_edges) &&
-        throw(ArgumentError("The maximum frequency is lower than the last frequency edge"))
+    # Fix the error check - ensure freq_edges are within the range of input frequencies
+    if minimum(freq_edges) < minimum(input_frequency_low_edges)
+        throw(ArgumentError("The minimum frequency edge is lower than the available frequencies"))
+    end
+    
+    if maximum(freq_edges) > maximum(input_frequency_high_edges)
+        throw(ArgumentError("The maximum frequency edge is higher than the available frequencies"))
+    end
 
     power_err = isnothing(power_err) ? power ./ sqrt(m) : collect(power_err)
 
@@ -410,10 +505,18 @@ function hue_from_power_color(pc0, pc1; center=[4.51920, 0.453724])
     hue : Number
         The angle of the point with respect to the center, in radians.
     """
-    pc0 = log10(pc0)
-    pc1 = log10(pc1)
-    center = log10.(center)
-    return hue_from_logpower_color(pc0, pc1; center=center)
+    # Handle scalar case
+    if isa(pc0, Number) && isa(pc1, Number)
+        pc0_log = log10(pc0)
+        pc1_log = log10(pc1)
+        center_log = log10.(center)
+        return hue_from_logpower_color(pc0_log, pc1_log; center=center_log)
+    # Handle vector case - apply function element-wise
+    elseif isa(pc0, Vector) && isa(pc1, Vector)
+        return [hue_from_power_color(p0, p1; center=center) for (p0, p1) in zip(pc0, pc1)]
+    else
+        error("pc0 and pc1 must both be either scalars or vectors")
+    end
 end
 
 function hue_from_logpower_color(log10pc0, log10pc1; center=log10.([4.51920, 0.453724]))
