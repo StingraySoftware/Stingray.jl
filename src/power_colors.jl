@@ -2,7 +2,7 @@ using Plots
 using Interpolations
 using LinearAlgebra
 using colors
-using Interpolations
+using Statistics
 
 DEFAULT_COLOR_CONFIGURATION = Dict(
     "center" => [4.51920, 0.453724],
