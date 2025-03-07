@@ -110,30 +110,66 @@ function _hue_line_data(center, angle, ref_angle=3 * pi / 4)
         x = range(0, stop=4, length=20) .* sign(cos(plot_angle)) .+ center[1]
         y = center[2] .+ m .* (x .- center[1])
     end
+end
 
-    function _trace_states(ax, configuration=DEFAULT_COLOR_CONFIGURATION; kwargs...)
-        center = log10.(configuration["center"])
-        for (state, details) in configuration["state_definitions"]
-            color = details["color"]
-            hue0, hue1 = details["hue_limits"]
-            hue_mean = (hue0 + hue1) / 2
-            hue_angle = mod(-deg2rad(hue_mean) + 3 * pi / 4, 2 * pi)
-    
-            radius = 1.4
-            txt_x = radius * cos(hue_angle) + center[1]
-            txt_y = radius * sin(hue_angle) + center[2]
-            annotate!(ax, txt_x, txt_y, text(state, :black, :center))
-    
-            x0, y0 = _hue_line_data(center, deg2rad(hue0), ref_angle=configuration["ref_angle"])
-            next_angle = hue0 + 5.0
-            x1, y1 = _hue_line_data(center, deg2rad(hue0), ref_angle=configuration["ref_angle"])
-    
-            while next_angle <= hue1
-                x0, y0 = x1, y1
-                x1, y1 = _hue_line_data(center, deg2rad(next_angle), ref_angle=configuration["ref_angle"])
-                
-                polygon!(ax, [x0[1], x0[end], x1[end]], [y0[1], y0[end], y1[end]], color=color, lw=0, label="")
-                next_angle += 5.0
-            end
+function _trace_states(ax, configuration=DEFAULT_COLOR_CONFIGURATION; kwargs...)
+    center = log10.(configuration["center"])
+    for (state, details) in configuration["state_definitions"]
+        color = details["color"]
+        hue0, hue1 = details["hue_limits"]
+        hue_mean = (hue0 + hue1) / 2
+        hue_angle = mod(-deg2rad(hue_mean) + 3 * pi / 4, 2 * pi)
+
+        radius = 1.4
+        txt_x = radius * cos(hue_angle) + center[1]
+        txt_y = radius * sin(hue_angle) + center[2]
+        annotate!(ax, txt_x, txt_y, text(state, :black, :center))
+
+        x0, y0 = _hue_line_data(center, deg2rad(hue0), ref_angle=configuration["ref_angle"])
+        next_angle = hue0 + 5.0
+        x1, y1 = _hue_line_data(center, deg2rad(hue0), ref_angle=configuration["ref_angle"])
+
+        while next_angle <= hue1
+            x0, y0 = x1, y1
+            x1, y1 = _hue_line_data(center, deg2rad(next_angle), ref_angle=configuration["ref_angle"])
+            
+            polygon!(ax, [x0[1], x0[end], x1[end]], [y0[1], y0[end], y1[end]], color=color, lw=0, label="")
+            next_angle += 5.0
         end
     end
+end
+
+function _create_pc_plot(xrange=[-2, 2], yrange=[-2, 2], plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
+    fig = plot()
+    xlabel!("log_{10}PC1")
+    ylabel!("log_{10}PC2")
+    
+    if !plot_spans
+        xlims!(xrange)
+        ylims!(yrange)
+        return fig
+    end
+    
+    center = log10.(configuration["center"])
+    xlims!(center[1] .+ xrange)
+    ylims!(center[2] .+ yrange)
+    
+    for angle in 0:20:360
+        x, y = _hue_line_data(center, deg2rad(angle), ref_angle=configuration["ref_angle"])
+        plot!(x, y, lw=0.2, ls=:dot, color=:black, alpha=0.3)
+    end
+    
+    scatter!([center[1]], [center[2]], marker=:+, color=:black)
+    
+    limit_angles = Set(vcat([configuration["state_definitions"][state]["hue_limits"] for state in keys(configuration["state_definitions"]) ]...))
+    limit_angles = [_limit_angle_to_360(angle) for angle in limit_angles]
+    
+    for angle in limit_angles
+        x, y = _hue_line_data(center, deg2rad(angle), ref_angle=configuration["ref_angle"])
+        plot!(x, y, lw=1, ls=:dot, color=:black, alpha=1)
+    end
+    
+    _trace_states(fig, configuration=configuration, alpha=0.1)
+    
+    return fig
+end
