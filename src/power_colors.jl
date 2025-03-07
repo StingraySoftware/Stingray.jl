@@ -173,3 +173,104 @@ function _create_pc_plot(xrange=[-2, 2], yrange=[-2, 2], plot_spans=false, confi
     
     return fig
 end
+
+#using number instead of float64(julia) to allow broader values
+function plot_power_colors(
+    p1,
+    p1e,
+    p2,
+    p2e;
+    plot_spans=false,
+    configuration=DEFAULT_COLOR_CONFIGURATION
+    )
+    """
+    Plot power colors.
+
+    Parameters
+    ----------
+    p1 : Number
+        The first power value.
+    p1e : Number
+        The error in the first power value.
+    p2 : Number
+        The second power value.
+    p2e : Number
+        The error in the second power value.
+
+    Other Parameters
+    ----------------
+    center : (Number, Number)
+        The center coordinates of the plot. Default is (4.51920, 0.453724).
+    plot_spans : Bool
+        Whether to plot the spans. Default is false.
+    configuration: Dict
+        The color configuration to use. Default is DEFAULT_COLOR_CONFIGURATION.
+
+    Returns
+    -------
+    fig : Plot
+        The Julia Plot object representing the power color plot.
+    """
+    p1e = 1 / p1 * p1e
+    p2e = 1 / p2 * p2e
+    p1 = log10(p1)
+    p2 = log10(p2)
+    
+    fig = _create_pc_plot(plot_spans=plot_spans, configuration=configuration)
+    
+    scatter!([p1], [p2], marker=:circle, color=:black, zorder=10)
+    errorbar!([p1], [p2], xerr=[p1e], yerr=[p2e], alpha=0.4, color=:black)
+    
+    return fig
+end
+
+#add docstring for documentation
+function plot_hues(rms, 
+    rmse, 
+    pc1,
+    pc2; 
+    polar=false, 
+    plot_spans=false, 
+    configuration=DEFAULT_COLOR_CONFIGURATION
+    )
+    """
+    Plot hues.
+
+    Parameters
+    ----------
+    rms : Array{Number}
+        The root mean square values.
+    rmse : Array{Number}
+        The errors in the root mean square values.
+    pc1 : Array{Number}
+        The first power color component.
+    pc2 : Array{Number}
+        The second power color component.
+
+    Other Parameters
+    ----------------
+    polar : Bool
+        Whether to use a polar plot. Default is false.
+    plot_spans : Bool
+        Whether to plot the spans. Default is false.
+    configuration: Dict
+        The color configuration to use. Default is DEFAULT_COLOR_CONFIGURATION.
+
+    Returns
+    -------
+    ax : Plot
+        The Julia Plot object representing the hues plot.
+    """
+    hues = hue_from_power_color(collect(pc1), collect(pc2))  # Ensure arrays
+    
+    ax = _create_rms_hue_plot(polar=polar, plot_spans=plot_spans, configuration=configuration)
+    hues = mod.(hues, 2 * pi)
+    if !polar
+        hues = rad2deg.(hues)
+    end
+    
+    plot!(hues, rms, yerror=rmse, seriestype=:scatter, alpha=0.5)  # Correct error bars
+    
+    return ax
+end
+
