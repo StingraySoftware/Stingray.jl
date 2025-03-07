@@ -383,3 +383,64 @@ function power_color(
 
     return pc0, pc0_err, pc1, pc1_err
 end
+
+function hue_from_power_color(pc0, pc1; center=[4.51920, 0.453724])
+    """
+    Measure the angle of a point in the log-power color diagram with respect to the center.
+
+    Angles are measured in radians, **in the clockwise direction**, with respect to a line oriented
+    at -45 degrees with respect to the horizontal axis.
+
+    See Heil et al. 2015, MNRAS, 448, 3348.
+
+    Parameters
+    ----------
+    pc0 : Number
+        The (linear, not log!) power color in the first frequency range.
+    pc1 : Number
+        The (linear, not log!) power color in the second frequency range.
+
+    Other Parameters
+    ----------------
+    center : Vector{Number}, optional, default [4.51920, 0.453724]
+        The coordinates of the center of the power color diagram.
+
+    Returns
+    -------
+    hue : Number
+        The angle of the point with respect to the center, in radians.
+    """
+    pc0 = log10(pc0)
+    pc1 = log10(pc1)
+    center = log10.(center)
+    return hue_from_logpower_color(pc0, pc1; center=center)
+end
+
+function hue_from_logpower_color(log10pc0, log10pc1; center=log10.([4.51920, 0.453724]))
+    """
+    Measure the angle of a point in the log-power color diagram with respect to the center.
+
+    Angles are measured in radians, **in the clockwise direction**, with respect to a line oriented
+    at -45 degrees with respect to the horizontal axis.
+
+    See Heil et al. 2015, MNRAS, 448, 3348.
+
+    Parameters
+    ----------
+    log10pc0 : Number
+        The log10 power color in the first frequency range.
+    log10pc1 : Number
+        The log10 power color in the second frequency range.
+
+    Other Parameters
+    ----------------
+    center : Vector{Number}, optional, default log10([4.51920, 0.453724])
+        The coordinates of the center of the power color diagram.
+
+    Returns
+    -------
+    hue : Number
+        The angle of the point with respect to the center, in radians.
+    """
+    return (3 / 4) * pi - atan(log10pc1 - center[2], log10pc0 - center[1])
+end
