@@ -43,7 +43,6 @@ function _get_rms_span_functions(configuration=DEFAULT_COLOR_CONFIGURATION)
     return ymin_func, ymax_func
 end
 #help needed failing one test {MethodError: no method matching -(::Vector{Float64}, ::Float64)
-For element-wise subtraction, use broadcasting with dot syntax: array .- scalar}
 function create_rms_hue_plot(; polar=false, plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
     if polar
         fig = plot(proj=:polar)
