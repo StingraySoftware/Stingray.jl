@@ -1,14 +1,23 @@
 using Test
 using DelimitedFiles
+using Downloads
 
-# Including sampledata.jl from the correct path
+# Define the URL of the file later on when we we want to import datsets from stingray software we can do it in here and remove this function this just for following the guidelines of importing
+const LC_FILE_URL = "https://raw.githubusercontent.com/StingraySoftware/stingray/main/stingray/datasets/lc_sample.txt"
+const LC_FILE_PATH = joinpath(@__DIR__, "lc_sample.txt")
+# here i have created function that downloads the datasets from the provided url for testing purposes
+
+if !isfile(LC_FILE_PATH)
+    Downloads.download(LC_FILE_URL, LC_FILE_PATH)
+end
+
+# Including sampledata.jl
 include("../src/sampledata.jl")
 
 # Constants
 const FIRST_LINE = (1.109110400703125000e08, 4.120000061392784119e03)
 const LAST_LINE = (1.109138078203125000e08, 2.619200039029121399e03)
 const FILE_LENGTH = 22143
-const LC_FILE_PATH = joinpath(@__DIR__, "../src/datasets", "lc_sample.txt")
 
 @testset "Test Sample Data" begin
     @testset "Test File Exists" begin
