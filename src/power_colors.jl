@@ -274,3 +274,112 @@ function plot_hues(rms,
     return ax
 end
 
+function power_color(
+    frequency,
+    power;
+    power_err=nothing,
+    freq_edges=[1 / 256, 1 / 32, 0.25, 2.0, 16.0],
+    df=nothing,
+    m=1,
+    freqs_to_exclude=nothing,
+    poisson_power=0,
+    return_log=false
+)
+    """
+    Calculate two power colors from a power spectrum.
+
+    Power colors are an alternative to spectral colors to understand the spectral state of an
+    accreting source. They are defined as the ratio of the power in two frequency ranges,
+    analogously to the colors calculated from electromagnetic spectra.
+
+    This function calculates two power colors, using the four frequency ranges contained
+    between the five frequency edges in `freq_edges`. Given [f0, f1, f2, f3, f4], the
+    two power colors are calculated as the following ratios of the integrated power
+    (which are variances):
+
+    - PC0 = Var([f0, f1]) / Var([f2, f3])
+    - PC1 = Var([f1, f2]) / Var([f3, f4])
+
+    Errors are calculated using simple error propagation from the integrated power errors.
+
+    See Heil et al. 2015, MNRAS, 448, 3348.
+
+    Parameters
+    ----------
+    frequency : Vector{Number}
+        The frequencies of the power spectrum.
+    power : Vector{Number}
+        The power at each frequency.
+
+    Other Parameters
+    ----------------
+    power_err : Vector{Number}, optional
+        The power error bar at each frequency.
+    freq_edges : Vector{Number}, optional
+        The five edges defining the four frequency intervals to use to calculate the power color.
+    df : Number, optional
+        The frequency resolution of the input data. If `nothing`, it is calculated from the median difference of input frequencies.
+    m : Int, optional
+        The number of segments and/or contiguous frequency bins averaged to obtain power.
+    freqs_to_exclude : Vector{Tuple{Number, Number}}, optional
+        The ranges of frequencies to exclude from the calculation of the power color.
+    poisson_power : Number, optional
+        The Poisson noise level of the power spectrum.
+    return_log : Bool, optional
+        Return the base-10 logarithm of the power color and the errors.
+
+    Returns
+    -------
+    PC0 : Number
+        The first power color.
+    PC0_err : Number
+        The error on the first power color.
+    PC1 : Number
+        The second power color.
+    PC1_err : Number
+        The error on the second power color.
+    """
+    freq_edges = collect(freq_edges)
+    length(freq_edges) == 5 || throw(ArgumentError("freq_edges must have 5 elements"))
+
+    frequency = collect(frequency)
+    power = collect(power)
+
+    df = isnothing(df) ? median(diff(frequency)) : df
+    input_frequency_low_edges = frequency .- df / 2
+    input_frequency_high_edges = frequency .+ df / 2
+
+    minimum(freq_edges) < minimum(input_frequency_low_edges) &&
+        throw(ArgumentError("The minimum frequency is larger than the first frequency edge"))
+    maximum(freq_edges) > maximum(input_frequency_high_edges) &&
+        throw(ArgumentError("The maximum frequency is lower than the last frequency edge"))
+
+    power_err = isnothing(power_err) ? power ./ sqrt(m) : collect(power_err)
+
+    if !isnothing(freqs_to_exclude)
+        for (f0, f1) in freqs_to_exclude
+            frequency_mask = (input_frequency_low_edges .> f0) .& (input_frequency_high_edges .< f1)
+            idx0, idx1 = searchsortedfirst(frequency, f0), searchsortedlast(frequency, f1)
+            power[frequency_mask] .= mean([power[idx0], power[idx1]])
+        end
+    end
+
+    var00, var00_err = integrate_power_in_frequency_range(frequency, power, freq_edges[1:2], power_err=power_err, df=df, m=m, poisson_power=poisson_power)
+    var01, var01_err = integrate_power_in_frequency_range(frequency, power, freq_edges[3:4], power_err=power_err, df=df, m=m, poisson_power=poisson_power)
+    var10, var10_err = integrate_power_in_frequency_range(frequency, power, freq_edges[2:3], power_err=power_err, df=df, m=m, poisson_power=poisson_power)
+    var11, var11_err = integrate_power_in_frequency_range(frequency, power, freq_edges[4:5], power_err=power_err, df=df, m=m, poisson_power=poisson_power)
+
+    pc0 = var00 / var01
+    pc1 = var10 / var11
+    pc0_err = pc0 * (var00_err / var00 + var01_err / var01)
+    pc1_err = pc1 * (var10_err / var10 + var11_err / var11)
+
+    if return_log
+        pc0_err = 1 / pc0 * pc0_err
+        pc1_err = 1 / pc1 * pc1_err
+        pc0 = log10(pc0)
+        pc1 = log10(pc1)
+    end
+
+    return pc0, pc0_err, pc1, pc1_err
+end
