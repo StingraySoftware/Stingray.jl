@@ -1,13 +1,7 @@
-# If your module is called Stingray
-using Stingray
-
-# Or, if you just want to include the file directly:
-include("../src/power_colors.jl")  # Adjust path if needed
-
 using Test
 using Random
 using Distributions
-
+include("../src/power_colors.jl")
 rng = MersenneTwister(1259723)
 
 struct TestPowerColor

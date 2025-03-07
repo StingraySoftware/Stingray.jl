@@ -3,8 +3,8 @@ using Interpolations
 using LinearAlgebra
 using Colors
 using Statistics
-using StatsPlots  # Import StatsPlots for error bars
-using DataFrames  # Import DataFrames to handle error bars
+using StatsPlots
+using DataFrames
 
 DEFAULT_COLOR_CONFIGURATION = Dict(
     "center" => [4.51920, 0.453724],
