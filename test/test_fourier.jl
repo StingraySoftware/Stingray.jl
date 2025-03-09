@@ -261,11 +261,8 @@ end
             errors=errs,
         )
         # The variance is not _supposed_ to be equal, when we specify errors
-        if use_common_mean
-            compare_tables(out_ev, out_ct, rtol=0.01, discard=["variance"])
-        else
-            compare_tables(out_ev, out_ct, rtol=0.1, discard=["variance"])
-        end
+        rtol_value = use_common_mean ? 0.01 : 0.1
+        compare_tables(out_ev, out_ct, rtol=rtol_value, discard=["variance"])
     end
 
     @testset "test_avg_cs_cts_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]
@@ -291,11 +288,8 @@ end
             fluxes1=counts,
             fluxes2=counts2,
         )
-        if use_common_mean
-            compare_tables(out_ev, out_ct, rtol=0.01)
-        else
-            compare_tables(out_ev, out_ct, rtol=0.1)
-        end
+        rtol_value = use_common_mean ? 0.01 : 0.1
+        compare_tables(out_ev, out_ct, rtol=rtol_value)
     end
 
     @testset "test_avg_cs_cts_and_err_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]
