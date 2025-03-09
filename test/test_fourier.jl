@@ -319,11 +319,8 @@ end
         )
         discard = [m for m in propertynames(out_ev) if m == :variance]
 
-        if use_common_mean
-            compare_tables(out_ev, out_ct, rtol=0.01, discard=discard)
-        else
-            compare_tables(out_ev, out_ct, rtol=0.1, discard=discard)
-        end
+        rtol_value = use_common_mean ? 0.01 : 0.1
+        compare_tables(out_ev, out_ct, rtol=rtol_value, discard=discard)
     end
 end
 
