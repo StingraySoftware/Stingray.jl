@@ -4,10 +4,9 @@ using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, Metadata, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
 
-# ✅ LoggingConfig module ko properly include karo
 include("loggingconfig.jl")
 using .LoggingConfig
-setup_logger()  # ✅ Ensure karo ye function LoggingConfig module me defined ho
+setup_logger()  
 
 include("fourier.jl")
 export positive_fft_bins
@@ -37,4 +36,4 @@ export bin_intervals_from_gtis
 
 include("utils.jl")
 
-end # module Stingray
+end 
