@@ -1,8 +1,11 @@
 using Test
 using Random
 using Distributions
+
+rng = Random.Xoshiro(1259723)
+Random.seed!(42)
+
 include("../src/power_colors.jl")
-rng = MersenneTwister(1259723)
 
 struct TestPowerColor
     freq::Vector{Float64}
@@ -25,8 +28,7 @@ function setup_test()
 
     # Ensure power_color returns the expected number of values
     result = power_color(freq, power; return_log=true)
-    println("DEBUG: power_color return_log output: ", result)
-
+    
     if length(result) < 4
         error("Unexpected return value from power_color: ", result)
     end
@@ -58,27 +60,23 @@ test_case = setup_test()
     @test_throws ArgumentError power_color(test_case.freq, test_case.power; freq_edges=[1])
     @test_throws ArgumentError power_color(test_case.freq, test_case.power; freq_edges=[1,2,3,4,5,6])
 
-    # ✅ Ensure `freqs_to_exclude` is properly formatted before testing
+    # Ensure `freqs_to_exclude` is properly formatted before testing
     valid_exclusions = [Tuple(f) for f in ([1, 1.1], [3.0, 4.0], [4.5, 5.5])]
     
     for fte in valid_exclusions
-        println("DEBUG: Testing with valid freqs_to_exclude: ", fte)
         try
             power_color(test_case.freq, test_case.power; freqs_to_exclude=[fte])
         catch e
-            println("DEBUG: Caught exception: ", e)
             @test false  # Should not reach here
         end
     end
 
-    # ✅ Check that excluding frequencies doesn't break calculations
-    println("DEBUG: Running test with valid freqs_to_exclude = [(1, 1.1)]")
+    # Check that excluding frequencies doesn't break calculations
     pc0, _, pc1, _ = power_color(test_case.freq, test_case.power; freqs_to_exclude=[(1, 1.1)])
     @test isapprox(pc0, 1.0; atol=0.001)
     @test isapprox(pc1, 1.0; atol=0.001)
 
-    # ✅ Check power_err variations to ensure error propagation works correctly
-    println("DEBUG: Checking power_err variations")
+    # Check power_err variations to ensure error propagation works correctly
     pc0, pc0_err, pc1, pc1_err = power_color(test_case.freq, test_case.power; power_err=test_case.power / 2)
     pc0e, pc0e_err, pc1e, pc1e_err = power_color(test_case.freq, test_case.power; power_err=test_case.power)
 
@@ -89,10 +87,9 @@ test_case = setup_test()
     @test isapprox(pc0e_err / pc0_err, 2.0; atol=0.001)
     @test isapprox(pc1e_err / pc1_err, 2.0; atol=0.001)
 
-    # ✅ Hue testing
+    # Hue testing
     center = (4.51920, 0.453724)
     log_center = log10.(center)
-    println("DEBUG: Running Hue Testing")
     for angle in range(0, stop=380, step=20)
         rad_angle = deg2rad(angle)
         factor = rand(rng, Uniform(0.1, 10))
