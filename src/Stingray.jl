@@ -2,7 +2,8 @@ module Stingray
 
 using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, Metadata, NaNMath, FITSIO, Intervals
-using ProgressBars: tqdm as show_progress 
+using ProgressBars: tqdm as show_progress
+using plots, DataFrames, StatsPlots, Colors, LinearAlgebra, Interpolations
 
 include("fourier.jl")
 export positive_fft_bins
@@ -32,4 +33,13 @@ export bin_intervals_from_gtis
 
 include("utils.jl")
 
-end 
+include("power_color.jl")
+export plot_power_colors
+export hue_from_power_color
+export plot_hues
+export integrate_power_in_frequency_range
+export power_color
+export hue_from_power_color
+export hue_from_logpower_color
+
+end
