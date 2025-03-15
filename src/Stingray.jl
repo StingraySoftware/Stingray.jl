@@ -33,7 +33,7 @@ export bin_intervals_from_gtis
 
 include("utils.jl")
 
-include("power_color.jl")
+include("power_colors.jl")
 export plot_power_colors
 export hue_from_power_color
 export plot_hues
