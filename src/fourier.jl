@@ -360,14 +360,6 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
                          common_mean, common_variance, nothing, nothing, nothing, nothing, 
                          nothing, nothing, nothing, nothing, nothing, nothing)
 
-    #results = attach_metadata(results,(n= n_bin, m= n_ave, dt= dt,
-    #                     norm= norm,
-    #                     df= 1 / (dt * n_bin),
-    #                     nphots= n_ph,
-    #                     mean= common_mean,
-    #                     variance= common_variance,
-    #                     segment_size= dt * n_bin))
-
     return results
 end
 
@@ -460,18 +452,6 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
                          common_mean, nothing, n_ph1, n_ph2, common_mean1, common_mean2, 
                          "all", false, nothing, nothing, nothing, nothing)
 
-    #results = attach_metadata(results,(n= n_bin, m= n_ave, dt= dt,
-    #                     norm= norm,
-    #                    df= 1 / (dt * n_bin),
-    #                     nphots= n_ph,
-     #                    nphots1= n_ph1, nphots2= n_ph2,
-      #                   variance= nothing,
-       #                  mean= common_mean,
-        #                 mean1= common_mean1,
-         #                mean2= common_mean2,
-          #               power_type= "all",
-           #              fullspec= false,
-            #             segment_size= dt * n_bin))
 
     return results
 end
@@ -707,22 +687,6 @@ function avg_cs_from_iterables(
                          power_type, fullspec, common_mean1 / dt, common_mean2 / dt, 
                          common_variance1, common_variance2)
 
-    #results = attach_metadata(results,(n= n_bin, m= n_ave, dt= dt,
-    #                     norm= norm,
-    #                     df= 1 / (dt * n_bin),
-    #                     segment_size= dt * n_bin,
-    #                     nphots= n_ph,
-    #                     nphots1= n_ph1, nphots2= n_ph2,
-    #                     countrate1= common_mean1 / dt,
-    #                     countrate2= common_mean2 / dt,
-    #                     mean= common_mean,
-    #                     mean1= common_mean1,
-    #                     mean2= common_mean2,
-    #                     power_type= power_type,
-    #                     fullspec= fullspec,
-    #                     variance= common_variance,
-    #                     variance1= common_variance1,
-    #                     variance2= common_variance2))
 
     return results
     
@@ -744,9 +708,7 @@ function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix
     cross = avg_pds_from_iterable(flux_iterable, dt, norm=norm,
                                   use_common_mean=use_common_mean,
                                   silent=silent)
-    #if !isnothing(cross)
-    #    attach_metadata(cross,(gti=gti,))
-    #end
+
     if !isnothing(cross)
         cross.gti = gti
     end
@@ -803,9 +765,6 @@ function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVe
             return_auxil=return_auxil
         )
     end
-    #if !isnothing(results)
-    #    attach_metadata(results,(gti=gti,))
-    #end
     if !isnothing(results)
         results.gti = gti
     end
