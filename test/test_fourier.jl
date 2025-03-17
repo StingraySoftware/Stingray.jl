@@ -28,7 +28,7 @@ function compare_tables(table1, table2; rtol=0.001, discard = [])
 
     table1 = Metadata.drop_metadata(table1)
     table2 = Metadata.drop_metadata(table2)
-
+    
     for field in names(table1)
         if field in discard
             continue
