@@ -1,8 +1,8 @@
 module Stingray
 
 using ResumableFunctions, StatsBase, Statistics, DataFrames
-using FFTW, Metadata, NaNMath, FITSIO, Intervals
-using ProgressBars: tqdm as show_progress 
+using FFTW, NaNMath, FITSIO, Intervals
+using ProgressBars: tqdm as show_progress
 
 include("fourier.jl")
 export positive_fft_bins
@@ -32,4 +32,4 @@ export bin_intervals_from_gtis
 
 include("utils.jl")
 
-end 
+end
