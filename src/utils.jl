@@ -34,9 +34,9 @@ function contiguous_regions(condition::AbstractVector{Bool})
 
     if condition[end]
         # If the end of condition is True, append the length of the array
-        push!(idx, condition.size+1)
+        push!(idx, condition.size + 1)
     end
 
     # Reshape the result into two columns
-    return reshape(idx,2,length(idx) ÷ 2)'
+    return reshape(idx, 2, length(idx) ÷ 2)'
 end

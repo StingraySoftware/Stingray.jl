@@ -201,6 +201,7 @@ function error_on_averaged_cross_spectrum(
         dphi = @. NaNMath.sqrt(
             power_over_2n * (seg_power / (Gsq - bsq) - 1 / (ref_power - ref_power_noise)),
         )
+                  
     else
         PrPs = ref_power .* seg_power
         dRe =
@@ -294,6 +295,7 @@ end
                     range(0, segment_size, length = n_bin + 1),
                 ).weights
             @yield NamedTuple{(:counts,)}((cts,))
+
         else
             counts = float.(@view fluxes[idx0+1:idx1])
             if !isnothing(errors)
@@ -332,6 +334,7 @@ function avg_pds_from_iterable(
 
     for flux_tuple in local_show_progress(flux_iterable)
         if isnothing(flux_tuple) || all(iszero, flux_tuple.counts)
+
             continue
         end
 
@@ -339,8 +342,10 @@ function avg_pds_from_iterable(
         # variance.
         flux = flux_tuple.counts
         variance = nothing
+
         if hasproperty(flux_tuple, :errors)
             err = flux_tuple.errors
+
             variance = Statistics.mean(err)^2
         end
 
@@ -367,13 +372,16 @@ function avg_pds_from_iterable(
         end
         # No need for the negative frequencies
         unnorm_power_filtered = unnorm_power[fgt0]
+
         # If the user wants to normalize using the mean of the total
         # lightcurve, normalize it here
         cs_seg = unnorm_power_filtered
         if !(use_common_mean)
             mean = n_ph / n_bin
             cs_seg = normalize_periodograms(
+
                 unnorm_power_filtered,
+
                 dt,
                 n_bin;
                 mean_flux = mean,
@@ -384,7 +392,9 @@ function avg_pds_from_iterable(
         end
         # Accumulate the total sum cross spectrum
         cross = sum_if_not_none_or_initialize(cross, cs_seg)
+
         unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power[fgt0])
+
         n_ave += 1
     end
     # If there were no good intervals, return nothing
@@ -422,6 +432,7 @@ function avg_pds_from_iterable(
     results.freq = freq
     results.power = cross
     results.unnorm_power = unnorm_cross
+
 
     return results
 end
@@ -538,6 +549,14 @@ function avg_cs_from_iterables(
     return_auxil::Bool = false,
 )
 
+    norm::String = "frac",
+    use_common_mean::Bool = true,
+    silent::Bool = false,
+    fullspec::Bool = false,
+    power_type::String = "all",
+    return_auxil::Bool = false,
+)
+
     local_show_progress = silent ? identity : show_progress
     if silent
         local_show_progress = (a) -> a
@@ -572,8 +591,11 @@ function avg_cs_from_iterables(
 
         # Only use the variance if both flux iterables define it.
         if isnothing(variance1) || isnothing(variance2)
+        if isnothing(variance1) || isnothing(variance2)
             variance1 = variance2 = nothing
         else
+            common_variance1 = sum_if_not_none_or_initialize(common_variance1, variance1)
+            common_variance2 = sum_if_not_none_or_initialize(common_variance2, variance2)
             common_variance1 = sum_if_not_none_or_initialize(common_variance1, variance1)
             common_variance2 = sum_if_not_none_or_initialize(common_variance2, variance2)
         end
@@ -646,10 +668,26 @@ function avg_cs_from_iterables(
                 norm = norm,
                 power_type = power_type,
                 variance = variance,
+                unnorm_power,
+                dt,
+                n_bin;
+                mean_flux = mean,
+                n_ph = n_ph,
+                norm = norm,
+                power_type = power_type,
+                variance = variance,
             )
 
             if return_auxil
                 p1_seg = normalize_periodograms(
+                    unnorm_pd1,
+                    dt,
+                    n_bin;
+                    mean_flux = mean1,
+                    n_ph = n_ph1,
+                    norm = norm,
+                    power_type = power_type,
+                    variance = variance1,
                     unnorm_pd1,
                     dt,
                     n_bin;
@@ -674,8 +712,11 @@ function avg_cs_from_iterables(
         # Initialize or accumulate final averaged spectra
         cross = sum_if_not_none_or_initialize(cross, cs_seg)
         unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power)
+        unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power)
 
         if return_auxil
+            unnorm_pds1 = sum_if_not_none_or_initialize(unnorm_pds1, unnorm_pd1)
+            unnorm_pds2 = sum_if_not_none_or_initialize(unnorm_pds2, unnorm_pd2)
             unnorm_pds1 = sum_if_not_none_or_initialize(unnorm_pds1, unnorm_pd1)
             unnorm_pds2 = sum_if_not_none_or_initialize(unnorm_pds2, unnorm_pd2)
             pds1 = sum_if_not_none_or_initialize(pds1, p1_seg)
@@ -726,6 +767,10 @@ function avg_cs_from_iterables(
             norm = norm,
             variance = common_variance,
             power_type = power_type,
+            n_ph = n_ph,
+            norm = norm,
+            variance = common_variance,
+            power_type = power_type,
         )
         if return_auxil
             pds1 = normalize_periodograms(
@@ -733,6 +778,10 @@ function avg_cs_from_iterables(
                 dt,
                 n_bin;
                 mean_flux = common_mean1,
+                n_ph = n_ph1,
+                norm = norm,
+                variance = common_variance1,
+                power_type = power_type,
                 n_ph = n_ph1,
                 norm = norm,
                 variance = common_variance1,
@@ -747,6 +796,10 @@ function avg_cs_from_iterables(
                 norm = norm,
                 variance = common_variance2,
                 power_type = power_type,
+                n_ph = n_ph2,
+                norm = norm,
+                variance = common_variance2,
+                power_type = power_type,
             )
         end
     end
@@ -757,6 +810,9 @@ function avg_cs_from_iterables(
 
     # Create DataFrame with the computed data
     results = DataFrame()
+    results[!, "freq"] = freq
+    results[!, "power"] = cross
+    results[!, "unnorm_power"] = unnorm_cross
     results[!, "freq"] = freq
     results[!, "power"] = cross
     results[!, "unnorm_power"] = unnorm_cross
@@ -822,6 +878,7 @@ function avg_pds_from_events(
         errors = errors,
     )
     result = avg_pds_from_iterable(
+
         flux_iterable,
         dt,
         norm = norm,
@@ -833,6 +890,7 @@ function avg_pds_from_events(
     end
 
     return DataFrame(result)
+
 end
 
 function avg_cs_from_events(
