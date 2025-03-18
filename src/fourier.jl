@@ -1,18 +1,20 @@
 # this function is returning a scalar sum instead of maintaining the array structure.
 # this is to prevent array interface problem
 function sum_if_not_none_or_initialize(current, new_value)
+    if isnothing(new_value)
+        return current  # If new_value is nothing, just return current
+    end
+
     if isnothing(current)
-        if isa(new_value, AbstractArray)
-            return copy(new_value)
-        else
-            return new_value
-        end
+        return copy(new_value)  # Initialize if current is nothing
+    end
+
+    if isa(current, AbstractArray) && isa(new_value, AbstractArray)
+        return current .+ new_value  # Element-wise addition for arrays
+    elseif isa(current, Number) && isa(new_value, Number)
+        return current + new_value  # Simple number addition
     else
-        if isa(current, AbstractArray) && isa(new_value, AbstractArray)
-            return current .+ new_value
-        else
-            return current + new_value
-        end
+        error("sum_if_not_none_or_initialize: Type mismatch between current=$(typeof(current)) and new_value=$(typeof(new_value))")
     end
 end
 
@@ -212,8 +214,9 @@ function error_on_averaged_cross_spectrum(
         bsq = bias_term.(seg_power, ref_power, seg_power_noise, ref_power_noise, n_ave)
         frac = @. (Gsq - bsq) / (ref_power - ref_power_noise)
         power_over_2n = ref_power / two_n_ave
-
+        # Eq. 18
         dRe = dIm = dG = @. NaNMath.sqrt(power_over_2n * (seg_power - frac))
+        # Eq. 19
         dphi = @. NaNMath.sqrt(
             power_over_2n * (seg_power / (Gsq - bsq) - 1 / (ref_power - ref_power_noise)),
         )
@@ -332,11 +335,11 @@ function avg_pds_from_iterable(
     use_common_mean::Bool = true,
     silent::Bool = false,
 )
-    local_show_progress = identity
+    local_show_progress = show_progress
     if silent
-        local_show_progress = identity
+        local_show_progress = show_progress
     end
-
+    # Initialize stuff
     cross = unnorm_cross = nothing
     n_ave = 0
     freq = nothing
@@ -388,36 +391,30 @@ function avg_pds_from_iterable(
                 variance = variance,
             )
         end
-
-        if isnothing(cross)
-            cross = copy(cs_seg)
-        else
-            cross .+= cs_seg
-        end
-
-        if isnothing(unnorm_cross)
-            unnorm_cross = copy(unnorm_power_filtered)
-        else
-            unnorm_cross .+= unnorm_power_filtered
-        end
-
+        # Accumulate the total sum cross spectrum
+        cross = sum_if_not_none_or_initialize(cross, cs_seg)
+        unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power[fgt0])
+        # Hence M, not M*n_bin
         n_ave += 1
     end
 
     if isnothing(cross)
         return nothing
     end
-
+    # Calculate the mean number of photons per chunk
     n_ph = sum_of_photons / n_ave
+    # Calculate the mean number of photons per bin
     common_mean = n_ph / n_bin
 
     if !isnothing(common_variance)
+        # Note: the variances we summed were means, not sums.
         common_variance /= n_ave
     end
-
+    # Transform a sum into the average
     unnorm_cross ./= n_ave
     cross ./= n_ave
-
+    # Finally, normalize the cross spectrum (only if not already done on an
+    # interval-to-interval basis
     if use_common_mean
         cross = normalize_periodograms(
             unnorm_cross,
@@ -438,106 +435,116 @@ function avg_pds_from_iterable(
     return results
 end
 
-function avg_cs_from_iterables_quick(
-    flux_iterable1,
-    flux_iterable2,
-    dt::Real;
-    norm::String = "frac",
+function avg_cs_from_iterables_quick(flux_iterable1, flux_iterable2,
+    dt::Real; norm::String="frac")
+unnorm_cross = unnorm_pds1 = unnorm_pds2 = nothing
+n_ave = 0
+fgt0 = n_bin = freq = nothing
+sum_of_photons1 = sum_of_photons2 = 0
+for (flux1, flux2) in zip(flux_iterable1, flux_iterable2)
+if isnothing(flux1) || isnothing(flux2) || all(iszero, flux1.counts) || all(iszero, flux2.counts)
+continue
+end
+n_bin = length(flux1.counts)
+# Calculate the sum of each light curve, to calculate the mean
+n_ph1 = sum(flux1.counts)
+n_ph2 = sum(flux2.counts)
+# At the first loop, we define the frequency array and the range of
+# positive frequency bins (after the first loop, cross will not be
+# nothing anymore)
+if isnothing(unnorm_cross)
+freq = fftfreq(n_bin, dt)
+fgt0 = positive_fft_bins(n_bin)
+end
+# Calculate the FFTs
+ft1 = fft(flux1.counts)
+ft2 = fft(flux2.counts)
+# Calculate the unnormalized cross spectrum
+unnorm_power = ft1 .* conj.(ft2)
+# Accumulate the sum to calculate the total mean of the lc
+sum_of_photons1 += n_ph1
+sum_of_photons2 += n_ph2
+# Take only positive frequencies
+keepat!(unnorm_power, fgt0)
+# Initialize or accumulate final averaged spectrum
+unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross,
+                    unnorm_power)
+n_ave += 1
+end
+# If no valid intervals were found, return only `nothing`s
+if isnothing(unnorm_cross)
+return nothing
+end
+# Calculate the mean number of photons per chunk
+n_ph1 = sum_of_photons1 / n_ave
+n_ph2 = sum_of_photons2 / n_ave
+n_ph = sqrt(n_ph1 * n_ph2)
+# Calculate the mean number of photons per bin
+common_mean1 = n_ph1 / n_bin
+common_mean2 = n_ph2 / n_bin
+common_mean = n_ph / n_bin
+# Transform the sums into averages
+unnorm_cross ./= n_ave
+# Finally, normalize the cross spectrum (only if not already done on an
+# interval-to-interval basis)
+cross = normalize_periodograms(
+unnorm_cross,
+dt,
+n_bin;
+mean_flux = common_mean,
+n_ph=n_ph,
+norm=norm,
+variance=nothing,
+power_type="all",
 )
-    unnorm_cross = unnorm_pds1 = unnorm_pds2 = nothing
-    n_ave = 0
-    fgt0 = n_bin = freq = nothing
-    sum_of_photons1 = sum_of_photons2 = 0
-    for (flux1, flux2) in zip(flux_iterable1, flux_iterable2)
-        if isnothing(flux1) ||
-           isnothing(flux2) ||
-           all(iszero, flux1.counts) ||
-           all(iszero, flux2.counts)
-            continue
-        end
-        n_bin = length(flux1.counts)
-        n_ph1 = sum(flux1.counts)
-        n_ph2 = sum(flux2.counts)
-        if isnothing(unnorm_cross)
-            freq = fftfreq(n_bin, dt)
-            fgt0 = positive_fft_bins(n_bin)
-        end
-        ft1 = fft(flux1.counts)
-        ft2 = fft(flux2.counts)
-        unnorm_power = ft1 .* conj.(ft2)
-        sum_of_photons1 += n_ph1
-        sum_of_photons2 += n_ph2
-        keepat!(unnorm_power, fgt0)
-        unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power)
-        n_ave += 1
-    end
-    # If no valid intervals were found, return only `nothing`s
-    if isnothing(unnorm_cross)
-        return nothing
-    end
-    n_ph1 = sum_of_photons1 / n_ave
-    n_ph2 = sum_of_photons2 / n_ave
-    n_ph = sqrt(n_ph1 * n_ph2)
-    common_mean1 = n_ph1 / n_bin
-    common_mean2 = n_ph2 / n_bin
-    common_mean = n_ph / n_bin
-    unnorm_cross ./= n_ave
-    cross = normalize_periodograms(
-        unnorm_cross,
-        dt,
-        n_bin;
-        mean_flux = common_mean,
-        n_ph = n_ph,
-        norm = norm,
-        variance = nothing,
-        power_type = "all",
-    )
-    freq = freq[fgt0]
+# No negative frequencies
+freq = freq[fgt0]
 
-    results = DataFrame()
-    results[!, "freq"] = freq
-    results[!, "power"] = cross
-    results[!, "unnorm_power"] = unnorm_cross
+# Create DataFrame with the computed data
+results = DataFrame()
+results[!,"freq"] = freq
+results[!,"power"] = cross
+results[!,"unnorm_power"] = unnorm_cross
 
-    # Create NamedTuple with metadata instead of using attach_metadata
-    metadata = (
-        n = n_bin,
-        m = n_ave,
-        dt = dt,
-        norm = norm,
-        df = 1 / (dt * n_bin),
-        nphots = n_ph,
-        nphots1 = n_ph1,
-        nphots2 = n_ph2,
-        variance = nothing,
-        mean = common_mean,
-        mean1 = common_mean1,
-        mean2 = common_mean2,
-        power_type = "all",
-        fullspec = false,
-        segment_size = dt * n_bin,
-    )
+# Create NamedTuple with metadata instead of using attach_metadata
+metadata = (
+n = n_bin, 
+m = n_ave, 
+dt = dt,
+norm = norm,
+df = 1 / (dt * n_bin),
+nphots = n_ph,
+nphots1 = n_ph1, 
+nphots2 = n_ph2,
+variance = nothing,
+mean = common_mean,
+mean1 = common_mean1,
+mean2 = common_mean2,
+power_type = "all",
+fullspec = false,
+segment_size = dt * n_bin
+)
 
-    # Return both DataFrame and metadata as a tuple
-    return (results, metadata)
+# Return both DataFrame and metadata as a tuple
+return (results, metadata)
 end
 
 function avg_cs_from_iterables(
     flux_iterable1,
     flux_iterable2,
     dt::Real;
-    norm::String = "frac",
-    use_common_mean::Bool = true,
-    silent::Bool = false,
-    fullspec::Bool = false,
-    power_type::String = "all",
-    return_auxil::Bool = false,
-)
-
+    norm::String="frac",
+    use_common_mean::Bool=true,
+    silent::Bool=false,
+    fullspec::Bool=false,
+    power_type::String="all",
+    return_auxil::Bool=false)
+    
     local_show_progress = show_progress
     if silent
         local_show_progress = (a) -> a
     end
+    # Initialize stuff
     cross = unnorm_cross = unnorm_pds1 = unnorm_pds2 = pds1 = pds2 = nothing
     n_ave = 0
     fgt0 = n_bin = freq = nothing
@@ -545,56 +552,68 @@ function avg_cs_from_iterables(
     sum_of_photons1 = sum_of_photons2 = 0
     common_variance1 = common_variance2 = common_variance = nothing
 
-    for (flux1, flux2) in local_show_progress(zip(flux_iterable1, flux_iterable2))
-        if isnothing(flux1) ||
-           isnothing(flux2) ||
-           all(iszero, flux1.counts) ||
-           all(iszero, flux2.counts)
+    for (flux1, flux2) in local_show_progress(zip(flux_iterable1,
+                                                flux_iterable2))
+        if isnothing(flux1) || isnothing(flux2) || all(iszero, flux1.counts) || all(iszero, flux2.counts)
             continue
         end
 
+        # Does the flux iterable return the uncertainty?
+        # If so, define the variances
         variance1 = variance2 = nothing
-
         if hasproperty(flux1, :errors)
             err1 = flux1.errors
-            variance1 = Statistics.mean(err1)^2
+            variance1 = Statistics.mean(err1) ^ 2
         end
         if hasproperty(flux2, :errors)
             err2 = flux2.errors
-            variance2 = Statistics.mean(err2)^2
+            variance2 = Statistics.mean(err2) ^ 2
         end
 
-
-        if isnothing(variance1) || isnothing(variance2)
+        # Only use the variance if both flux iterables define it.
+        if isnothing(variance1) || isnothing(variance2) 
             variance1 = variance2 = nothing
         else
-            common_variance1 = sum_if_not_none_or_initialize(common_variance1, variance1)
-            common_variance2 = sum_if_not_none_or_initialize(common_variance2, variance2)
+            common_variance1 = sum_if_not_none_or_initialize(common_variance1,
+                                                             variance1)
+            common_variance2 = sum_if_not_none_or_initialize(common_variance2,
+                                                             variance2)
         end
 
         n_bin = length(flux1.counts)
 
+        # At the first loop, we define the frequency array and the range of
+        # positive frequency bins (after the first loop, cross will not be
+        # nothing anymore)
         if isnothing(cross)
             freq = fftfreq(n_bin, dt)
             fgt0 = positive_fft_bins(n_bin)
         end
 
+        # Calculate the FFTs
         ft1 = fft(flux1.counts)
         ft2 = fft(flux2.counts)
 
+        # Calculate the sum of each light curve, to calculate the mean
         n_ph1 = sum(flux1.counts)
         n_ph2 = sum(flux2.counts)
         n_ph = sqrt(n_ph1 * n_ph2)
 
+        # Calculate the unnormalized cross spectrum
         unnorm_power = ft1 .* conj.(ft2)
 
+        # If requested, calculate the auxiliary PDSs
         if return_auxil
             unnorm_pd1 = real.(ft1 .* conj.(ft1))
             unnorm_pd2 = real.(ft2 .* conj.(ft2))
         end
+
+        # Accumulate the sum to calculate the total mean of the lc
         sum_of_photons1 += n_ph1
         sum_of_photons2 += n_ph2
 
+        # Take only positive frequencies unless the user wants the full
+        # spectrum
         if !(fullspec)
             keepat!(unnorm_power, fgt0)
             if return_auxil
@@ -609,6 +628,7 @@ function avg_cs_from_iterables(
             p2_seg = unnorm_pd2
         end
 
+        # If normalization has to be done interval by interval, do it here.
         if !(use_common_mean)
             mean1 = n_ph1 / n_bin
             mean2 = n_ph2 / n_bin
@@ -620,45 +640,31 @@ function avg_cs_from_iterables(
             end
 
             cs_seg = normalize_periodograms(
-                unnorm_power,
-                dt,
-                n_bin;
-                mean_flux = mean,
-                n_ph = n_ph,
-                norm = norm,
-                power_type = power_type,
-                variance = variance,
+                unnorm_power, dt, n_bin; mean_flux = mean, n_ph=n_ph, norm=norm,
+                power_type=power_type, variance=variance
             )
 
             if return_auxil
                 p1_seg = normalize_periodograms(
-                    unnorm_pd1,
-                    dt,
-                    n_bin;
-                    mean_flux = mean1,
-                    n_ph = n_ph1,
-                    norm = norm,
-                    power_type = power_type,
-                    variance = variance1,
+                    unnorm_pd1, dt, n_bin; mean_flux = mean1, n_ph=n_ph1, norm=norm,
+                    power_type=power_type, variance=variance1
                 )
                 p2_seg = normalize_periodograms(
-                    unnorm_pd2,
-                    dt,
-                    n_bin;
-                    mean_flux = mean2,
-                    n_ph = n_ph2,
-                    norm = norm,
-                    power_type = power_type,
-                    variance = variance2,
+                    unnorm_pd2, dt, n_bin; mean_flux = mean2, n_ph=n_ph2, norm=norm,
+                    power_type=power_type, variance=variance2
                 )
             end
         end
+        # Initialize or accumulate final averaged spectra
         cross = sum_if_not_none_or_initialize(cross, cs_seg)
-        unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power)
+        unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross,
+                                                     unnorm_power)
 
         if return_auxil
-            unnorm_pds1 = sum_if_not_none_or_initialize(unnorm_pds1, unnorm_pd1)
-            unnorm_pds2 = sum_if_not_none_or_initialize(unnorm_pds2, unnorm_pd2)
+            unnorm_pds1 = sum_if_not_none_or_initialize(unnorm_pds1,
+                                                        unnorm_pd1)
+            unnorm_pds2 = sum_if_not_none_or_initialize(unnorm_pds2,
+                                                        unnorm_pd2)
             pds1 = sum_if_not_none_or_initialize(pds1, p1_seg)
             pds2 = sum_if_not_none_or_initialize(pds2, p2_seg)
         end
@@ -666,26 +672,29 @@ function avg_cs_from_iterables(
         n_ave += 1
     end
 
-
+    # If no valid intervals were found, return only `nothing`s
     if isnothing(cross)
         return nothing
     end
 
-
+    # Calculate the mean number of photons per chunk
     n_ph1 = sum_of_photons1 / n_ave
     n_ph2 = sum_of_photons2 / n_ave
     n_ph = sqrt(n_ph1 * n_ph2)
 
+    # Calculate the common mean number of photons per bin
     common_mean1 = n_ph1 / n_bin
     common_mean2 = n_ph2 / n_bin
     common_mean = n_ph / n_bin
 
     if !isnothing(common_variance1)
+        # Note: the variances we summed were means, not sums. Hence M, not M*N
         common_variance1 /= n_ave
         common_variance2 /= n_ave
         common_variance = sqrt(common_variance1 * common_variance2)
     end
 
+    # Transform the sums into averages
     cross ./= n_ave
     unnorm_cross ./= n_ave
     if return_auxil
@@ -693,16 +702,17 @@ function avg_cs_from_iterables(
         unnorm_pds2 ./= n_ave
     end
 
+    # Finally, normalize the cross spectrum (only if not already done on an interval-to-interval basis)
     if use_common_mean
         cross = normalize_periodograms(
             unnorm_cross,
             dt,
             n_bin;
             mean_flux = common_mean,
-            n_ph = n_ph,
-            norm = norm,
-            variance = common_variance,
-            power_type = power_type,
+            n_ph=n_ph,
+            norm=norm,
+            variance=common_variance,
+            power_type=power_type,
         )
         if return_auxil
             pds1 = normalize_periodograms(
@@ -710,50 +720,51 @@ function avg_cs_from_iterables(
                 dt,
                 n_bin;
                 mean_flux = common_mean1,
-                n_ph = n_ph1,
-                norm = norm,
-                variance = common_variance1,
-                power_type = power_type,
+                n_ph=n_ph1,
+                norm=norm,
+                variance=common_variance1,
+                power_type=power_type,
             )
             pds2 = normalize_periodograms(
                 unnorm_pds2,
                 dt,
                 n_bin;
                 mean_flux = common_mean2,
-                n_ph = n_ph2,
-                norm = norm,
-                variance = common_variance2,
-                power_type = power_type,
+                n_ph=n_ph2,
+                norm=norm,
+                variance=common_variance2,
+                power_type=power_type,
             )
         end
     end
+    # If the user does not want negative frequencies, don't give them
     if !(fullspec)
         freq = freq[fgt0]
     end
 
     # Create DataFrame with the computed data
     results = DataFrame()
-    results[!, "freq"] = freq
-    results[!, "power"] = cross
-    results[!, "unnorm_power"] = unnorm_cross
+    results[!,"freq"] = freq
+    results[!,"power"] = cross
+    results[!,"unnorm_power"] = unnorm_cross
 
     if return_auxil
-        results[!, "pds1"] = pds1
-        results[!, "pds2"] = pds2
-        results[!, "unnorm_pds1"] = unnorm_pds1
-        results[!, "unnorm_pds2"] = unnorm_pds2
+        results[!,"pds1"] = pds1
+        results[!,"pds2"] = pds2
+        results[!,"unnorm_pds1"] = unnorm_pds1
+        results[!,"unnorm_pds2"] = unnorm_pds2
     end
 
     # Create NamedTuple with metadata instead of using attach_metadata
     metadata = (
-        n = n_bin,
-        m = n_ave,
+        n = n_bin, 
+        m = n_ave, 
         dt = dt,
         norm = norm,
         df = 1 / (dt * n_bin),
         segment_size = dt * n_bin,
         nphots = n_ph,
-        nphots1 = n_ph1,
+        nphots1 = n_ph1, 
         nphots2 = n_ph2,
         countrate1 = common_mean1 / dt,
         countrate2 = common_mean2 / dt,
@@ -764,9 +775,9 @@ function avg_cs_from_iterables(
         fullspec = fullspec,
         variance = common_variance,
         variance1 = common_variance1,
-        variance2 = common_variance2,
+        variance2 = common_variance2
     )
-
+    
     # Return both DataFrame and metadata as a tuple
     return (results, metadata)
 end
