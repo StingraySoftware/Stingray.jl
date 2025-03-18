@@ -354,6 +354,8 @@ function avg_pds_from_iterable(
             continue
         end
 
+        # If the iterable returns the uncertainty, use it to calculate the
+        # variance.
         flux = flux_tuple.counts
         variance = nothing
         if hasproperty(flux_tuple, :errors)
@@ -361,23 +363,31 @@ function avg_pds_from_iterable(
             variance = Statistics.mean(err)^2
         end
 
+        # Calculate the FFT
         n_bin = length(flux)
         ft = fft(flux)
+
+        # This will only be used by the Leahy normalization, so only if
+        # the input light curve is in units of counts/bin
         n_ph = sum(flux)
         unnorm_power = real.(ft .* conj.(ft))
 
+        # Accumulate the sum of means and variances, to get the final mean and
+        # variance the end
         sum_of_photons += n_ph
         if !isnothing(variance)
             common_variance = sum_if_not_none_or_initialize(common_variance, variance)
         end
 
+        # In the first loop, define the frequency and the freq. interval > 0
         if isnothing(cross)
             fgt0 = positive_fft_bins(n_bin)
             freq = fftfreq(n_bin, dt)[fgt0]
         end
-
+        # No need for the negative frequencies
         unnorm_power_filtered = unnorm_power[fgt0]
-
+        # If the user wants to normalize using the mean of the total
+        # lightcurve, normalize it here
         cs_seg = unnorm_power_filtered
         if !(use_common_mean)
             mean = n_ph / n_bin
@@ -394,10 +404,9 @@ function avg_pds_from_iterable(
         # Accumulate the total sum cross spectrum
         cross = sum_if_not_none_or_initialize(cross, cs_seg)
         unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power[fgt0])
-        # Hence M, not M*n_bin
         n_ave += 1
     end
-
+    # If there were no good intervals, return nothing
     if isnothing(cross)
         return nothing
     end
@@ -408,6 +417,7 @@ function avg_pds_from_iterable(
 
     if !isnothing(common_variance)
         # Note: the variances we summed were means, not sums.
+        # Hence M, not M*n_bin
         common_variance /= n_ave
     end
     # Transform a sum into the average
