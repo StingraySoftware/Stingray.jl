@@ -1,9 +1,4 @@
-function compare_tables(
-    table1::DataFrame,
-    table2::DataFrame;
-    rtol = 0.001,
-    discard = Vector{Symbol}(),
-)
+function compare_tables(table1::DataFrame, table2::DataFrame; rtol=0.001, discard=Vector{Symbol}())
     s_discard = Set(Symbol.(discard))
     test_result = true
 
@@ -13,9 +8,9 @@ function compare_tables(
 
     for key in common_columns
         oe, oc = getproperty(table1, key), getproperty(table2, key)
-
+        
         if eltype(oe) <: Number && eltype(oc) <: Number
-            if !(≈(oe, oc, rtol = rtol))
+            if !(≈(oe, oc, rtol=rtol))
                 test_result = false
                 @warn "Mismatch in column $key: Maximum difference $(maximum(abs.(oe .- oc)))"
                 break
@@ -31,6 +26,7 @@ function compare_tables(
 
     @test test_result
 end
+
 @testset "positive_fft_bins" begin
     freq = fftfreq(11)
     goodbins = positive_fft_bins(11)
@@ -176,20 +172,13 @@ end
         @test isnothing(out_ev)
     end
 
-    @testset "test_avg_cs_bad_input" begin
+      @testset "test_avg_cs_bad_input" begin
         for return_auxil in [true, false]
-            _times1 = rand(Uniform(0, 1000), 1)
-            _times2 = rand(Uniform(0, 1000), 1)
-            out_ev = avg_cs_from_events(
-                _times1,
-                _times2,
-                gti,
-                segment_size,
-                dt,
-                silent = true,
-                return_auxil = return_auxil,
-            )
-            @test isnothing(out_ev)
+            _times1 = rand(Uniform(0,1000),1)
+            _times2 = rand(Uniform(0,1000),1)
+            out_ev = avg_cs_from_events(_times1, _times2, gti,
+                                        segment_size, dt, silent = true, return_auxil=return_auxil)
+            @test isnothing(out_ev) 
         end
     end
 
