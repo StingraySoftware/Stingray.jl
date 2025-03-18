@@ -1,23 +1,3 @@
-# this function is returning a scalar sum instead of maintaining the array structure.
-# this is to prevent array interface problem
-function sum_if_not_none_or_initialize(current, new_value)
-    if isnothing(new_value)
-        return current  # If new_value is nothing, just return current
-    end
-
-    if isnothing(current)
-        return copy(new_value)  # Initialize if current is nothing
-    end
-
-    if isa(current, AbstractArray) && isa(new_value, AbstractArray)
-        return current .+ new_value  # Element-wise addition for arrays
-    elseif isa(current, Number) && isa(new_value, Number)
-        return current + new_value  # Simple number addition
-    else
-        error("sum_if_not_none_or_initialize: Type mismatch between current=$(typeof(current)) and new_value=$(typeof(new_value))")
-    end
-end
-
 function positive_fft_bins(n_bin::Integer; include_zero::Bool = false)
     minbin = 2
     if include_zero
@@ -335,9 +315,9 @@ function avg_pds_from_iterable(
     use_common_mean::Bool = true,
     silent::Bool = false,
 )
-    local_show_progress = show_progress
+    local_show_progress = silent ? identity : show_progress
     if silent
-        local_show_progress = show_progress
+        local_show_progress = silent ? identity : show_progress
     end
     # Initialize stuff
     cross = unnorm_cross = nothing
@@ -550,7 +530,7 @@ function avg_cs_from_iterables(
     power_type::String="all",
     return_auxil::Bool=false)
     
-    local_show_progress = show_progress
+    local_show_progress = silent ? identity : show_progress
     if silent
         local_show_progress = (a) -> a
     end
