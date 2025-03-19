@@ -1,26 +1,3 @@
-struct FourierResults
-    results
-    n::Int
-    m::Int
-    dt::Float64
-    norm::Float64
-    df::Float64
-    nphots::Int
-    segment_size::Float64
-    mean::Union{Float64, Nothing}
-    variance::Union{Float64, Nothing}
-    nphots1::Union{Int, Nothing}
-    nphots2::Union{Int, Nothing}
-    mean1::Union{Float64, Nothing}
-    mean2::Union{Float64, Nothing}
-    power_type::Union{String, Nothing}
-    fullspec::Union{Bool, Nothing}
-    countrate1::Union{Float64, Nothing}
-    countrate2::Union{Float64, Nothing}
-    variance1::Union{Float64, Nothing}
-    variance2::Union{Float64, Nothing}
-end
-
 function positive_fft_bins(n_bin::Integer; include_zero::Bool = false)
     minbin = 2
     if include_zero
@@ -356,11 +333,9 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
     results[!,"freq"] = freq
     results[!,"power"] = cross
     results[!,"unnorm_power"] = unnorm_cross
-    results = FourierResults(results, n_bin, n_ave, dt, norm, 1 / (dt * n_bin), n_ph, dt * n_bin, 
-                         common_mean, common_variance, nothing, nothing, nothing, nothing, 
-                         nothing, nothing, nothing, nothing, nothing, nothing)
+    results = (; results , n = n_bin, m = n_ave, dt, norm, df = 1 / (dt * n_bin), nphots = n_ph, setment_size = dt * n_bin,  mean = common_mean, variance = common_variance)
+    results = DataFrame(results.results)
 
-    return results
 end
 
 function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
@@ -448,9 +423,13 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
     results[!,"freq"] = freq
     results[!,"power"] = cross
     results[!,"unnorm_power"] = unnorm_cross
-    results = FourierResults(results, n_bin, n_ave, dt, norm, 1 / (dt * n_bin), n_ph, dt * n_bin, 
-                         common_mean, nothing, n_ph1, n_ph2, common_mean1, common_mean2, 
-                         "all", false, nothing, nothing, nothing, nothing)
+    results = (; results, n = n_bin, m = n_ave, dt, norm, df = 1 / (dt * n_bin), 
+           nphots = n_ph, nphots1 = n_ph1, nphots2 = n_ph2,
+           variance = nothing, mean = common_mean, mean1 = common_mean1, 
+           mean2 = common_mean2, power_type = "all", fullspec = false, 
+           segment_size = dt * n_bin)
+    results = DataFrame(results.results)
+
 
 
     return results
@@ -682,10 +661,15 @@ function avg_cs_from_iterables(
         results[!,"unnorm_pds2"] = unnorm_pds2
     end
 
-    results = FourierResults(results, n_bin, n_ave, dt, norm, 1 / (dt * n_bin), n_ph, dt * n_bin, 
-                         common_mean, common_variance, n_ph1, n_ph2, common_mean1, common_mean2, 
-                         power_type, fullspec, common_mean1 / dt, common_mean2 / dt, 
-                         common_variance1, common_variance2)
+    results = (; results, n = n_bin, m = n_ave, dt, norm, df = 1 / (dt * n_bin), 
+           segment_size = dt * n_bin, nphots = n_ph, nphots1 = n_ph1, 
+           nphots2 = n_ph2, countrate1 = common_mean1 / dt, 
+           countrate2 = common_mean2 / dt, mean = common_mean, 
+           mean1 = common_mean1, mean2 = common_mean2, power_type, 
+           fullspec, variance = common_variance, variance1 = common_variance1, 
+           variance2 = common_variance2)
+    results = DataFrame(results.results)
+
 
 
     return results
@@ -710,8 +694,10 @@ function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix
                                   silent=silent)
 
     if !isnothing(cross)
-        cross.gti = gti
+        cross = (; cross, gti=gti)
+        cross = DataFrame(cross.cross)
     end
+
     return cross
     
 end
@@ -766,7 +752,8 @@ function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVe
         )
     end
     if !isnothing(results)
-        results.gti = gti
+        results = (; results, gti=gti)
+        results = DataFrame(results.results)
     end
     
     return results
