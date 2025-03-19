@@ -335,6 +335,7 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
     results[!,"unnorm_power"] = unnorm_cross
     results = (; results , n = n_bin, m = n_ave, dt, norm, df = 1 / (dt * n_bin), nphots = n_ph, setment_size = dt * n_bin,  mean = common_mean, variance = common_variance)
     results = DataFrame(results.results)
+    return results
 
 end
 
