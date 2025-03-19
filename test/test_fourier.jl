@@ -26,8 +26,11 @@ function compare_tables(table1, table2; rtol=0.001, discard = [])
         end
     end
 
-    table1 = Metadata.drop_metadata(table1)
-    table2 = Metadata.drop_metadata(table2)
+
+    data_fields_table1 = filter(field -> !(typeof(field) == Symbol && startswith(string(field), "meta")), names(table1))
+    data_fields_table2 = filter(field -> !(typeof(field) == Symbol && startswith(string(field), "meta")), names(table2))
+
+    
     
     for field in names(table1)
         if field in discard
