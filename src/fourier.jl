@@ -195,7 +195,6 @@ function error_on_averaged_cross_spectrum(
         bsq = bias_term.(seg_power, ref_power, seg_power_noise, ref_power_noise, n_ave)
         frac = @. (Gsq - bsq) / (ref_power - ref_power_noise)
         power_over_2n = ref_power / two_n_ave
-
         # Eq. 18
         dRe = dIm = dG = @. NaNMath.sqrt(power_over_2n * (seg_power - frac))
         # Eq. 19
@@ -277,7 +276,7 @@ end
     dt = nothing
     binned = !isnothing(fluxes)
     if binned
-        dt = Statistics.median(diff(@view times[1:100]))
+        dt = Statistics.median(diff(@view times[1:min(100, end)]))
     end
     fun = _which_segment_idx_fun(; binned, dt)
 
@@ -286,19 +285,32 @@ end
             @yield nothing
             continue
         end
+
         if !binned
             event_times = @view times[idx0:idx1-1]
-            cts = fit(Histogram, float.(event_times .- s); nbins = n_bin).weights
+            cts =
+                fit(
+                    Histogram,
+                    float.(event_times .- s),
+                    range(0, segment_size, length = n_bin + 1),
+                ).weights
+            @yield NamedTuple{(:counts,)}((cts,))
+
         else
-            cts = float.(@view fluxes[idx0+1:idx1])
+            counts = float.(@view fluxes[idx0+1:idx1])
             if !isnothing(errors)
-                cts = cts, @view errors[idx0+1:idx1]
+                errors_slice = float.(@view errors[idx0+1:idx1])
+                if length(counts) == length(errors_slice)
+                    @yield NamedTuple{(:counts, :errors)}((counts, errors_slice))
+                else
+                    @yield nothing
+                end
+            else
+                @yield NamedTuple{(:counts,)}((counts,))
             end
         end
-        @yield cts
     end
 end
-
 function avg_pds_from_iterable(
     flux_iterable,
     dt::Real;
@@ -306,11 +318,10 @@ function avg_pds_from_iterable(
     use_common_mean::Bool = true,
     silent::Bool = false,
 )
-    local_show_progress = show_progress
+    local_show_progress = silent ? identity : show_progress
     if silent
-        local_show_progress = identity
+        local_show_progress = silent ? identity : show_progress
     end
-
     # Initialize stuff
     cross = unnorm_cross = nothing
     n_ave = 0
@@ -321,16 +332,20 @@ function avg_pds_from_iterable(
     fgt0 = nothing
     n_bin = nothing
 
-    for flux in local_show_progress(flux_iterable)
-        if isnothing(flux) || all(iszero, flux)
+    for flux_tuple in local_show_progress(flux_iterable)
+        if isnothing(flux_tuple) || all(iszero, flux_tuple.counts)
+
             continue
         end
 
         # If the iterable returns the uncertainty, use it to calculate the
         # variance.
+        flux = flux_tuple.counts
         variance = nothing
-        if flux isa Tuple
-            flux, err = flux
+
+        if hasproperty(flux_tuple, :errors)
+            err = flux_tuple.errors
+
             variance = Statistics.mean(err)^2
         end
 
@@ -346,7 +361,6 @@ function avg_pds_from_iterable(
         # Accumulate the sum of means and variances, to get the final mean and
         # variance the end
         sum_of_photons += n_ph
-
         if !isnothing(variance)
             common_variance = sum_if_not_none_or_initialize(common_variance, variance)
         end
@@ -356,18 +370,16 @@ function avg_pds_from_iterable(
             fgt0 = positive_fft_bins(n_bin)
             freq = fftfreq(n_bin, dt)[fgt0]
         end
-
         # No need for the negative frequencies
-        keepat!(unnorm_power, fgt0)
+        unnorm_power_filtered = unnorm_power[fgt0]
 
         # If the user wants to normalize using the mean of the total
         # lightcurve, normalize it here
-        cs_seg = unnorm_power
+        cs_seg = unnorm_power_filtered
         if !(use_common_mean)
             mean = n_ph / n_bin
-
             cs_seg = normalize_periodograms(
-                unnorm_power,
+                unnorm_power_filtered,
                 dt,
                 n_bin;
                 mean_flux = mean,
@@ -376,19 +388,17 @@ function avg_pds_from_iterable(
                 variance = variance,
             )
         end
-
         # Accumulate the total sum cross spectrum
         cross = sum_if_not_none_or_initialize(cross, cs_seg)
-        unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power)
+
+        unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power[fgt0])
 
         n_ave += 1
     end
-
     # If there were no good intervals, return nothing
     if isnothing(cross)
         return nothing
     end
-
     # Calculate the mean number of photons per chunk
     n_ph = sum_of_photons / n_ave
     # Calculate the mean number of photons per bin
@@ -399,12 +409,11 @@ function avg_pds_from_iterable(
         # Hence M, not M*n_bin
         common_variance /= n_ave
     end
-
     # Transform a sum into the average
-    unnorm_cross = unnorm_cross / n_ave
-    cross = cross / n_ave
-
-    # Final normalization (If not done already!)
+    unnorm_cross ./= n_ave
+    cross ./= n_ave
+    # Finally, normalize the cross spectrum (only if not already done on an
+    # interval-to-interval basis
     if use_common_mean
         cross = normalize_periodograms(
             unnorm_cross,
@@ -418,23 +427,10 @@ function avg_pds_from_iterable(
     end
 
     results = DataFrame()
-    results[!, "freq"] = freq
-    results[!, "power"] = cross
-    results[!, "unnorm_power"] = unnorm_cross
-    results = attach_metadata(
-        results,
-        (
-            n = n_bin,
-            m = n_ave,
-            dt = dt,
-            norm = norm,
-            df = 1 / (dt * n_bin),
-            nphots = n_ph,
-            mean = common_mean,
-            variance = common_variance,
-            segment_size = dt * n_bin,
-        ),
-    )
+    results.freq = freq
+    results.power = cross
+    results.unnorm_power = unnorm_cross
+
 
     return results
 end
@@ -448,20 +444,18 @@ function avg_cs_from_iterables_quick(
     unnorm_cross = unnorm_pds1 = unnorm_pds2 = nothing
     n_ave = 0
     fgt0 = n_bin = freq = nothing
-
     sum_of_photons1 = sum_of_photons2 = 0
-
     for (flux1, flux2) in zip(flux_iterable1, flux_iterable2)
-        if isnothing(flux1) || isnothing(flux2) || all(iszero, flux1) || all(iszero, flux2)
+        if isnothing(flux1) ||
+           isnothing(flux2) ||
+           all(iszero, flux1.counts) ||
+           all(iszero, flux2.counts)
             continue
         end
-
-        n_bin = length(flux1)
-
+        n_bin = length(flux1.counts)
         # Calculate the sum of each light curve, to calculate the mean
-        n_ph1 = sum(flux1)
-        n_ph2 = sum(flux2)
-
+        n_ph1 = sum(flux1.counts)
+        n_ph2 = sum(flux2.counts)
         # At the first loop, we define the frequency array and the range of
         # positive frequency bins (after the first loop, cross will not be
         # nothing anymore)
@@ -469,32 +463,24 @@ function avg_cs_from_iterables_quick(
             freq = fftfreq(n_bin, dt)
             fgt0 = positive_fft_bins(n_bin)
         end
-
         # Calculate the FFTs
-        ft1 = fft(flux1)
-        ft2 = fft(flux2)
-
+        ft1 = fft(flux1.counts)
+        ft2 = fft(flux2.counts)
         # Calculate the unnormalized cross spectrum
         unnorm_power = ft1 .* conj.(ft2)
-
         # Accumulate the sum to calculate the total mean of the lc
         sum_of_photons1 += n_ph1
         sum_of_photons2 += n_ph2
-
         # Take only positive frequencies
         keepat!(unnorm_power, fgt0)
-
         # Initialize or accumulate final averaged spectrum
         unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power)
-
         n_ave += 1
     end
-
     # If no valid intervals were found, return only `nothing`s
     if isnothing(unnorm_cross)
         return nothing
     end
-
     # Calculate the mean number of photons per chunk
     n_ph1 = sum_of_photons1 / n_ave
     n_ph2 = sum_of_photons2 / n_ave
@@ -503,10 +489,8 @@ function avg_cs_from_iterables_quick(
     common_mean1 = n_ph1 / n_bin
     common_mean2 = n_ph2 / n_bin
     common_mean = n_ph / n_bin
-
     # Transform the sums into averages
     unnorm_cross ./= n_ave
-
     # Finally, normalize the cross spectrum (only if not already done on an
     # interval-to-interval basis)
     cross = normalize_periodograms(
@@ -519,36 +503,36 @@ function avg_cs_from_iterables_quick(
         variance = nothing,
         power_type = "all",
     )
-
     # No negative frequencies
     freq = freq[fgt0]
 
+    # Create DataFrame with the computed data
     results = DataFrame()
     results[!, "freq"] = freq
     results[!, "power"] = cross
     results[!, "unnorm_power"] = unnorm_cross
-    results = attach_metadata(
-        results,
-        (
-            n = n_bin,
-            m = n_ave,
-            dt = dt,
-            norm = norm,
-            df = 1 / (dt * n_bin),
-            nphots = n_ph,
-            nphots1 = n_ph1,
-            nphots2 = n_ph2,
-            variance = nothing,
-            mean = common_mean,
-            mean1 = common_mean1,
-            mean2 = common_mean2,
-            power_type = "all",
-            fullspec = false,
-            segment_size = dt * n_bin,
-        ),
+
+    # Create NamedTuple with metadata instead of using attach_metadata
+    metadata = (
+        n = n_bin,
+        m = n_ave,
+        dt = dt,
+        norm = norm,
+        df = 1 / (dt * n_bin),
+        nphots = n_ph,
+        nphots1 = n_ph1,
+        nphots2 = n_ph2,
+        variance = nothing,
+        mean = common_mean,
+        mean1 = common_mean1,
+        mean2 = common_mean2,
+        power_type = "all",
+        fullspec = false,
+        segment_size = dt * n_bin,
     )
 
-    return results
+    # Return both DataFrame and metadata as a tuple
+    return (results, metadata)
 end
 
 function avg_cs_from_iterables(
@@ -563,7 +547,7 @@ function avg_cs_from_iterables(
     return_auxil::Bool = false,
 )
 
-    local_show_progress = show_progress
+    local_show_progress = silent ? identity : show_progress
     if silent
         local_show_progress = (a) -> a
     end
@@ -576,19 +560,23 @@ function avg_cs_from_iterables(
     common_variance1 = common_variance2 = common_variance = nothing
 
     for (flux1, flux2) in local_show_progress(zip(flux_iterable1, flux_iterable2))
-        if isnothing(flux1) || isnothing(flux2) || all(iszero, flux1) || all(iszero, flux2)
+        if isnothing(flux1) ||
+           isnothing(flux2) ||
+           all(iszero, flux1.counts) ||
+           all(iszero, flux2.counts)
+
             continue
         end
 
         # Does the flux iterable return the uncertainty?
         # If so, define the variances
         variance1 = variance2 = nothing
-        if flux1 isa Tuple
-            flux1, err1 = flux1
+        if hasproperty(flux1, :errors)
+            err1 = flux1.errors
             variance1 = Statistics.mean(err1)^2
         end
-        if flux2 isa Tuple
-            flux2, err2 = flux2
+        if hasproperty(flux2, :errors)
+            err2 = flux2.errors
             variance2 = Statistics.mean(err2)^2
         end
 
@@ -600,7 +588,7 @@ function avg_cs_from_iterables(
             common_variance2 = sum_if_not_none_or_initialize(common_variance2, variance2)
         end
 
-        n_bin = length(flux1)
+        n_bin = length(flux1.counts)
 
         # At the first loop, we define the frequency array and the range of
         # positive frequency bins (after the first loop, cross will not be
@@ -611,12 +599,12 @@ function avg_cs_from_iterables(
         end
 
         # Calculate the FFTs
-        ft1 = fft(flux1)
-        ft2 = fft(flux2)
+        ft1 = fft(flux1.counts)
+        ft2 = fft(flux2.counts)
 
         # Calculate the sum of each light curve, to calculate the mean
-        n_ph1 = sum(flux1)
-        n_ph2 = sum(flux2)
+        n_ph1 = sum(flux1.counts)
+        n_ph2 = sum(flux2.counts)
         n_ph = sqrt(n_ph1 * n_ph2)
 
         # Calculate the unnormalized cross spectrum
@@ -737,8 +725,7 @@ function avg_cs_from_iterables(
         unnorm_pds2 ./= n_ave
     end
 
-    # Finally, normalize the cross spectrum (only if not already done on an
-    # interval-to-interval basis)
+    # Finally, normalize the cross spectrum (only if not already done on an interval-to-interval basis)
     if use_common_mean
         cross = normalize_periodograms(
             unnorm_cross,
@@ -778,6 +765,7 @@ function avg_cs_from_iterables(
         freq = freq[fgt0]
     end
 
+    # Create DataFrame with the computed data
     results = DataFrame()
     results[!, "freq"] = freq
     results[!, "power"] = cross
@@ -790,33 +778,31 @@ function avg_cs_from_iterables(
         results[!, "unnorm_pds2"] = unnorm_pds2
     end
 
-    results = attach_metadata(
-        results,
-        (
-            n = n_bin,
-            m = n_ave,
-            dt = dt,
-            norm = norm,
-            df = 1 / (dt * n_bin),
-            segment_size = dt * n_bin,
-            nphots = n_ph,
-            nphots1 = n_ph1,
-            nphots2 = n_ph2,
-            countrate1 = common_mean1 / dt,
-            countrate2 = common_mean2 / dt,
-            mean = common_mean,
-            mean1 = common_mean1,
-            mean2 = common_mean2,
-            power_type = power_type,
-            fullspec = fullspec,
-            variance = common_variance,
-            variance1 = common_variance1,
-            variance2 = common_variance2,
-        ),
+    # Create NamedTuple with metadata instead of using attach_metadata
+    metadata = (
+        n = n_bin,
+        m = n_ave,
+        dt = dt,
+        norm = norm,
+        df = 1 / (dt * n_bin),
+        segment_size = dt * n_bin,
+        nphots = n_ph,
+        nphots1 = n_ph1,
+        nphots2 = n_ph2,
+        countrate1 = common_mean1 / dt,
+        countrate2 = common_mean2 / dt,
+        mean = common_mean,
+        mean1 = common_mean1,
+        mean2 = common_mean2,
+        power_type = power_type,
+        fullspec = fullspec,
+        variance = common_variance,
+        variance1 = common_variance1,
+        variance2 = common_variance2,
     )
 
-    return results
-
+    # Return both DataFrame and metadata as a tuple
+    return (results, metadata)
 end
 
 function avg_pds_from_events(
@@ -830,8 +816,9 @@ function avg_pds_from_events(
     fluxes = nothing,
     errors = nothing,
 )
+
     if isnothing(segment_size)
-        segment_size = max(gti) - min(gti)
+        segment_size = maximum(gti) - minimum(gti)
     end
     n_bin = round(Int, segment_size / dt)
     dt = segment_size / n_bin
@@ -840,21 +827,22 @@ function avg_pds_from_events(
         times,
         gti,
         segment_size;
-        n_bin,
+        n_bin = n_bin,
         fluxes = fluxes,
         errors = errors,
     )
-    cross = avg_pds_from_iterable(
+    result = avg_pds_from_iterable(
         flux_iterable,
         dt,
         norm = norm,
         use_common_mean = use_common_mean,
         silent = silent,
     )
-    if !isnothing(cross)
-        attach_metadata(cross, (gti = gti,))
+    if isnothing(result)
+        return nothing
     end
-    return cross
+
+    return DataFrame(result)
 
 end
 
@@ -875,18 +863,18 @@ function avg_cs_from_events(
     errors2 = nothing,
     return_auxil = false,
 )
+
     if isnothing(segment_size)
         segment_size = max(gti) - min(gti)
     end
     n_bin = round(Int, segment_size / dt)
-    # adjust dt
     dt = segment_size / n_bin
 
     flux_iterable1 = get_flux_iterable_from_segments(
         times1,
         gti,
         segment_size;
-        n_bin,
+        n_bin = n_bin,
         fluxes = fluxes1,
         errors = errors1,
     )
@@ -894,7 +882,7 @@ function avg_cs_from_events(
         times2,
         gti,
         segment_size;
-        n_bin,
+        n_bin = n_bin,
         fluxes = fluxes2,
         errors = errors2,
     )
@@ -911,7 +899,6 @@ function avg_cs_from_events(
     )
         results =
             avg_cs_from_iterables_quick(flux_iterable1, flux_iterable2, dt; norm = norm)
-
     else
         results = avg_cs_from_iterables(
             flux_iterable1,
@@ -925,8 +912,8 @@ function avg_cs_from_events(
             return_auxil = return_auxil,
         )
     end
-    if !isnothing(results)
-        attach_metadata(results, (gti = gti,))
+    if isnothing(results)
+        return nothing
     end
-    return results
+    return results[1]
 end

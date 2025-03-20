@@ -1,8 +1,23 @@
-function sum_if_not_none_or_initialize(A, B)
-    if isnothing(A)
-        return deepcopy((B))
+# this function is returning a scalar sum instead of maintaining the array structure.
+# this is to prevent array interface problem
+function sum_if_not_none_or_initialize(current, new_value)
+    if isnothing(new_value)
+        return current  # If new_value is nothing, just return current
     end
-    return A + B
+
+    if isnothing(current)
+        return copy(new_value)  # Initialize if current is nothing
+    end
+
+    if isa(current, AbstractArray) && isa(new_value, AbstractArray)
+        return current .+ new_value  # Element-wise addition for arrays
+    elseif isa(current, Number) && isa(new_value, Number)
+        return current + new_value  # Simple number addition
+    else
+        error(
+            "sum_if_not_none_or_initialize: Type mismatch between current=$(typeof(current)) and new_value=$(typeof(new_value))",
+        )
+    end
 end
 
 function contiguous_regions(condition::AbstractVector{Bool})
