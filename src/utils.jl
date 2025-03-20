@@ -14,7 +14,9 @@ function sum_if_not_none_or_initialize(current, new_value)
     elseif isa(current, Number) && isa(new_value, Number)
         return current + new_value  # Simple number addition
     else
-        error("sum_if_not_none_or_initialize: Type mismatch between current=$(typeof(current)) and new_value=$(typeof(new_value))")
+        error(
+            "sum_if_not_none_or_initialize: Type mismatch between current=$(typeof(current)) and new_value=$(typeof(new_value))",
+        )
     end
 end
 
