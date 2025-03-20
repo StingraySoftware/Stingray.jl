@@ -1,9 +1,10 @@
 module Stingray
 
 using ResumableFunctions, StatsBase, Statistics, DataFrames
-using FFTW, Metadata, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
 using plots, DataFrames, StatsPlots, Colors, LinearAlgebra, Interpolations
+using FFTW, NaNMath, FITSIO, Intervals
+using ProgressBars: tqdm as show_progress 
 
 include("fourier.jl")
 export positive_fft_bins
