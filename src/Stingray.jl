@@ -4,6 +4,9 @@ using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress 
 
+include("exceptions.jl") 
+using .Exceptions 
+
 include("fourier.jl")
 export positive_fft_bins
 export poisson_level
