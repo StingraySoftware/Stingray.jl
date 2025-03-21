@@ -333,15 +333,10 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
     results[!,"freq"] = freq
     results[!,"power"] = cross
     results[!,"unnorm_power"] = unnorm_cross
-    results = attach_metadata(results,(n= n_bin, m= n_ave, dt= dt,
-                         norm= norm,
-                         df= 1 / (dt * n_bin),
-                         nphots= n_ph,
-                         mean= common_mean,
-                         variance= common_variance,
-                         segment_size= dt * n_bin))
-
+    results = (; results , n = n_bin, m = n_ave, dt, norm, df = 1 / (dt * n_bin), nphots = n_ph, setment_size = dt * n_bin,  mean = common_mean, variance = common_variance)
+    results = DataFrame(results.results)
     return results
+
 end
 
 function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
@@ -429,18 +424,14 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
     results[!,"freq"] = freq
     results[!,"power"] = cross
     results[!,"unnorm_power"] = unnorm_cross
-    results = attach_metadata(results,(n= n_bin, m= n_ave, dt= dt,
-                         norm= norm,
-                         df= 1 / (dt * n_bin),
-                         nphots= n_ph,
-                         nphots1= n_ph1, nphots2= n_ph2,
-                         variance= nothing,
-                         mean= common_mean,
-                         mean1= common_mean1,
-                         mean2= common_mean2,
-                         power_type= "all",
-                         fullspec= false,
-                         segment_size= dt * n_bin))
+    results = (; results, n = n_bin, m = n_ave, dt, norm, df = 1 / (dt * n_bin), 
+           nphots = n_ph, nphots1 = n_ph1, nphots2 = n_ph2,
+           variance = nothing, mean = common_mean, mean1 = common_mean1, 
+           mean2 = common_mean2, power_type = "all", fullspec = false, 
+           segment_size = dt * n_bin)
+    results = DataFrame(results.results)
+
+
 
     return results
 end
@@ -671,22 +662,16 @@ function avg_cs_from_iterables(
         results[!,"unnorm_pds2"] = unnorm_pds2
     end
 
-    results = attach_metadata(results,(n= n_bin, m= n_ave, dt= dt,
-                         norm= norm,
-                         df= 1 / (dt * n_bin),
-                         segment_size= dt * n_bin,
-                         nphots= n_ph,
-                         nphots1= n_ph1, nphots2= n_ph2,
-                         countrate1= common_mean1 / dt,
-                         countrate2= common_mean2 / dt,
-                         mean= common_mean,
-                         mean1= common_mean1,
-                         mean2= common_mean2,
-                         power_type= power_type,
-                         fullspec= fullspec,
-                         variance= common_variance,
-                         variance1= common_variance1,
-                         variance2= common_variance2))
+    results = (; results, n = n_bin, m = n_ave, dt, norm, df = 1 / (dt * n_bin), 
+           segment_size = dt * n_bin, nphots = n_ph, nphots1 = n_ph1, 
+           nphots2 = n_ph2, countrate1 = common_mean1 / dt, 
+           countrate2 = common_mean2 / dt, mean = common_mean, 
+           mean1 = common_mean1, mean2 = common_mean2, power_type, 
+           fullspec, variance = common_variance, variance1 = common_variance1, 
+           variance2 = common_variance2)
+    results = DataFrame(results.results)
+
+
 
     return results
     
@@ -708,9 +693,12 @@ function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix
     cross = avg_pds_from_iterable(flux_iterable, dt, norm=norm,
                                   use_common_mean=use_common_mean,
                                   silent=silent)
+
     if !isnothing(cross)
-        attach_metadata(cross,(gti=gti,))
+        cross = (; cross, gti=gti)
+        cross = DataFrame(cross.cross)
     end
+
     return cross
     
 end
@@ -765,7 +753,9 @@ function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVe
         )
     end
     if !isnothing(results)
-        attach_metadata(results,(gti=gti,))
+        results = (; results, gti=gti)
+        results = DataFrame(results.results)
     end
+    
     return results
 end
