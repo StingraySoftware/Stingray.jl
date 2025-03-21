@@ -41,5 +41,3 @@ Please be sure to run the test suite before you use the package, and report anyt
 using Pkg
 Pkg.test("Stingray")
 ```
-
-
