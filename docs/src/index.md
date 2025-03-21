@@ -33,13 +33,13 @@ Pkg.activate(".")
 Pkg.instantiate()
 ```
 
-
 ## Test Suite
 
 Please be sure to run the test suite before you use the package, and report anything you think might be bugs on our GitHub Issues page.
-
 
 ```julia
 using Pkg
 Pkg.test("Stingray")
 ```
+
+
