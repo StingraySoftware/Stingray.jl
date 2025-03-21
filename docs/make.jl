@@ -6,11 +6,11 @@ DocMeta.setdocmeta!(Stingray, :DocTestSetup, :(using Stingray); recursive=true)
 makedocs(;
     modules=[Stingray],
     authors="Aman Pandey",
-    repo="https://github.com/matteobachetti/Stingray.jl/blob/{commit}{path}#{line}",
+    repo=Remotes.GitHub("StingraySoftware", "Stingray.jl"),
     sitename="Stingray.jl",
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", "false") == "true",
-        canonical="https://github.com/matteobachetti/Stingray.jl",
+        canonical="https://github.com/StingraySoftware/Stingray.jl",
         edit_link="master",
         assets=String[],
     ),
@@ -20,6 +20,8 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="https://github.com/matteobachetti/Stingray.jl",
+    repo="https://github.com/StingraySoftware/Stingray.jl",
     devbranch="main",
+    target="build",
+    push_preview=true
 )
