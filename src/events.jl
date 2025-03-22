@@ -16,8 +16,8 @@ end
 
 A structure containing event data from a FITS file.
 
-Fields
-------
+## Fields
+
 - `filename::String`: Path to the source FITS file.
 - `times::Vector{T}`: Vector of event times.
 - `energies::Vector{T}`: Vector of event energies.
