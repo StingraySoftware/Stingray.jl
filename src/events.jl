@@ -1,15 +1,55 @@
-struct Meta
+"""
+    DictMetadata
+
+A structure containing metadata from FITS file headers.
+
+Fields
+------
+- `headers::Vector{Dict{String,Any}}`: A vector of dictionaries containing header information from each HDU.
+"""
+struct DictMetadata
     headers::Vector{Dict{String,Any}}
 end
 
+"""
+    EventList{T}
+
+A structure containing event data from a FITS file.
+
+Fields
+------
+- `filename::String`: Path to the source FITS file.
+- `times::Vector{T}`: Vector of event times.
+- `energies::Vector{T}`: Vector of event energies.
+- `metadata::DictMetadata`: Metadata information extracted from the FITS file headers.
+"""
 struct EventList{T}
     filename::String
     times::Vector{T}
     energies::Vector{T}
-    metadata::Meta
+    metadata::DictMetadata
 end
 
 function readevents(path; T = Float64)
+    """
+    Read event data from a FITS file into an EventList structure.
+    Parameters
+    ----------
+    path : String
+        Path to the FITS file.
+    Keyword Arguments
+    ----------------
+    T : DataType
+        The numeric type for time and energy values. Default is Float64.
+    Returns
+    -------
+    EventList{T}
+        An EventList structure containing the extracted data.
+    Notes
+    -----
+    The function extracts TIME and ENERGY columns from any TableHDU in the FITS file.
+    All headers from each HDU are collected into the metadata field.
+    """
     headers = Dict{String,Any}[]
     times = T[]
     energies = T[]
@@ -37,7 +77,14 @@ function readevents(path; T = Float64)
             end
         end
     end
+    if isempty(times)
+        @warn "No TIME data found in FITS file $(path). Time series analysis will not be possible."
+    end
 
-    metadata = Meta(headers)
+    if isempty(energies)
+        @warn "No ENERGY data found in FITS file $(path). Energy spectrum analysis will not be possible."
+    end
+
+    metadata = DictMetadata(headers)
     return EventList{T}(path, times, energies, metadata)
 end

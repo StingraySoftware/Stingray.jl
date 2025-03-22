@@ -4,7 +4,7 @@
         test_dir = mktempdir()
         sample_file = joinpath(test_dir, "sample.fits")
         f = FITS(sample_file, "w")
-        write(f, Int[])  # Empty primary array       
+        write(f, Int[])  # Empty primary array
         # Create a binary table HDU with TIME and ENERGY columns
         times = Float64[1.0, 2.0, 3.0, 4.0, 5.0]
         energies = Float64[10.0, 20.0, 15.0, 25.0, 30.0]
@@ -62,7 +62,10 @@
         table["TIME"] = times
         write(f, table)
         close(f)
-        data = readevents(sample_file)
+        local data
+        @test_logs (:warn, "No ENERGY data found in FITS file $(sample_file). Energy spectrum analysis will not be possible.") begin
+            data = readevents(sample_file)
+        end
         @test length(data.times) == 3
         @test length(data.energies) == 0
         #create a file with only ENERGY column
@@ -74,7 +77,10 @@
         table["ENERGY"] = energies
         write(f, table)
         close(f)
-        data2 = readevents(sample_file2)
+        local data2
+        @test_logs (:warn, "No TIME data found in FITS file $(sample_file2). Time series analysis will not be possible.") begin
+            data2 = readevents(sample_file2)
+        end
         @test length(data2.times) == 0  # No TIME column
         @test length(data2.energies) == 3
     end
@@ -111,15 +117,21 @@
     end
 
     # Test 5: Test with monol_testA.evt
-    @testset "Real test files" begin
-        if isfile("data/monol_testA.evt")
-            @testset "data/monol_testA.evt" begin
-                data = readevents("data/monol_testA.evt")
-                @test data.filename == "data/monol_testA.evt"
-                @test length(data.metadata.headers) > 0
+    @testset "test monol_testA.evt" begin
+        test_filepath = joinpath("data", "monol_testA.evt")
+        if isfile(test_filepath)
+            @testset "monol_testA.evt" begin
+                old_logger = global_logger(ConsoleLogger(stderr, Logging.Error))
+                try
+                    data = readevents(test_filepath)
+                    @test data.filename == test_filepath
+                    @test length(data.metadata.headers) > 0
+                finally
+                    global_logger(old_logger)
+                end
             end
         else
-            @info "Test file 'monol_testA.evt' not found. Skipping this test."
+            @info "Test file '$(test_filepath)' not found. Skipping this test."
         end
     end
 
