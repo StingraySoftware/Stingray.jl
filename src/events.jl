@@ -9,25 +9,25 @@ struct EventList{T}
     metadata::Meta
 end
 
-function readevents(path; T=Float64)
+function readevents(path; T = Float64)
     headers = Dict{String,Any}[]
     times = T[]
     energies = T[]
-    
+
     FITS(path, "r") do f
-        for i in 1:length(f)  # Iterate over HDUs
+        for i = 1:length(f)  # Iterate over HDUs
             hdu = f[i]
             header_dict = Dict{String,Any}()
             for key in keys(read_header(hdu))
                 header_dict[string(key)] = read_header(hdu)[key]
             end
             push!(headers, header_dict)
-            
+
             # Check if the HDU is a table
             if isa(hdu, TableHDU)
                 # Get column names using the correct FITSIO method
                 colnames = FITSIO.colnames(hdu)
-                
+
                 if "TIME" in colnames
                     times = convert(Vector{T}, read(hdu, "TIME"))
                 end
@@ -37,7 +37,7 @@ function readevents(path; T=Float64)
             end
         end
     end
-    
+
     metadata = Meta(headers)
     return EventList{T}(path, times, energies, metadata)
 end
