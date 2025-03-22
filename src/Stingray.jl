@@ -32,4 +32,7 @@ export bin_intervals_from_gtis
 
 include("utils.jl")
 
+include("events.jl")
+export readevents
+
 end 
