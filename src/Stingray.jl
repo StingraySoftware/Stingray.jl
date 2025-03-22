@@ -34,5 +34,6 @@ include("utils.jl")
 
 include("events.jl")
 export readevents, EventList, DictMetadata
+include("powerspectrum.jl")  # New module for power spectrum calculations
 
 end
