@@ -1,3 +1,8 @@
+module Events
+export EventList, readevents
+
+using FITSIO
+
 """
     DictMetadata
 
@@ -83,3 +88,5 @@ function readevents(path; T = Float64)
     metadata = DictMetadata(headers)
     return EventList{T}(path, times, energies, metadata)
 end
+
+end  # module Events

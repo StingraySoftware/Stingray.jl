@@ -33,6 +33,12 @@ export bin_intervals_from_gtis
 include("utils.jl")
 
 include("events.jl")
-export readevents, EventList, DictMetadata
+include("lightcurve.jl")
 
-end
+import .Events
+import .LightCurveModule 
+
+export Events, LightCurveModule
+export create_lightcurve
+export LightCurve 
+end  # module Stingray
