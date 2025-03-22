@@ -1,3 +1,5 @@
+using RecipesBase
+
 module LightCurveModule
 
 import ..Events  # Import EventList from events.jl
@@ -73,23 +75,22 @@ function create_lightcurve(eventlist::Events.EventList{T}, bin_size::T; err_meth
     return LightCurve{T}(bins[1:end-1], counts, errors, err_method)
 end
 
-"""
-    plot_lightcurve(lightcurve::LightCurve{T}) where T
-Plot the light curve using the given `LightCurve` structure.
-"""
-function plot_lightcurve(lightcurve::LightCurve{T}) where T
-    # Extract data from the light curve object
+# Plot recipe using RecipesBase
+@recipe function f(lightcurve::LightCurve{T}) where T
+    # Extract data from the LightCurve object
     timebins = lightcurve.timebins
     counts = lightcurve.counts
     errors = lightcurve.count_error
 
-    # Warning if the counts array is empty
-    if isempty(counts)
-        @warn "The counts array is empty. Please check the event data or bin size."
-    end
-
-    # Create a plot
-    plot(timebins, counts, label="Event Counts", xlabel="Time", ylabel="Counts", ribbon=errors, legend=:topright)
+    # Plot data with error ribbon
+    return _plot(
+        timebins, counts,
+        ribbon=errors,
+        label="Event Counts",
+        xlabel="Time",
+        ylabel="Counts",
+        legend=:topright
+    )
 end
 
 end  # module LightCurveModule
