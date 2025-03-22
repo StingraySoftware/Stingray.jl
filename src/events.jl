@@ -30,26 +30,21 @@ struct EventList{T}
     metadata::DictMetadata
 end
 
+"""
+    readevents(path; T = Float64)
+
+Read event data from a FITS file into an EventList structure. The `path` is a
+string that points to the location of the FITS file. `T` is used to specify
+which numeric type to convert the data to.
+
+Returns an [`EventList`](@ref) containing the extracted data.
+
+## Notes
+
+The function extracts `TIME` and `ENERGY` columns from any TableHDU in the FITS
+file. All headers from each HDU are collected into the metadata field.
+"""
 function readevents(path; T = Float64)
-    """
-    Read event data from a FITS file into an EventList structure.
-    Parameters
-    ----------
-    path : String
-        Path to the FITS file.
-    Keyword Arguments
-    ----------------
-    T : DataType
-        The numeric type for time and energy values. Default is Float64.
-    Returns
-    -------
-    EventList{T}
-        An EventList structure containing the extracted data.
-    Notes
-    -----
-    The function extracts TIME and ENERGY columns from any TableHDU in the FITS file.
-    All headers from each HDU are collected into the metadata field.
-    """
     headers = Dict{String,Any}[]
     times = T[]
     energies = T[]
