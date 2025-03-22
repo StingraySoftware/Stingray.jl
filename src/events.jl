@@ -3,8 +3,8 @@
 
 A structure containing metadata from FITS file headers.
 
-Fields
-------
+## Fields
+
 - `headers::Vector{Dict{String,Any}}`: A vector of dictionaries containing header information from each HDU.
 """
 struct DictMetadata
