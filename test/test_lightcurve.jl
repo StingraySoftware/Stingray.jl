@@ -167,5 +167,5 @@ using Stingray.LightCurveModule
 
     #println("🔹 LightCurve Timebins: ", lightcurve.timebins)
     #println("🔹 LightCurve Counts: ", lightcurve.counts)
-    println("LightCurve Tests Passed!")
+    #println("LightCurve Tests Passed!")
 end
