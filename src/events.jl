@@ -45,19 +45,19 @@ The function extracts `TIME` and `ENERGY` columns from any TableHDU in the FITS
 file. All headers from each HDU are collected into the metadata field.
 """
 function readevents(path; T = Float64)
-    headers = Dict{String,Any}[]  # Store headers from all HDUs
-    times = T[]  # Store times
-    energies = T[]  # Store energies
-    event_data_read = false  # Flag to check if event data has already been read
+    headers = Dict{String,Any}[]
+    times = T[]
+    energies = T[]
+    event_data_read = false
 
     FITS(path, "r") do f
-        for i = 1:length(f)  # Iterate over all HDUs
+        for i = 1:length(f)  # Iterate over HDUs
             hdu = f[i]
             header_dict = Dict{String,Any}()
             for key in keys(read_header(hdu))
                 header_dict[string(key)] = read_header(hdu)[key]
             end
-            push!(headers, header_dict)  # Collect header information for each HDU
+            push!(headers, header_dict)
 
             # Check if the HDU is a table
             if isa(hdu, TableHDU)
@@ -77,7 +77,6 @@ function readevents(path; T = Float64)
         end
     end
 
-    # Check if no data found for times or energies
     if isempty(times)
         @warn "No TIME data found in FITS file $(path). Time series analysis will not be possible."
     end
@@ -86,7 +85,7 @@ function readevents(path; T = Float64)
         @warn "No ENERGY data found in FITS file $(path). Energy spectrum analysis will not be possible."
     end
 
-    metadata = DictMetadata(headers)  # Metadata for all headers
+    metadata = DictMetadata(headers)
     return EventList{T}(path, times, energies, metadata)
 end
 
