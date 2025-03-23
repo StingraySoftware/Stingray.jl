@@ -30,5 +30,7 @@
         @test all(lightcurve.counts .>= 0)
         @test lightcurve.err_method == :poisson
         @test length(lightcurve.timebins) == length(lightcurve.counts)
+
     end
+    
 end

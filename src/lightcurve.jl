@@ -41,26 +41,13 @@ function create_lightcurve(eventlist::EventList{T}, bin_size::T; err_method::Sym
     min_time = minimum(eventlist.times)
     max_time = maximum(eventlist.times)
 
-    bins = min_time:bin_size:max_time
-    n_bins = length(bins) - 1
+    bins = min_time:bin_size:max_time  # Define bin edges
 
-    counts = zeros(T, n_bins)
-    errors = zeros(T, n_bins)
+    # Use histogram for efficient binning
+    hist = fit(Histogram, eventlist.times, bins)
 
-    # Check for valid error method
-    if err_method != :poisson
-        throw("Unrecognized error method: $err_method")  # Throw error if the method is unrecognized
-    end
-
-    # Binning events and calculating counts and errors
-    for (i, bin_start) in enumerate(bins[1:end-1])
-        bin_end = bins[i + 1]
-        counts[i] = count(x -> bin_start <= x < bin_end, eventlist.times)
-
-        if err_method == :poisson
-            errors[i] = sqrt(counts[i])
-        end
-    end
+    counts = hist.weights  # Extract counts from histogram
+    errors = sqrt.(counts)  # Poisson errors
 
     return LightCurve{T}(bins[1:end-1], counts, errors, err_method)
 end
