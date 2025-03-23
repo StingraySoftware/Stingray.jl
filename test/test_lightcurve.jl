@@ -31,6 +31,11 @@
         @test lightcurve.err_method == :poisson
         @test length(lightcurve.timebins) == length(lightcurve.counts)
 
-    end
-    
+        # Validate the number of bins
+        expected_bins = length(minimum(times):bin_size:maximum(times)) - 1
+        @test length(lightcurve.counts) == expected_bins
+
+        # Validate total count consistency
+        @test sum(lightcurve.counts) == length(times) - 1
+    end 
 end

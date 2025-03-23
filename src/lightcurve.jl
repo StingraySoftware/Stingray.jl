@@ -40,15 +40,9 @@ A LightCurve instance containing binned event counts.
 function create_lightcurve(eventlist::EventList{T}, bin_size::T; err_method::Symbol=:poisson) where T
     min_time = minimum(eventlist.times)
     max_time = maximum(eventlist.times)
-
-    bins = min_time:bin_size:max_time  # Define bin edges
-
-    # Use histogram for efficient binning
+    bins = min_time:bin_size:max_time
     hist = fit(Histogram, eventlist.times, bins)
-
-    counts = hist.weights  # Extract counts from histogram
-    errors = sqrt.(counts)  # Poisson errors
-
+    counts = hist.weights
+    errors = sqrt.(counts)
     return LightCurve{T}(bins[1:end-1], counts, errors, err_method)
 end
-
