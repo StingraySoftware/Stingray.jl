@@ -38,6 +38,10 @@ A LightCurve instance containing binned event counts.
 - Errors are estimated using Poisson statistics.
 """
 function create_lightcurve(eventlist::EventList{T}, bin_size::T; err_method::Symbol=:poisson) where T
+    # Validate err_method
+    if err_method != :poisson
+        throw(ArgumentError("Invalid error method. Only ':poisson' is supported."))
+    end
     min_time = minimum(eventlist.times)
     max_time = maximum(eventlist.times)
     bins = min_time:bin_size:max_time
