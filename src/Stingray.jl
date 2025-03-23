@@ -35,10 +35,7 @@ include("utils.jl")
 include("events.jl")
 include("lightcurve.jl")
 
-import .Events
-import .LightCurveModule 
+export readevents, EventList, DictMetadata
 
-export Events, LightCurveModule
-export create_lightcurve
-export LightCurve 
+export create_lightcurve, LightCurve 
 end  # module Stingray

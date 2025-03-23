@@ -1,9 +1,3 @@
-using Test
-using FITSIO
-using Stingray
-import ..Events  # Ensure your module is imported
-import ..Events.readevents  # Explicitly import readevents
-
 @testset "EventList Tests" begin
     # Test 1: Create a sample FITS file for testing
     @testset "Sample FITS file creation" begin
