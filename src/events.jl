@@ -48,6 +48,7 @@ function readevents(path; T = Float64)
     headers = Dict{String,Any}[]
     times = T[]
     energies = T[]
+    event_data_read = false
 
     FITS(path, "r") do f
         for i = 1:length(f)  # Iterate over HDUs
@@ -60,18 +61,22 @@ function readevents(path; T = Float64)
 
             # Check if the HDU is a table
             if isa(hdu, TableHDU)
-                # Get column names using the correct FITSIO method
                 colnames = FITSIO.colnames(hdu)
 
-                if "TIME" in colnames
+                # If both TIME and ENERGY columns are found and we haven't read the event data yet
+                if "TIME" in colnames && "ENERGY" in colnames && !event_data_read
                     times = convert(Vector{T}, read(hdu, "TIME"))
-                end
-                if "ENERGY" in colnames
+                    energies = convert(Vector{T}, read(hdu, "ENERGY"))
+                    event_data_read = true  # Mark that we've read the event data
+                elseif "TIME" in colnames && !event_data_read
+                    times = convert(Vector{T}, read(hdu, "TIME"))
+                elseif "ENERGY" in colnames && !event_data_read
                     energies = convert(Vector{T}, read(hdu, "ENERGY"))
                 end
             end
         end
     end
+
     if isempty(times)
         @warn "No TIME data found in FITS file $(path). Time series analysis will not be possible."
     end
@@ -83,3 +88,4 @@ function readevents(path; T = Float64)
     metadata = DictMetadata(headers)
     return EventList{T}(path, times, energies, metadata)
 end
+
