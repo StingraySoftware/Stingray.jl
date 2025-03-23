@@ -48,7 +48,7 @@ function create_lightcurve(eventlist::EventList{T}, bin_size::T; err_method::Sym
     errors = zeros(T, n_bins)
 
     # Check for valid error method
-    if err_method != :poisson && err_method != :sqrtN
+    if err_method != :poisson
         throw("Unrecognized error method: $err_method")  # Throw error if the method is unrecognized
     end
 
@@ -57,7 +57,7 @@ function create_lightcurve(eventlist::EventList{T}, bin_size::T; err_method::Sym
         bin_end = bins[i + 1]
         counts[i] = count(x -> bin_start <= x < bin_end, eventlist.times)
 
-        if err_method == :poisson || err_method == :sqrtN
+        if err_method == :poisson
             errors[i] = sqrt(counts[i])
         end
     end

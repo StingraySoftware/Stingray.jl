@@ -17,19 +17,20 @@
     @test isfile(sample_file)
 
     # Test reading the sample file
-    eventlist = readevents(sample_file)  # No module prefix since it's directly available
+    eventlist = readevents(sample_file)
     @test eventlist.filename == sample_file
     @test length(eventlist.times) == length(times)
     @test length(eventlist.energies) == length(energies)
 
-    # Create a LightCurve
-    bin_size = 1.0
-    err_method = :poisson
-    lightcurve = create_lightcurve(eventlist, bin_size, err_method=err_method)
+    # Test different bin sizes
+    for bin_size in [1.0, 0.5, 2.0, 1.3]
+        lightcurve = create_lightcurve(eventlist, bin_size, err_method=:poisson)
 
-    # Validate LightCurve properties
-    @test all(lightcurve.counts .>= 0)
-    @test lightcurve.err_method == err_method
+        # Validate LightCurve properties
+        @test all(lightcurve.counts .>= 0)
+        @test lightcurve.err_method == :poisson
+        @test length(lightcurve.timebins) == length(lightcurve.counts)
+    end
 
     println("LightCurve Tests Passed!")
 end
