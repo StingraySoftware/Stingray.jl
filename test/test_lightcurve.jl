@@ -25,17 +25,18 @@
     # Test different bin sizes
     for bin_size in [1.0, 0.5, 2.0, 1.3]
         lightcurve = create_lightcurve(eventlist, bin_size, err_method=:poisson)
-
+    
         # Validate LightCurve properties
         @test all(lightcurve.counts .>= 0)
         @test lightcurve.err_method == :poisson
         @test length(lightcurve.timebins) == length(lightcurve.counts)
-
-        # Validate the number of bins
-        expected_bins = length(minimum(times):bin_size:maximum(times)) - 1
-        @test length(lightcurve.counts) == expected_bins
-
-        # Validate total count consistency
-        @test sum(lightcurve.counts) == length(times) - 1
-    end 
+    
+        # Compute expected counts using Histogram directly
+        bins = minimum(eventlist.times):bin_size:maximum(eventlist.times)
+        expected_hist = fit(Histogram, eventlist.times, bins)
+        expected_counts = expected_hist.weights
+    
+        # Explicitly verify count correctness
+        @test lightcurve.counts == expected_counts
+    end
 end
