@@ -31,6 +31,4 @@
         @test lightcurve.err_method == :poisson
         @test length(lightcurve.timebins) == length(lightcurve.counts)
     end
-
-    println("LightCurve Tests Passed!")
 end
