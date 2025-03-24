@@ -41,8 +41,7 @@ function create_lightcurve(eventlist::EventList{T}, bin_size::T; err_method::Sym
     if err_method ∉ (:poisson,)
         throw(ArgumentError("Invalid error method: $err_method. Supported methods: :poisson"))
     end
-    min_time = minimum(eventlist.times)
-    max_time = maximum(eventlist.times)
+    min_time,max_time = extrema(eventlist.times)
     bins = min_time:bin_size:max_time
     hist = fit(Histogram, eventlist.times, bins)
     counts = hist.weights
