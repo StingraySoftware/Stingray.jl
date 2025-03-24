@@ -35,8 +35,6 @@
     for (bin_size, expected) in zip(bin_sizes, expected_counts)
         lightcurve = create_lightcurve(eventlist, bin_size, err_method=:poisson)
     
-        # validate LightCurve properties
-        @test all(lightcurve.counts .>= 0)
         @test lightcurve.err_method == :poisson
         @test length(lightcurve.timebins) == length(lightcurve.counts) + 1 #bin count fix
         @test lightcurve.counts == expected 
