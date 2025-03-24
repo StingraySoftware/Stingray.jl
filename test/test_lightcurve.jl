@@ -16,27 +16,29 @@
 
     @test isfile(sample_file)
 
-    # Test reading the sample file
+    # test reading the sample file
     eventlist = readevents(sample_file)
     @test eventlist.filename == sample_file
     @test length(eventlist.times) == length(times)
     @test length(eventlist.energies) == length(energies)
 
+    # expected counts for different bin sizes
+    bin_sizes = [1.0, 0.5, 2.0, 1.3]
+    expected_counts = [
+        [2.0, 1.0, 2.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0], 
+        [2.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0], 
+        [3.0, 2.0, 2.0, 2.0],
+        [3.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0] 
+    ]
+
     # Test different bin sizes
-    for bin_size in [1.0, 0.5, 2.0, 1.3]
+    for (bin_size, expected) in zip(bin_sizes, expected_counts)
         lightcurve = create_lightcurve(eventlist, bin_size, err_method=:poisson)
     
-        # Validate LightCurve properties
+        # validate LightCurve properties
         @test all(lightcurve.counts .>= 0)
         @test lightcurve.err_method == :poisson
-        @test length(lightcurve.timebins) == length(lightcurve.counts)
-    
-        # Compute expected counts using Histogram directly
-        bins = minimum(eventlist.times):bin_size:maximum(eventlist.times)
-        expected_hist = fit(Histogram, eventlist.times, bins)
-        expected_counts = expected_hist.weights
-    
-        # Explicitly verify count correctness
-        @test lightcurve.counts == expected_counts
+        @test length(lightcurve.timebins) == length(lightcurve.counts) + 1 #bin count fix
+        @test lightcurve.counts == expected 
     end
 end
