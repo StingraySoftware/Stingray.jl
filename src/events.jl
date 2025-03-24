@@ -1,3 +1,5 @@
+using FITSIO
+
 """
     DictMetadata
 
@@ -47,7 +49,7 @@ function readevents(path; T = Float64)
     headers = Dict{String,Any}[]
     times = T[]
     energies = T[]
-    
+
     FITS(path, "r") do f
         for i = 1:length(f)  # Iterate over HDUs
             hdu = f[i]
@@ -57,35 +59,36 @@ function readevents(path; T = Float64)
                 header_dict[string(key)] = read_header(hdu)[key]
             end
             push!(headers, header_dict)
-            
-            # Check if the HDU is a table and we haven't found events yet
+
+            # Check if the HDU is a table
             if isa(hdu, TableHDU)
                 colnames = FITSIO.colnames(hdu)
-                has_time = "TIME" in colnames
-                has_energy = "ENERGY" in colnames
 
-                if has_time
+                # Read TIME and ENERGY data if columns exist and vectors are empty
+                if isempty(times) && ("TIME" in colnames)
                     times = convert(Vector{T}, read(hdu, "TIME"))
+                end
+                if isempty(energies) && ("ENERGY" in colnames)
+                    energies = convert(Vector{T}, read(hdu, "ENERGY"))
+                end
 
-                    if has_energy
-                        energies = convert(Vector{T}, read(hdu, "ENERGY"))
-                    end
-                    # Return immediately after finding and reading event data
-                    @info "Found event data in extension $(i) of $(path)"
+                # If we found both time and energy data, we can return
+                if !isempty(times) && !isempty(energies)
+                    @info "Found complete event data in extension $(i) of $(path)"
                     metadata = DictMetadata(headers)
                     return EventList{T}(path, times, energies, metadata)
                 end
             end
         end
-    end    
+    end
+
     if isempty(times)
         @warn "No TIME data found in FITS file $(path). Time series analysis will not be possible."
     end
-
     if isempty(energies)
         @warn "No ENERGY data found in FITS file $(path). Energy spectrum analysis will not be possible."
     end
-    
+
     metadata = DictMetadata(headers)
     return EventList{T}(path, times, energies, metadata)
 end
