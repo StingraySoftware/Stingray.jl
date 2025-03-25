@@ -182,16 +182,17 @@ end
 end
 
 @testset "GTI Interface" begin
+    # Setup test data
     times = collect(0.0:0.1:1.0) 
     energies = rand(length(times))
     el = EventList("test.evt", times, energies, DictMetadata([Dict()]))
-
     lc = create_lightcurve(el, 0.1)
+    gtis = [0.05 0.25; 0.35 0.55; 0.65 0.85]
+
+    # Basic LightCurve creation test
     @test length(lc.timebins) == 10
     @test length(lc.counts) == 10
     @test length(lc.count_error) == 10
-    
-    gtis = [0.05 0.25; 0.35 0.55; 0.65 0.85]  
 
     @testset "apply_gtis LightCurve" begin
         filtered = apply_gtis(lc, gtis)
@@ -204,7 +205,11 @@ end
         end
     end
     
-    @testset "fill_bad_time_intervals! LightCurve" begin
+    @testset "Edge Case: No GTIs" begin
+        @test_throws ArgumentError apply_gtis(lc, Matrix{Float64}(undef, 0, 2))
+    end
+    
+    @testset "fill_bad_time_intervals! LightCurve (constant fill)" begin
         test_lc = deepcopy(lc)
         fill_bad_time_intervals!(test_lc, gtis, fill_value=-1.0)
         
@@ -215,5 +220,40 @@ end
             in_gti = (test_lc.timebins .>= gtis[i,1]) .& (test_lc.timebins .<= gtis[i,2])
             @test all(test_lc.counts[in_gti] .!= -1.0)
         end
+    end
+    
+    @testset "fill_bad_time_intervals! LightCurve (white noise)" begin
+        test_lc = deepcopy(lc)
+        fill_bad_time_intervals!(test_lc, gtis)
+        
+        good_mask = falses(length(lc.timebins))
+        for gti in eachrow(gtis)
+            good_mask .|= (test_lc.timebins .>= gti[1]) .& (test_lc.timebins .<= gti[2])
+        end
+        
+        @test test_lc.counts[good_mask] == lc.counts[good_mask]
+        @test test_lc.count_error[good_mask] == lc.count_error[good_mask]
+        @test all(test_lc.counts[.!good_mask] .>= 0)
+    end
+    
+    @testset "fill_bad_time_intervals EventList" begin
+        test_el = deepcopy(el)
+        filled_el = fill_bad_time_intervals(test_el, gtis)
+        
+        @test issorted(filled_el.times)
+        @test length(filled_el.times) >= length(test_el.times)
+        @test filled_el.filename == test_el.filename
+        
+        # Check good intervals are preserved
+        for gti in eachrow(gtis)
+            in_gti = (filled_el.times .>= gti[1]) .& (filled_el.times .<= gti[2])
+            original_in_gti = (test_el.times .>= gti[1]) .& (test_el.times .<= gti[2])
+            @test filled_el.times[in_gti] == test_el.times[original_in_gti]
+            @test filled_el.energies[in_gti] == test_el.energies[original_in_gti]
+        end
+        
+        # Edge case: empty EventList
+        empty_el = EventList("empty.evt", Float64[], Float64[], DictMetadata([Dict()]))
+        @test fill_bad_time_intervals(empty_el, gtis).times == Float64[]
     end
 end

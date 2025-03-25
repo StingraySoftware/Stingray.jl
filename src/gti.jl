@@ -287,7 +287,7 @@ end
     end
 end
 
-#gti interface
+# GTI Interface Functions
 
 """
     apply_gtis(el::EventList{T}, gtis::AbstractMatrix{<:Real}) where T
@@ -303,13 +303,10 @@ function apply_gtis(el::EventList{T}, gtis::AbstractMatrix{<:Real}) where T
         gti_start, gti_end = gtis[i, 1], gtis[i, 2]
         mask = (el.times .>= gti_start) .& (el.times .<= gti_end)
         
-        filtered_times = el.times[mask]
-        filtered_energies = el.energies[mask]
-        
         push!(result, EventList{T}(
             el.filename,
-            filtered_times,
-            filtered_energies,
+            el.times[mask],
+            el.energies[mask],
             deepcopy(el.metadata))
         )
     end
@@ -323,6 +320,7 @@ end
 Apply Good Time Intervals (GTIs) to a LightCurve, returning an array of LightCurves - one for each GTI.
 """
 function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
+    size(gtis, 1) == 0 && throw(ArgumentError("GTIs matrix cannot be empty"))
     check_gtis(gtis)
     
     result = LightCurve{T}[]
@@ -331,14 +329,10 @@ function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
         gti_start, gti_end = gtis[i, 1], gtis[i, 2]
         mask = (lc.timebins .>= gti_start) .& (lc.timebins .<= gti_end)
         
-        filtered_timebins = lc.timebins[mask]
-        filtered_counts = lc.counts[mask]
-        filtered_errors = lc.count_error[mask]
-        
         push!(result, LightCurve{T}(
-            filtered_timebins,
-            filtered_counts,
-            filtered_errors,
+            lc.timebins[mask],
+            lc.counts[mask],
+            lc.count_error[mask],
             lc.err_method)
         )
     end
@@ -347,44 +341,132 @@ function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
 end
 
 """
-    fill_bad_time_intervals!(el::EventList{T}, gtis::AbstractMatrix{<:Real};
-                           fill_value::T=zero(T)) where T
+    fill_bad_time_intervals(el::EventList{T}, gtis::AbstractMatrix{<:Real};
+                          rng::Random.AbstractRNG=Random.default_rng()) where T
 
-Fill bad time intervals (outside GTIs) in an EventList with a fill value.
+Create a new EventList with bad time intervals filled with synthetic events that preserve
+statistical properties. Returns a new EventList without modifying the original.
+
+# Arguments
+- `el`: Input EventList
+- `gtis`: Good Time Intervals matrix (N×2)
+- `rng`: Random number generator (optional)
+
+# Returns
+- New EventList with filled bad intervals
 """
-function fill_bad_time_intervals!(el::EventList{T}, gtis::AbstractMatrix{<:Real};
-                                 fill_value::T=zero(T)) where T
+function fill_bad_time_intervals(el::EventList{T}, gtis::AbstractMatrix{<:Real};
+                                rng::Random.AbstractRNG=Random.default_rng()) where T
+    # Input validation
+    isempty(el.times) && return EventList(el.filename, copy(el.times), copy(el.energies), deepcopy(el.metadata))
     check_gtis(gtis)
     
-    outside_mask = fill(true, length(el.times))
-    for i in 1:size(gtis, 1)
-        gti_start, gti_end = gtis[i, 1], gtis[i, 2]
-        outside_mask .&= .!((el.times .>= gti_start) .& (el.times .<= gti_end))
+    # Find bad intervals
+    bad_intervals = find_bad_intervals(el.times, gtis)
+    isempty(bad_intervals) && return EventList(el.filename, copy(el.times), copy(el.energies), deepcopy(el.metadata))
+    
+    # Create good events mask
+    good_mask = falses(length(el.times))
+    for gti in eachrow(gtis)
+        good_mask .|= (el.times .>= gti[1]) .& (el.times .<= gti[2])
     end
     
-    el.energies[outside_mask] .= fill_value
+    # Generate synthetic events
+    new_times = T[]
+    new_energies = T[]
     
-    return nothing
+    for (bad_start, bad_end) in bad_intervals
+        window_size = bad_end - bad_start
+        window_start = max(bad_start - window_size, minimum(el.times))
+        window_end = min(bad_end + window_size, maximum(el.times))
+        
+        local_good = good_mask .& (el.times .>= window_start) .& (el.times .<= window_end)
+        
+        if any(local_good)
+            t_min, t_max = extrema(el.times[local_good])
+            time_span = t_max - t_min
+            if time_span > 0
+                rate = sum(local_good) / time_span
+                n_events = max(round(Int, rate * window_size), 0)
+                
+                if n_events > 0
+                    append!(new_times, rand(rng, T, n_events) .* window_size .+ bad_start)
+                    append!(new_energies, rand(rng, el.energies[good_mask], n_events))
+                end
+            end
+        end
+    end
+    
+    # Combine and sort events
+    combined_times = vcat(el.times[good_mask], new_times)
+    combined_energies = vcat(el.energies[good_mask], new_energies)
+    sort_idx = sortperm(combined_times)
+    
+    # Return new EventList
+    return EventList(
+        el.filename,
+        combined_times[sort_idx],
+        combined_energies[sort_idx],
+        deepcopy(el.metadata)
+    )
 end
 
 """
     fill_bad_time_intervals!(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real};
                            fill_value::T=zero(T)) where T
 
-Fill bad time intervals (outside GTIs) in a LightCurve with a fill value.
+Fill bad time intervals in a LightCurve with a constant value (default 0).
+Modifies the LightCurve in-place.
 """
 function fill_bad_time_intervals!(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real};
                                  fill_value::T=zero(T)) where T
     check_gtis(gtis)
     
-    outside_mask = fill(true, length(lc.timebins))
-    for i in 1:size(gtis, 1)
-        gti_start, gti_end = gtis[i, 1], gtis[i, 2]
-        outside_mask .&= .!((lc.timebins .>= gti_start) .& (lc.timebins .<= gti_end))
+    bad_mask = fill(true, length(lc.timebins))
+    for gti in eachrow(gtis)
+        bad_mask .&= .!((lc.timebins .>= gti[1]) .& (lc.timebins .<= gti[2]))
     end
     
-    lc.counts[outside_mask] .= fill_value
-    lc.count_error[outside_mask] .= zero(T)
+    lc.counts[bad_mask] .= fill_value
+    lc.count_error[bad_mask] .= zero(T)
     
     return nothing
+end
+
+"""
+    find_bad_intervals(times::AbstractVector{T}, gtis::AbstractMatrix{<:Real}) where T
+
+Helper function to identify time intervals not covered by any GTI.
+Returns a vector of (start, stop) tuples.
+"""
+function find_bad_intervals(times::AbstractVector{T}, gtis::AbstractMatrix{<:Real}) where T
+    isempty(gtis) && return [(minimum(times), maximum(times))]
+    isempty(times) && return Tuple{T,T}[]
+    
+    sorted_gtis = sortslices(gtis, dims=1)
+    bad_intervals = Tuple{T,T}[]
+    t_min, t_max = extrema(times)
+    
+    # Before first GTI
+    first_gti_start = sorted_gtis[1,1]
+    if first_gti_start > t_min
+        push!(bad_intervals, (t_min, first_gti_start))
+    end
+    
+    # Between GTIs
+    for i in 2:size(sorted_gtis,1)
+        gap_start = sorted_gtis[i-1,2]
+        gap_end = sorted_gtis[i,1]
+        if gap_end > gap_start
+            push!(bad_intervals, (gap_start, gap_end))
+        end
+    end
+    
+    # After last GTI
+    last_gti_end = sorted_gtis[end,2]
+    if last_gti_end < t_max
+        push!(bad_intervals, (last_gti_end, t_max))
+    end
+    
+    return bad_intervals
 end

@@ -1,5 +1,6 @@
 module Stingray
 
+using Random
 using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
@@ -25,12 +26,13 @@ export load_gtis
 export get_total_gti_length
 export create_gti_mask
 export create_gti_from_condition
+export fill_bad_time_intervals
 export operations_on_gtis
 export get_btis
 export time_intervals_from_gtis
 export bin_intervals_from_gtis
 export apply_gtis
-export fill_bad_time_intervals!
+export fill_bad_time_intervals! 
 export get_gti_from_hdu
 export check_gtis
 export generate_indices_of_segment_boundaries_unbinned
