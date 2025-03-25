@@ -180,3 +180,40 @@ end
         @test stop_bins == [2, 3, 4, 5, 8]
     end
 end
+
+@testset "GTI Interface" begin
+    times = collect(0.0:0.1:1.0) 
+    energies = rand(length(times))
+    el = EventList("test.evt", times, energies, DictMetadata([Dict()]))
+
+    lc = create_lightcurve(el, 0.1)
+    @test length(lc.timebins) == 10
+    @test length(lc.counts) == 10
+    @test length(lc.count_error) == 10
+    
+    gtis = [0.05 0.25; 0.35 0.55; 0.65 0.85]  
+
+    @testset "apply_gtis LightCurve" begin
+        filtered = apply_gtis(lc, gtis)
+        @test length(filtered) == size(gtis, 1)
+        
+        for (i, f) in enumerate(filtered)
+            @test length(f.timebins) == length(f.counts) == length(f.count_error)
+            @test all(f.timebins .>= gtis[i,1])
+            @test all(f.timebins .<= gtis[i,2])
+        end
+    end
+    
+    @testset "fill_bad_time_intervals! LightCurve" begin
+        test_lc = deepcopy(lc)
+        fill_bad_time_intervals!(test_lc, gtis, fill_value=-1.0)
+        
+        @test any(test_lc.counts .== -1.0)
+        @test all(test_lc.count_error[test_lc.counts .== -1.0] .== 0.0)
+        
+        for i in 1:size(gtis,1)
+            in_gti = (test_lc.timebins .>= gtis[i,1]) .& (test_lc.timebins .<= gtis[i,2])
+            @test all(test_lc.counts[in_gti] .!= -1.0)
+        end
+    end
+end
