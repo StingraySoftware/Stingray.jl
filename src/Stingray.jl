@@ -1,17 +1,6 @@
 module Stingray
 
-using ResumableFunctions
-using StatsBase
-using Statistics
-using DataFrames
-using FFTW
-using NaNMath
-using FITSIO
-using Intervals
-using LinearAlgebra
-using Colors
-using Plots
-using StatsPlots
+using ResumableFunctions, StatsBase, Statistics, DataFrames, FFTW, NaNMath, FITSIO, Intervals, LinearAlgebra, Colors, Plots, StatsPlots
 using ProgressBars: tqdm as show_progress
 
 include("fourier.jl")
@@ -52,5 +41,9 @@ export plot_hues
 export integrate_power_in_frequency_range
 export power_color
 export hue_from_logpower_color
+
+
+include("events.jl")
+export readevents, EventList, DictMetadata
 
 end
