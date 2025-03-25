@@ -1,10 +1,14 @@
 module Stingray
 
-using ResumableFunctions, StatsBase, Statistics, DataFrames
-using FFTW, NaNMath, FITSIO, Intervals
+using ResumableFunctions, StatsBase, Statistics, DataFrames, FFTW, NaNMath, FITSIO, Intervals, LinearAlgebra, Colors, Plots, StatsPlots
 using ProgressBars: tqdm as show_progress
 
 include("fourier.jl")
+include("gti.jl")
+include("utils.jl")
+include("power_colors.jl")
+
+# --- Export from fourier.jl ---
 export positive_fft_bins
 export poisson_level
 export normalize_abs
@@ -20,7 +24,7 @@ export get_flux_iterable_from_segments
 export avg_pds_from_events
 export avg_cs_from_events
 
-include("gti.jl")
+# --- Export from gti.jl ---
 export load_gtis
 export get_total_gti_length
 export create_gti_mask
@@ -30,7 +34,14 @@ export get_btis
 export time_intervals_from_gtis
 export bin_intervals_from_gtis
 
-include("utils.jl")
+# --- Export from power_colors.jl ---
+export plot_power_colors
+export hue_from_power_color
+export plot_hues
+export integrate_power_in_frequency_range
+export power_color
+export hue_from_logpower_color
+
 
 include("events.jl")
 export readevents, EventList, DictMetadata
