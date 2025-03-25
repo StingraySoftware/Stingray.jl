@@ -5,10 +5,10 @@ A structure representing a light curve, which is a time series of event counts.
 
 ## Fields
 
-- timebins::Vector{T}: Time bins for the light curve.
-- counts::Vector{Int}: Number of events in each time bin.
-- count_error::Vector{T}: Error estimate for each bin.
-- err_method::Symbol: Method used for error estimation (:poisson).
+- `timebins`: Time bins for the light curve.
+- `counts`: Number of events in each time bin.
+- `count_error`: Error estimate for each bin.
+- `err_method`: Method used for error estimation (`:poisson`).
 """
 struct LightCurve{T}
     timebins::Vector{T}
@@ -23,52 +23,37 @@ struct LightCurve{T}
 end
 
 """
-    create_lightcurve(eventlist::EventList{T}, bin_size::T; err_method::Symbol=:poisson) where T
+    create_lightcurve(eventlist, bin_size; err_method=:poisson)
 
-Generate a light curve from an EventList by binning event times.
+Generate a light curve by binning event times from an `EventList`.
 
-## Arguments
+# Arguments
+- `eventlist`: The input event list containing time-stamped events.
+- `bin_size`: The size of each time bin.
+- `err_method`: The method used for error estimation (currently only `:poisson` is supported).
 
-- eventlist::EventList{T}: The input event list.
-- bin_size::T: The size of each time bin.
-- err_method::Symbol: The method for error estimation (:poisson).
+# Returns
+A `LightCurve` object containing the binned event counts and their estimated errors.
 
-## Returns
-
-A LightCurve instance containing binned event counts.
-
-## Notes
-
-- The function bins event times into intervals of bin_size.
-- Errors are estimated using Poisson statistics.
-- Handles cases where no events fall within a bin.
-- Ensures input validation for proper binning and error calculations.
-- Optimized to handle large event lists efficiently.
+# Notes
+- Bins event times into intervals of `bin_size` using `fit(Histogram, ...)`.
+- Errors are estimated using Poisson statistics (`sqrt(counts)`).
+- If no events fall into a bin, the count is zero.
 """
 function create_lightcurve(eventlist::EventList{T}, bin_size::T; err_method::Symbol=:poisson) where T
     if err_method ∉ (:poisson,)
         throw(ArgumentError("Invalid error method: $err_method. Supported methods: :poisson"))
     end
 
-    isempty(eventlist.times) && throw(ArgumentError("Event list is empty. Cannot create a light curve."))
     bin_size <= 0 && throw(ArgumentError("Bin size must be positive."))
-    
+
     min_time, max_time = extrema(eventlist.times)
     bins = min_time:bin_size:max_time
-    
-    if length(bins) < 2
-        push!(bins, max_time + bin_size)
-    end
-    
+
     hist = fit(Histogram, eventlist.times, bins)
-    counts = hist.weights 
-    
-    # to ensure counts vector has correct length
-    if length(counts) < length(bins) - 1
-        append!(counts, zeros(length(bins) - 1 - length(counts)))
-    end
-    
-    errors = sqrt.(counts) # to aalculate errors based on Poisson statistics
+    counts = hist.weights
+
+    errors = sqrt.(counts)
 
     return LightCurve{T}(bins, counts, errors, err_method)
 end
