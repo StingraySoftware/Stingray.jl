@@ -1,7 +1,4 @@
-"""
-Abstract type for all event list implementations
-"""
-abstract type AbstractEventList{T} end
+using FITSIO
 
 """
     DictMetadata
