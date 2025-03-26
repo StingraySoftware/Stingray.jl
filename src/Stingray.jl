@@ -33,6 +33,9 @@ export bin_intervals_from_gtis
 include("utils.jl")
 
 include("events.jl")
-export readevents, EventList, DictMetadata
+export readevents, EventList, DictMetadata, AbstractEventList
+
+include("powerspectrum.jl")
+export AveragedPowerspectrum, validate, AbstractPowerSpectrum ,powerspectrum
 
 end
