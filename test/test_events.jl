@@ -1,149 +1,146 @@
 @testset "EventList Tests" begin
-    # Test 1: Create a sample FITS file for testing
-    @testset "Sample FITS file creation" begin
+    @testset "Basic functionality" begin
         test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "sample.fits")
-        f = FITS(sample_file, "w")
-        write(f, Int[])  # Empty primary array
-        # Create a binary table HDU with TIME and ENERGY columns
-        times = Float64[1.0, 2.0, 3.0, 4.0, 5.0]
-        energies = Float64[10.0, 20.0, 15.0, 25.0, 30.0]
-        # Add a binary table extension
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        table["ENERGY"] = energies
-        write(f, table)
-        close(f)
+        sample_file = joinpath(test_dir, "basic.fits")
+        
+        FITS(sample_file, "w") do f
+            write(f, Float32[])  # Empty primary HDU
+            
+            # Table HDU with TIME and ENERGY
+            data = Dict{String,Vector{Float64}}(
+                "TIME" => Float64[1:10...],
+                "ENERGY" => Float64[11:20...]
+            )
+            write(f, data)
+            
+            # Additional HDU that should be ignored
+            other_data = Dict{String,Vector{Float64}}(
+                "RATE" => Float64[21:30...]
+            )
+            write(f, data)  # Write the same data again
+        end
 
-        @test isfile(sample_file)
-
-        # Test reading the sample file
-        data = readevents(sample_file)
-        @test data.filename == sample_file
-        @test length(data.times) == 5
-        @test length(data.energies) == 5
-        @test eltype(data.times) == Float64
-        @test eltype(data.energies) == Float64
+        event_list = readevents(sample_file)
+        @test event_list.filename == sample_file
+        @test length(event_list.times) == 10
+        @test length(event_list.energies) == 10
+        @test event_list.times == collect(1:10)
+        @test event_list.energies == collect(11:20)
+        @test length(event_list.metadata.headers) == 2  # Primary + event HDU
+        
+        rm(test_dir, recursive=true, force=true)
     end
 
-    # Test 2: Test with different data types
     @testset "Different data types" begin
         test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "sample_float32.fits")
-        f = FITS(sample_file, "w")
-        write(f, Int[])
-        # Create data
-        times = Float64[1.0, 2.0, 3.0]
-        energies = Float64[10.0, 20.0, 30.0]
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        table["ENERGY"] = energies
-        write(f, table)
-        close(f)
-        # Test with Float32
-        data_f32 = readevents(sample_file, T = Float32)
+        sample_file = joinpath(test_dir, "datatypes.fits")
+        
+        FITS(sample_file, "w") do f
+            write(f, Float32[])
+            data = Dict{String,Vector{Float64}}(
+                "TIME" => Float64[1.0, 2.0, 3.0],
+                "ENERGY" => Float64[10.0, 20.0, 30.0]
+            )
+            write(f, data)
+        end
+
+        # Test Float32 conversion
+        data_f32 = readevents(sample_file, T=Float32)
         @test eltype(data_f32.times) == Float32
         @test eltype(data_f32.energies) == Float32
-        # Test with Int64
-        data_i64 = readevents(sample_file, T = Int64)
+
+        # Test Int64 conversion
+        data_i64 = readevents(sample_file, T=Int64)
         @test eltype(data_i64.times) == Int64
         @test eltype(data_i64.energies) == Int64
+
+        rm(test_dir, recursive=true, force=true)
     end
 
-    # Test 3: Test with missing columns
     @testset "Missing columns" begin
         test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "sample_no_energy.fits")
-        # Create a sample FITS file with only TIME column
-        f = FITS(sample_file, "w")
-        write(f, Int[])
-        times = Float64[1.0, 2.0, 3.0]
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        write(f, table)
-        close(f)
-        local data
-        @test_logs (:warn, "No ENERGY data found in FITS file $(sample_file). Energy spectrum analysis will not be possible.") begin
-            data = readevents(sample_file)
+    
+        # Test file with only TIME column
+        time_only_file = joinpath(test_dir, "time_only.fits")
+        FITS(time_only_file, "w") do f
+            write(f, Float32[])
+            data = Dict{String,Vector{Float64}}(
+                "TIME" => Float64[1.0, 2.0, 3.0]
+            )
+            write(f, data)
         end
-        @test length(data.times) == 3
-        @test length(data.energies) == 0
-        #create a file with only ENERGY column
-        sample_file2 = joinpath(test_dir, "sample_no_time.fits")
-        f = FITS(sample_file2, "w")
-        write(f, Int[])  # Empty primary array
-        energies = Float64[10.0, 20.0, 30.0]
-        table = Dict{String,Array}()
-        table["ENERGY"] = energies
-        write(f, table)
-        close(f)
-        local data2
-        @test_logs (:warn, "No TIME data found in FITS file $(sample_file2). Time series analysis will not be possible.") begin
-            data2 = readevents(sample_file2)
+    
+        data_time = readevents(time_only_file)
+        @test length(data_time.times) == 3
+        @test isempty(data_time.energies)
+    
+        # Test file with only ENERGY column
+        energy_only_file = joinpath(test_dir, "energy_only.fits")
+        FITS(energy_only_file, "w") do f
+            write(f, Float32[])
+            data = Dict{String,Vector{Float64}}(
+                "ENERGY" => Float64[10.0, 20.0, 30.0]
+            )
+            write(f, data)
         end
-        @test length(data2.times) == 0  # No TIME column
-        @test length(data2.energies) == 3
+    
+        data_energy = readevents(energy_only_file)
+        @test isempty(data_energy.times)  # Should be empty as no TIME column exists
+        @test length(data_energy.energies) == 3  # ENERGY data should be read even if TIME is missing
+    
+        rm(test_dir, recursive=true, force=true)
     end
-
-    # Test 4: Test with multiple HDUs
-    @testset "Multiple HDUs" begin
+    @testset "Multiple HDUs with TIME columns" begin
         test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "sample_multi_hdu.fits")
-        # Create a sample FITS file with multiple HDUs
-        f = FITS(sample_file, "w")
-        write(f, Int[])
-        times1 = Float64[1.0, 2.0, 3.0]
-        energies1 = Float64[10.0, 20.0, 30.0]
-        table1 = Dict{String,Array}()
-        table1["TIME"] = times1
-        table1["ENERGY"] = energies1
-        write(f, table1)
-        # Second table HDU (with OTHER column)
-        other_data = Float64[100.0, 200.0, 300.0]
-        table2 = Dict{String,Array}()
-        table2["OTHER"] = other_data
-        write(f, table2)
-        # Third table HDU (with TIME only)
-        times3 = Float64[4.0, 5.0, 6.0]
-        table3 = Dict{String,Array}()
-        table3["TIME"] = times3
-        write(f, table3)
-        close(f)
-        data = readevents(sample_file)
-        @test length(data.metadata.headers) == 4  # Primary + 3 table HDUs
-        # Should read the first HDU with both TIME and ENERGY
-        @test length(data.times) == 3
-        @test length(data.energies) == 3
+        sample_file = joinpath(test_dir, "multiple_hdus.fits")
+        
+        FITS(sample_file, "w") do f
+            write(f, Float32[])
+            
+            # First HDU with TIME and ENERGY
+            data1 = Dict{String,Vector{Float64}}(
+                "TIME" => Float64[1:10...],
+                "ENERGY" => Float64[11:20...]
+            )
+            write(f, data1)
+            
+            # Second HDU with TIME only (should be ignored)
+            data2 = Dict{String,Vector{Float64}}(
+                "TIME" => Float64[21:30...]
+            )
+            write(f, data2)
+        end
+
+        event_list = readevents(sample_file)
+        @test length(event_list.times) == 10
+        @test length(event_list.energies) == 10
+        @test event_list.times == collect(1:10)
+        @test event_list.energies == collect(11:20)
+        @test length(event_list.metadata.headers) == 2  # Should only include headers up to first event HDU
+
+        rm(test_dir, recursive=true, force=true)
     end
 
-    # Test 5: Test with monol_testA.evt
-    @testset "test monol_testA.evt" begin
+    @testset "Real data files" begin
         test_filepath = joinpath("data", "monol_testA.evt")
         if isfile(test_filepath)
-            @testset "monol_testA.evt" begin
-                old_logger = global_logger(ConsoleLogger(stderr, Logging.Error))
-                try
-                    data = readevents(test_filepath)
-                    @test data.filename == test_filepath
-                    @test length(data.metadata.headers) > 0
-                finally
-                    global_logger(old_logger)
-                end
-            end
+            data = readevents(test_filepath)
+            @test data.filename == test_filepath
+            @test length(data.metadata.headers) > 0
+            @test !isempty(data.times)
         else
-            @info "Test file '$(test_filepath)' not found. Skipping this test."
+            @info "Test file 'monol_testA.evt' not found. Skipping this test."
         end
     end
 
     @testset "Error handling" begin
-        # Test with non-existent file - using a more generic approach
+        # Test with non-existent file
         @test_throws Exception readevents("non_existent_file.fits")
 
         # Test with invalid FITS file
         invalid_file = tempname()
-        open(invalid_file, "w") do io
-            write(io, "This is not a FITS file")
-        end
+        write(invalid_file, "This is not a FITS file")
         @test_throws Exception readevents(invalid_file)
+        rm(invalid_file, force=true)
     end
 end

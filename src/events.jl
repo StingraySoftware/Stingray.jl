@@ -1,10 +1,12 @@
+using FITSIO
+
 """
     DictMetadata
 
 A structure containing metadata from FITS file headers.
 
-## Fields
-
+Fields
+------
 - `headers::Vector{Dict{String,Any}}`: A vector of dictionaries containing header information from each HDU.
 """
 struct DictMetadata
@@ -16,8 +18,8 @@ end
 
 A structure containing event data from a FITS file.
 
-## Fields
-
+Fields
+------
 - `filename::String`: Path to the source FITS file.
 - `times::Vector{T}`: Vector of event times.
 - `energies::Vector{T}`: Vector of event energies.
@@ -30,56 +32,51 @@ struct EventList{T}
     metadata::DictMetadata
 end
 
-"""
-    readevents(path; T = Float64)
-
-Read event data from a FITS file into an EventList structure. The `path` is a
-string that points to the location of the FITS file. `T` is used to specify
-which numeric type to convert the data to.
-
-Returns an [`EventList`](@ref) containing the extracted data.
-
-## Notes
-
-The function extracts `TIME` and `ENERGY` columns from any TableHDU in the FITS
-file. All headers from each HDU are collected into the metadata field.
-"""
 function readevents(path; T = Float64)
     headers = Dict{String,Any}[]
     times = T[]
     energies = T[]
-
+    
     FITS(path, "r") do f
         for i = 1:length(f)  # Iterate over HDUs
             hdu = f[i]
+            # Always collect headers from all extensions
             header_dict = Dict{String,Any}()
             for key in keys(read_header(hdu))
                 header_dict[string(key)] = read_header(hdu)[key]
             end
             push!(headers, header_dict)
-
+            
             # Check if the HDU is a table
             if isa(hdu, TableHDU)
-                # Get column names using the correct FITSIO method
                 colnames = FITSIO.colnames(hdu)
-
-                if "TIME" in colnames
+                
+                # Read TIME and ENERGY data if columns exist and vectors are empty
+                if isempty(times) && ("TIME" in colnames)
                     times = convert(Vector{T}, read(hdu, "TIME"))
                 end
-                if "ENERGY" in colnames
+                if isempty(energies) && ("ENERGY" in colnames)
                     energies = convert(Vector{T}, read(hdu, "ENERGY"))
+                end
+                
+                # If we found both time and energy data, we can return
+                if !isempty(times) && !isempty(energies)
+                    @info "Found complete event data in extension $(i) of FITS file $(path)"
+                    metadata = DictMetadata(headers)
+                    return EventList{T}(path, times, energies, metadata)
                 end
             end
         end
-    end
+    end    
+    
     if isempty(times)
         @warn "No TIME data found in FITS file $(path). Time series analysis will not be possible."
     end
-
     if isempty(energies)
         @warn "No ENERGY data found in FITS file $(path). Energy spectrum analysis will not be possible."
     end
-
+    
     metadata = DictMetadata(headers)
     return EventList{T}(path, times, energies, metadata)
 end
+    
