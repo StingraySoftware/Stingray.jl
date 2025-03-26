@@ -1,6 +1,3 @@
-using Test
-using Logging
-
 @testset "EventList Tests" begin
     @testset "Basic functionality" begin
         test_dir = mktempdir()

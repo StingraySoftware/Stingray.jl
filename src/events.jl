@@ -1,4 +1,9 @@
 """
+Abstract type for all event list implementations
+"""
+abstract type AbstractEventList{T} end
+
+"""
     DictMetadata
 
 A structure containing metadata from FITS file headers.
@@ -12,7 +17,7 @@ struct DictMetadata
 end
 
 """
-    EventList{T}
+    EventList{T} <: AbstractEventList{T}
 
 A structure containing event data from a FITS file.
 
@@ -23,25 +28,34 @@ A structure containing event data from a FITS file.
 - `energies::Vector{T}`: Vector of event energies.
 - `metadata::DictMetadata`: Metadata information extracted from the FITS file headers.
 """
-struct EventList{T}
+struct EventList{T} <: AbstractEventList{T}
     filename::String
     times::Vector{T}
     energies::Vector{T}
     metadata::DictMetadata
 end
+
+# Accessor functions for AbstractEventList interface
+times(ev::EventList) = ev.times
+energies(ev::EventList) = ev.energies
+
 """
     readevents(path; T = Float64)
 
-Read event data from a FITS file into an EventList structure. The `path` is a
-string that points to the location of the FITS file. `T` is used to specify
-which numeric type to convert the data to.
+Read event data from a FITS file into an EventList structure.
 
-Returns an [`EventList`](@ref) containing the extracted data.
+## Arguments
+- `path::String`: Path to the FITS file
+- `T::Type=Float64`: Numeric type for the data
+
+## Returns
+- [`EventList`](@ref) containing the extracted data
 
 ## Notes
-
 The function extracts `TIME` and `ENERGY` columns from any TableHDU in the FITS
-file. All headers from each HDU are collected into the metadata field.
+file. All headers from each HDU are collected into the metadata field. It will
+use the first occurrence of complete event data (both TIME and ENERGY columns)
+found in the file.
 """
 function readevents(path; T = Float64)
     headers = Dict{String,Any}[]
@@ -89,4 +103,33 @@ function readevents(path; T = Float64)
 
     metadata = DictMetadata(headers)
     return EventList{T}(path, times, energies, metadata)
+end
+
+# Basic array interface methods
+Base.length(ev::AbstractEventList) = length(times(ev))
+Base.size(ev::AbstractEventList) = (length(ev),)
+Base.getindex(ev::EventList, i) = (ev.times[i], ev.energies[i])
+
+# Pretty printing
+function Base.show(io::IO, ev::EventList{T}) where T
+    print(io, "EventList{$T}(n=$(length(ev)), file=$(ev.filename))")
+end
+
+"""
+    validate(events::AbstractEventList)
+
+Validate the event list structure.
+
+## Returns
+- `true` if valid, throws ArgumentError otherwise
+"""
+function validate(events::AbstractEventList)
+    evt_times = times(events)
+    if !issorted(evt_times)
+        throw(ArgumentError("Event times must be sorted in ascending order"))
+    end
+    if length(evt_times) == 0
+        throw(ArgumentError("Event list is empty"))
+    end
+    return true
 end
