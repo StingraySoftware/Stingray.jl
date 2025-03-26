@@ -685,7 +685,6 @@ function avg_cs_from_iterables(
     return results
     
 end
-
 function avg_pds_from_events(times::AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
                            segment_size::Real, dt::Real; norm::String="frac",
                            use_common_mean::Bool=true, silent::Bool=false, 
@@ -704,7 +703,6 @@ function avg_pds_from_events(times::AbstractVector{<:Real}, gti::AbstractMatrix{
                                use_common_mean=use_common_mean,
                                silent=silent)
 end
-
 function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVector{<:Real}, 
                             gti::AbstractMatrix{<:Real}, segment_size::Real, dt::Real; 
                             norm::String="frac", use_common_mean::Bool=true, 
