@@ -1,50 +1,18 @@
-function compare_tables(table1, table2; rtol=0.001, discard = [])
-
-    s_discard = Symbol.(discard)
+function compare_tables(ps1::AveragedPowerspectrum, ps2::AveragedPowerspectrum; rtol=0.001, discard=[])
     test_result = true
-
-    for key in propertynames(table1)
-        if key in s_discard
-            continue
-        end
-        oe, oc = getproperty(table1,key), getproperty(table1,key)
-        if oe isa Integer || oe isa String
-            if !(oe==oc) 
-                test_result = false
-                break
-            end
-        elseif isnothing(oe)
-            if !(isnothing(oc)) 
-                test_result = false
-                break
-            end
-        else
-            if !(≈(oe,oc,rtol=rtol)) 
-                test_result = false
-                break
-            end
-        end
-    end
-
-
-    data_fields_table1 = filter(field -> !(typeof(field) == Symbol && startswith(string(field), "meta")), names(table1))
-    data_fields_table2 = filter(field -> !(typeof(field) == Symbol && startswith(string(field), "meta")), names(table2))
-
     
-    
-    for field in names(table1)
-        if field in discard
-            continue
-        end
-        oe, oc = table1[!,field], table2[!,field]
-
-        if !(≈(oe,oc,rtol=rtol)) 
-            test_result = false
-            break
-        end
+    if !isapprox(ps1.freqs, ps2.freqs, rtol=rtol) ||
+       !isapprox(ps1.power, ps2.power, rtol=rtol) ||
+       !isapprox(ps1.power_errors, ps2.power_errors, rtol=rtol) ||
+       ps1.m != ps2.m ||
+       ps1.n != ps2.n ||
+       !isapprox(ps1.dt, ps2.dt, rtol=rtol)
+        test_result = false
     end
+    
     @test test_result
 end
+
 
 @testset "positive_fft_bins" begin
     freq = fftfreq(11)
@@ -173,7 +141,7 @@ end
             use_common_mean=true,
             silent=true,
             fluxes=nothing,
-        ).power
+        )
         out = avg_pds_from_events(
             times,
             gti,
@@ -183,10 +151,9 @@ end
             use_common_mean=false,
             silent=true,
             fluxes=nothing,
-        ).power
-        @test std(out_comm)≈std(out) rtol=0.1
+        )
+        @test std(out_comm.power) ≈ std(out.power) rtol=0.1
     end
-
     @testset "test_avg_cs_use_common_mean_similar_stats" for 
         norm in ["frac", "abs", "none", "leahy"], 
         return_auxil in [true, false], fullspec in [true,false]
@@ -240,7 +207,7 @@ end
         )
         compare_tables(out_ev, out_ct)
     end
-
+    
     @testset "test_avg_pds_cts_and_err_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]       
         out_ev = avg_pds_from_events(
             times,
@@ -263,14 +230,8 @@ end
             fluxes=counts,
             errors=errs,
         )
-        # The variance is not _supposed_ to be equal, when we specify errors
-        if use_common_mean
-            compare_tables(out_ev, out_ct, rtol=0.01, discard=["variance"])
-        else
-            compare_tables(out_ev, out_ct, rtol=0.1, discard=["variance"])
-        end
+        compare_tables(out_ev, out_ct)
     end
-
     @testset "test_avg_cs_cts_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]
         out_ev = avg_cs_from_events(
             times,
