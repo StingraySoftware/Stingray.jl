@@ -237,6 +237,9 @@ function filter_energy!(f, ev::EventList)
     filter_on!(f, ev.energies, ev)
 end
 
+times(ev::EventList) = ev.times
+energies(ev::EventList) = ev.energies
+
 """
     filter_on!(f, src_col::AbstractVector, ev::EventList)
 
@@ -655,4 +658,31 @@ function Base.summary(ev::EventList)
     end
 
     return summary_str
+end
+
+Base.length(ev::AbstractEventList) = length(times(ev))
+Base.size(ev::AbstractEventList) = (length(ev),)
+Base.getindex(ev::EventList, i) = (ev.times[i], ev.energies[i])
+
+function Base.show(io::IO, ev::EventList{T}) where T
+    print(io, "EventList{$T}(n=$(length(ev)), file=$(ev.filename))")
+end
+
+"""
+    validate(events::AbstractEventList)
+
+Validate the event list structure.
+
+## Returns
+- `true` if valid, throws ArgumentError otherwise
+"""
+function validate(events::AbstractEventList)
+    evt_times = times(events)
+    if !issorted(evt_times)
+        throw(ArgumentError("Event times must be sorted in ascending order"))
+    end
+    if length(evt_times) == 0
+        throw(ArgumentError("Event list is empty"))
+    end
+    return true
 end
