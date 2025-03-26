@@ -1,12 +1,11 @@
-using FITSIO
-
 """
     DictMetadata
 
 A structure containing metadata from FITS file headers.
 
-Fields
-------
+## Fields
+
+
 - `headers::Vector{Dict{String,Any}}`: A vector of dictionaries containing header information from each HDU.
 """
 struct DictMetadata
@@ -18,8 +17,8 @@ end
 
 A structure containing event data from a FITS file.
 
-Fields
-------
+## Fields
+
 - `filename::String`: Path to the source FITS file.
 - `times::Vector{T}`: Vector of event times.
 - `energies::Vector{T}`: Vector of event energies.
@@ -31,7 +30,19 @@ struct EventList{T}
     energies::Vector{T}
     metadata::DictMetadata
 end
+"""
+    readevents(path; T = Float64)
 
+    Read event data from a FITS file into an EventList structure. The `path` is a
+    string that points to the location of the FITS file. `T` is used to specify
+    which numeric type to convert the data to.
+
+    Returns an [`EventList`](@ref) containing the extracted data.
+
+    ## Notes
+    The function extracts `TIME` and `ENERGY` columns from any TableHDU in the FITS
+    file. All headers from each HDU are collected into the metadata field.
+    """
 function readevents(path; T = Float64)
     headers = Dict{String,Any}[]
     times = T[]
