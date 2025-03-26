@@ -36,6 +36,6 @@ include("events.jl")
 export readevents, EventList, DictMetadata, AbstractEventList
 
 include("powerspectrum.jl")
-export AveragedPowerspectrum, PowerSpectrum, validate, AbstractPowerSpectrum
+export AveragedPowerspectrum, validate, AbstractPowerSpectrum ,powerspectrum
 
 end
