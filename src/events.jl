@@ -1,5 +1,3 @@
-using FITSIO
-
 """
     DictMetadata
 
