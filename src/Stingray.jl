@@ -38,9 +38,6 @@ include("utils.jl")
 include("events.jl")
 export readevents, EventList, DictMetadata, AbstractEventList
 
-include("powerspectrum.jl")
-export AveragedPowerspectrum, validate, AbstractPowerSpectrum, powerspectrum
-
 include("lightcurve.jl")
 export LightCurve, create_lightcurve, AbstractLightCurve
 export FITSMetadata,
