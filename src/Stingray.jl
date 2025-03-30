@@ -36,7 +36,7 @@ export bin_intervals_from_gtis
 include("utils.jl")
 
 include("events.jl")
-export readevents, EventList, DictMetadata, AbstractEventList
+export readevents, EventList, DictMetadata, AbstractEventList , validate
 
 include("lightcurve.jl")
 export LightCurve, create_lightcurve, AbstractLightCurve
