@@ -1,3 +1,4 @@
+using FITSIO
 """
 $(TYPEDEF)
 
