@@ -3,6 +3,7 @@ module Stingray
 using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
+using RecipesBase
 
 include("fourier.jl")
 export positive_fft_bins
@@ -36,6 +37,12 @@ include("events.jl")
 export readevents, EventList, DictMetadata, AbstractEventList
 
 include("powerspectrum.jl")
-export AveragedPowerspectrum, validate, AbstractPowerSpectrum ,powerspectrum
+export AveragedPowerspectrum, validate, AbstractPowerSpectrum, powerspectrum
 
-end
+include("lightcurve.jl")
+export LightCurve, create_lightcurve, AbstractLightCurve
+
+include("recipes.jl")
+export f
+
+end # module

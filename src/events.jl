@@ -1,3 +1,4 @@
+using FITSIO
 """
 Abstract type for all event list implementations
 """
