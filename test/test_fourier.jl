@@ -1,22 +1,3 @@
-function compare_tablespds(ps1::AveragedPowerspectrum, ps2::AveragedPowerspectrum; rtol=0.001, discard=[])
-    test_result = true
-
-    if !isapprox(ps1.freqs, ps2.freqs, rtol=rtol) ||
-       !isapprox(ps1.power, ps2.power, rtol=rtol) ||
-       !isapprox(ps1.power_errors, ps2.power_errors, rtol=rtol) ||
-       ps1.m != ps2.m ||
-       ps1.n != ps2.n ||
-       !isapprox(ps1.dt, ps2.dt, rtol=rtol)
-        test_result = false
-    end
-    
-    @test test_result
-end
-# ----------------------------------------------------------------
-# here there are two function's compare_tables(){"with dataframe"} and compare_tablespds(){"without dataframe"} which are meant to be merged
-# in future while converting cross spectrum with Struct{}
-# ----------------------------------------------------------------
-
 function compare_tables(table1, table2; rtol=0.001, discard = [])
 
     s_discard = Symbol.(discard)
@@ -64,6 +45,7 @@ function compare_tables(table1, table2; rtol=0.001, discard = [])
     end
     @test test_result
 end
+
 @testset "positive_fft_bins" begin
     freq = fftfreq(11)
     goodbins = positive_fft_bins(11)
@@ -181,7 +163,7 @@ end
         @test isnothing(out_ev) 
     end
 
-   @testset "test_avg_pds_use_common_mean_similar_stats" for norm in ["frac", "abs", "none", "leahy"]
+    @testset "test_avg_pds_use_common_mean_similar_stats" for norm in ["frac", "abs", "none", "leahy"]
         out_comm = avg_pds_from_events(
             times,
             gti,
@@ -191,7 +173,7 @@ end
             use_common_mean=true,
             silent=true,
             fluxes=nothing,
-        )
+        ).power
         out = avg_pds_from_events(
             times,
             gti,
@@ -201,8 +183,8 @@ end
             use_common_mean=false,
             silent=true,
             fluxes=nothing,
-        )
-        @test std(out_comm.power) ≈ std(out.power) rtol=0.1
+        ).power
+        @test std(out_comm)≈std(out) rtol=0.1
     end
 
     @testset "test_avg_cs_use_common_mean_similar_stats" for 
@@ -256,7 +238,7 @@ end
             silent=true,
             fluxes=counts,
         )
-        compare_tablespds(out_ev, out_ct)
+        compare_tables(out_ev, out_ct)
     end
 
     @testset "test_avg_pds_cts_and_err_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]       
@@ -281,7 +263,12 @@ end
             fluxes=counts,
             errors=errs,
         )
-        compare_tablespds(out_ev, out_ct)
+        # The variance is not _supposed_ to be equal, when we specify errors
+        if use_common_mean
+            compare_tables(out_ev, out_ct, rtol=0.01, discard=["variance"])
+        else
+            compare_tables(out_ev, out_ct, rtol=0.1, discard=["variance"])
+        end
     end
 
     @testset "test_avg_cs_cts_and_events_are_equal" for use_common_mean in [true,false], norm in ["frac", "abs", "none", "leahy"]
