@@ -7,11 +7,8 @@
         
         signal = 2.0 * sin.(2π * freq * t)
         
-        metadata = DictMetadata([Dict{String,Any}(
-            "TELESCOP" => "TEST",
-            "INSTRUME" => "SYNTHETIC",
-            "DATATYPE" => "Single frequency analysis",
-        )])
+        # Create empty metadata
+        metadata = DictMetadata([Dict{String,Any}()])
         
         events = EventList{Float64}(
             "test_basic.fits",
@@ -21,7 +18,7 @@
         )
     
         ps = powerspectrum(events, dt=dt)
-        @test isa(ps, AveragedPowerspectrum)  # This is what the function actually returns
+        @test isa(ps, AveragedPowerspectrum)
         @test length(ps.freqs) == length(ps.power)
         @test length(ps.power) == length(ps.power_errors)
         
@@ -34,21 +31,16 @@
     end
 
     @testset "Multiple Frequency Detection" begin
-        # Use power of 2 for better FFT performance
-        n_points = 2^17  # Longer time series
+        n_points = 2^17
         dt = 0.001
         t = range(0, step=dt, length=n_points)
         T = t[end]
         f1, f2 = 1.0, 2.5
         
-        # Generate clean signal with high SNR
         signal = 50.0 * (sin.(2π * f1 * t) + sin.(2π * f2 * t))
         
-        metadata = DictMetadata([Dict{String,Any}(
-            "TELESCOP" => "TEST",
-            "INSTRUME" => "SYNTHETIC",
-            "DATATYPE" => "Multi-frequency analysis",
-        )])
+        # Create empty metadata
+        metadata = DictMetadata([Dict{String,Any}()])
         
         events = EventList(
             "test_multi.fits",
@@ -59,12 +51,10 @@
 
         ps = powerspectrum(events, dt=dt)
         
-        # Skip DC and very low frequencies
         min_freq_idx = max(2, floor(Int, 0.1/(T*dt)))
         freqs = ps.freqs[min_freq_idx:end]
         powers = ps.power[min_freq_idx:end]
         
-        # Find peaks using local maxima and power threshold
         peak_indices = Int[]
         for i in 2:(length(powers)-1)
             if powers[i] > powers[i-1] && powers[i] > powers[i+1]
@@ -83,13 +73,6 @@
             found_f1 = any(f -> abs(f - f1) ≤ 8df, peak_freqs)
             found_f2 = any(f -> abs(f - f2) ≤ 8df, peak_freqs)
             
-            @info "Peak Detection Results" begin
-                expected_freqs = [f1, f2]
-                detected_freqs = peak_freqs[1:min(5,end)]
-                frequency_resolution = df
-                tolerance = 8df
-            end
-            
             @test found_f1
             @test found_f2
         else
@@ -97,19 +80,16 @@
         end
     end
 
-     @testset "Averaged Power Spectrum" begin
-        n_points = 2^16  # 65536 points
+    @testset "Averaged Power Spectrum" begin
+        n_points = 2^16
         dt = 0.001
         t = range(0, step=dt, length=n_points)
         freq = 2.0
         
         signal = 20.0 * sin.(2π * freq * t)
         
-        metadata = DictMetadata([Dict{String,Any}(
-            "TELESCOP" => "TEST",
-            "INSTRUME" => "SYNTHETIC",
-            "DATATYPE" => "Averaged spectrum analysis"
-        )])
+        # Create empty metadata
+        metadata = DictMetadata([Dict{String,Any}()])
         
         events = EventList(
             "test_avg.fits",
@@ -118,43 +98,34 @@
             metadata
         )
     
-        # Use smaller segments for better averaging
         segment_size = 2048
         
-        # Calculate averaged power spectrum
         aps = powerspectrum(events, dt=dt, segment_size=segment_size)
         
-        # Basic structure tests
         @test isa(aps, AveragedPowerspectrum)
         @test length(aps.freqs) == length(aps.power)
         @test length(aps.power) == length(aps.power_errors)
         @test aps.m > 0
         
-        # Analyze the spectrum
         powers = aps.power
         freqs = aps.freqs
         
-        # Find peaks
         peak_idx = argmax(powers)
         detected_freq = freqs[peak_idx]
         
-        # Frequency resolution
         df = 1/(segment_size * dt)
         
-        # Test with appropriate tolerance
-        @test abs(detected_freq - freq) <= 2*df  # Allow 2 frequency bins of tolerance
+        @test abs(detected_freq - freq) <= 2*df
     end
+
     @testset "Normalization Methods" begin
         n_points = 2^12
         dt = 0.001
         t = range(0, step=dt, length=n_points)
         signal = sin.(2π * 2.0 * t)
         
-        metadata = DictMetadata([Dict{String,Any}(
-            "TELESCOP" => "TEST",
-            "INSTRUME" => "SYNTHETIC",
-            "DATATYPE" => "Normalization analysis",
-        )])
+        # Create empty metadata
+        metadata = DictMetadata([Dict{String,Any}()])
         
         events = EventList(
             "test_norm.fits",
@@ -162,8 +133,8 @@
             Float64.(signal),
             metadata
         )
-
-        for norm in ["leahy", "frac", "abs"]
+        
+        for norm in [:leahy, :frac, :abs]
             ps = powerspectrum(events, dt=dt, norm=norm)
             @test all(ps.power .>= 0)
             @test all(ps.power_errors .>= 0)
