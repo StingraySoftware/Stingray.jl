@@ -40,6 +40,7 @@ end
     Returns an [`EventList`](@ref) containing the extracted data.
 
     ## Notes
+    
     The function extracts `TIME` and `ENERGY` columns from any TableHDU in the FITS
     file. All headers from each HDU are collected into the metadata field.
     """
