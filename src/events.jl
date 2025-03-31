@@ -80,7 +80,7 @@ function readevents(path; T = Float64)
     end    
     
     if isempty(times)
-        @warn "No TIME data found in FITS file $(path). Time series analysis will not be possible."
+        error("No TIME data found in FITS file $(path). Time series analysis will not be possible.")
     end
     if isempty(energies)
         @warn "No ENERGY data found in FITS file $(path). Energy spectrum analysis will not be possible."

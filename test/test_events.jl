@@ -84,9 +84,9 @@
             write(f, data)
         end
     
-        data_energy = readevents(energy_only_file)
-        @test isempty(data_energy.times)  # Should be empty as no TIME column exists
-        @test length(data_energy.energies) == 3  # ENERGY data should be read even if TIME is missing
+        # Test that an error is raised when no TIME column exists
+        error_msg = "No TIME data found in FITS file $(energy_only_file). Time series analysis will not be possible."
+        @test_throws ErrorException(error_msg) readevents(energy_only_file)
     
         rm(test_dir, recursive=true, force=true)
     end
