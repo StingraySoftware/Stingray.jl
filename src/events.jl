@@ -40,6 +40,7 @@ end
     Returns an [`EventList`](@ref) containing the extracted data.
 
     ## Notes
+    
     The function extracts `TIME` and `ENERGY` columns from any TableHDU in the FITS
     file. All headers from each HDU are collected into the metadata field.
     """
@@ -72,9 +73,7 @@ function readevents(path; T = Float64)
                 
                 # If we found both time and energy data, we can return
                 if !isempty(times) && !isempty(energies)
-                    @info "Found complete event data in extension $(i) of FITS file $(path)"
-                    metadata = DictMetadata(headers)
-                    return EventList{T}(path, times, energies, metadata)
+                    break
                 end
             end
         end
