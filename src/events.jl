@@ -1,5 +1,10 @@
 """
-Abstract type for all event list implementations
+Abstract type representing a power spectrum, which characterizes the distribution 
+of power across different frequencies in a signal.
+
+Subtypes include:
+- PowerSpectrum{T}: Represents a power spectrum for a single signal segment
+- AveragedPowerspectrum{T}: Represents a power spectrum averaged over multiple segments
 """
 abstract type AbstractEventList{T} end
 

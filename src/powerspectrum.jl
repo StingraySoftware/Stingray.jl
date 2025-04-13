@@ -83,11 +83,11 @@ function powerspectrum(events::EventList{T}; dt::Real = 0.001,
     if length(events.times) < segment_size
         throw(ArgumentError("Not enough data points"))
     end
-    return _powerspectrum_averaged(events, convert(T, dt), segment_size, norm)
+    return powerspectrum_averaged(events, convert(T, dt), segment_size, norm)
 end
 
 """
-    _powerspectrum_averaged(events::EventList{T}, dt::T, 
+    powerspectrum_averaged(events::EventList{T}, dt::T, 
                           segment_size::Int, norm::Symbol) where T -> AveragedPowerspectrum{T}
 
 Compute averaged power spectrum from event list segments.
@@ -106,7 +106,7 @@ Compute averaged power spectrum from event list segments.
 - Computes FFT for each segment and averages power
 - Calculates frequency-dependent power with specified normalization
 """
-function _powerspectrum_averaged(events::EventList{T}, 
+function powerspectrum_averaged(events::EventList{T}, 
                                dt::T, 
                                segment_size::Int, 
                                norm::Symbol) where T
@@ -135,8 +135,22 @@ function _powerspectrum_averaged(events::EventList{T},
         throw(ArgumentError("Frequency and power arrays must match"))
     end
     
-    normalized_power = _normalize_power(avg_power, norm)
-    power_errors = std(powers) ./ sqrt(length(segments))
+    # Calculate standard deviation before normalization
+    power_stds = std(powers)
+    
+    # Normalize powers according to the desired scheme
+    normalized_power = normalize_power(avg_power, norm)
+    
+    # Adjust the errors based on the same normalization 
+    if norm == :leahy
+        power_errors = power_stds .* 2 ./ sqrt(length(segments))
+    elseif norm == :frac
+        # For fractional normalization, errors need to be scaled by mean power
+        mean_power = mean(avg_power)
+        power_errors = power_stds ./ mean_power ./ sqrt(length(segments))
+    else # :abs
+        power_errors = power_stds ./ sqrt(length(segments))
+    end
     
     positive_indices = 2:length(freqs)
     
@@ -171,21 +185,49 @@ function hanning(N::Int)
 end
 
 """
-    _normalize_power(power::AbstractVector, norm::Symbol) -> Vector{Float64}
+    prepare_segments(signal::Vector{Float64}, segment_size::Int) -> Vector{Vector{Float64}}
+
+Divide a signal into equal-sized segments for frequency analysis.
+
+## Arguments
+- `signal::Vector{Float64}`: Input signal to be segmented
+- `segment_size::Int`: Size of each segment
+
+## Returns
+- `Vector{Vector{Float64}}`: List of signal segments
+
+## Examples
+```julia
+segments = prepare_segments(signal, 1024)
+```
+"""
+function prepare_segments(signal::Vector{Float64}, segment_size::Int)
+    n_segments = length(signal) ÷ segment_size
+    segments = [signal[(i-1)*segment_size+1 : i*segment_size] for i in 1:n_segments]
+    return segments
+end
+
+"""
+    normalize_power(power::AbstractVector, norm::Symbol) -> Vector{Float64}
 
 Normalize power spectrum based on specified method.
 
 ## Arguments
 - `power`: Input power values
-- `norm`: Normalization method (`:leahy`, `:frac`, or `:abs`)
+- `norm::Symbol`: Normalization method (`:leahy`, `:frac`, or `:abs`)
 
 ## Returns
 - `Vector{Float64}`: Normalized power values
 
 ## Throws
 - `ArgumentError` for unknown normalization method
+
+## Examples
+```julia
+normalized = normalize_power(powers, :leahy)
+```
 """
-function _normalize_power(power::AbstractVector, norm::Symbol)
+function normalize_power(power::AbstractVector, norm::Symbol)
     if norm == :leahy
         return power .* 2
     elseif norm == :frac
@@ -197,9 +239,43 @@ function _normalize_power(power::AbstractVector, norm::Symbol)
     end
 end
 
-# Interface functions
+"""
+    freqs(ps::AbstractPowerSpectrum) -> Vector{T}
+
+Get frequency values from a power spectrum.
+
+## Arguments
+- `ps::AbstractPowerSpectrum`: Input power spectrum
+
+## Returns
+- `Vector{T}`: Vector of frequency values
+"""
 freqs(ps::AbstractPowerSpectrum) = ps.freqs
+
+"""
+    power(ps::AbstractPowerSpectrum) -> Vector{T}
+
+Get power values from a power spectrum.
+
+## Arguments
+- `ps::AbstractPowerSpectrum`: Input power spectrum
+
+## Returns
+- `Vector{T}`: Vector of power values
+"""
 power(ps::AbstractPowerSpectrum) = ps.power
+
+"""
+    errors(ps::AbstractPowerSpectrum) -> Vector{T}
+
+Get error estimates for power values from a power spectrum.
+
+## Arguments
+- `ps::AbstractPowerSpectrum`: Input power spectrum
+
+## Returns
+- `Vector{T}`: Vector of power error values
+"""
 errors(ps::AbstractPowerSpectrum) = ps.power_errors
 
 # Base methods

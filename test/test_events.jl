@@ -110,7 +110,6 @@
         table3["TIME"] = times3
         write(f, table3)
         close(f)
-        
         # Diagnostic printing
         data = readevents(sample_file)
         @test length(data.metadata.headers) >= 2  # At least primary and first extension
