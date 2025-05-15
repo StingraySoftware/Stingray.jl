@@ -3,6 +3,9 @@ module Stingray
 using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
+if Sys.isapple()
+    ENV["JULIA_FFTW_PROVIDER"] = "fftw"
+end
 
 include("fourier.jl")
 export positive_fft_bins
