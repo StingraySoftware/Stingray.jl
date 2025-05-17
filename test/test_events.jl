@@ -61,7 +61,10 @@
         write(f, table)
         close(f)
         local data
-        @test_logs (:warn, "No ENERGY data found in FITS file $(sample_file). Energy spectrum analysis will not be possible.") begin
+        @test_logs (
+            :warn,
+            "No ENERGY data found in FITS file $(sample_file). Energy spectrum analysis will not be possible.",
+        ) begin
             data = readevents(sample_file)
         end
         @test length(data.times) == 3
@@ -77,7 +80,10 @@
         write(f, table)
         close(f)
         local data2
-        @test_logs (:warn, "No TIME data found in FITS file $(sample_file2). Time series analysis will not be possible.") begin
+        @test_logs (
+            :warn,
+            "No TIME data found in FITS file $(sample_file2). Time series analysis will not be possible.",
+        ) begin
             data2 = readevents(sample_file2)
         end
         @test length(data2.times) == 0  # No TIME column
@@ -108,7 +114,7 @@
         table3["TIME"] = times3
         write(f, table3)
         close(f)
-        
+
         # Diagnostic printing
         data = readevents(sample_file)
         @test length(data.metadata.headers) >= 2  # At least primary and first extension
@@ -149,15 +155,15 @@
         # Create a sample FITS file for type testing
         test_dir = mktempdir()
         sample_file = joinpath(test_dir, "sample_types.fits")
-        
+
         # Prepare test data
         f = FITS(sample_file, "w")
         write(f, Int[])  # Empty primary array
-        
+
         # Create test data
         times = Float64[1.0, 2.0, 3.0, 4.0, 5.0]
         energies = Float64[10.0, 20.0, 15.0, 25.0, 30.0]
-        
+
         table = Dict{String,Array}()
         table["TIME"] = times
         table["ENERGY"] = energies
@@ -170,12 +176,12 @@
             data_f64 = readevents(sample_file, T = Float64)
             @test isa(data_f64, EventList{Float64})
             @test typeof(data_f64) == EventList{Float64}
-            
+
             # Test Float32 EventList
             data_f32 = readevents(sample_file, T = Float32)
             @test isa(data_f32, EventList{Float32})
             @test typeof(data_f32) == EventList{Float32}
-            
+
             # Test Int64 EventList
             data_i64 = readevents(sample_file, T = Int64)
             @test isa(data_i64, EventList{Int64})
@@ -185,14 +191,14 @@
         # Test struct field types
         @testset "Struct Field Type Checks" begin
             data = readevents(sample_file)
-            
+
             # Check filename type
             @test isa(data.filename, String)
-            
+
             # Check times and energies vector types
             @test isa(data.times, Vector{Float64})
             @test isa(data.energies, Vector{Float64})
-            
+
             # Check metadata type
             @test isa(data.metadata, DictMetadata)
             @test isa(data.metadata.headers, Vector{Dict{String,Any}})
@@ -203,13 +209,13 @@
     @testset "Validation Tests" begin
         test_dir = mktempdir()
         sample_file = joinpath(test_dir, "sample_validate.fits")
-        
+
         # Prepare test data
         f = FITS(sample_file, "w")
         write(f, Int[])
         times = Float64[1.0, 2.0, 3.0, 4.0, 5.0]
         energies = Float64[10.0, 20.0, 15.0, 25.0, 30.0]
-        
+
         table = Dict{String,Array}()
         table["TIME"] = times
         table["ENERGY"] = energies
@@ -217,20 +223,54 @@
         close(f)
 
         data = readevents(sample_file)
-        
+
         # Test successful validation
         @test validate(data) == true
 
         # Test with unsorted times
         unsorted_times = Float64[3.0, 1.0, 2.0]
         unsorted_energies = Float64[30.0, 10.0, 20.0]
-        unsorted_data = EventList{Float64}(sample_file, unsorted_times, unsorted_energies, 
-                                           DictMetadata([Dict{String,Any}()]))
+        unsorted_data = EventList{Float64}(
+            sample_file,
+            unsorted_times,
+            unsorted_energies,
+            DictMetadata([Dict{String,Any}()]),
+        )
         @test_throws ArgumentError validate(unsorted_data)
 
         # Test with empty event list
-        empty_data = EventList{Float64}(sample_file, Float64[], Float64[], 
-                                        DictMetadata([Dict{String,Any}()]))
+        empty_data = EventList{Float64}(
+            sample_file,
+            Float64[],
+            Float64[],
+            DictMetadata([Dict{String,Any}()]),
+        )
         @test_throws ArgumentError validate(empty_data)
+    end
+    @testset "AbstractEventList and EventList interface" begin
+        test_dir = mktempdir()
+        sample_file = joinpath(test_dir, "sample_cov.fits")
+
+        f = FITS(sample_file, "w")
+        write(f, Int[])
+        times = Float64[1.1, 2.2, 3.3]
+        energies_vec = Float64[11.1, 22.2, 33.3]
+        table = Dict{String,Array}()
+        table["TIME"] = times
+        table["ENERGY"] = energies_vec
+        write(f, table)
+        close(f)
+
+        data = readevents(sample_file)
+
+        @test size(data) == (length(times),)
+        @test data[2] == (times[2], energies_vec[2])
+        @test energies(data) == energies_vec
+        io = IOBuffer()
+        show(io, data)
+        str = String(take!(io))
+        @test occursin("EventList{Float64}", str)
+        @test occursin("n=$(length(times))", str)
+        @test occursin("file=$(sample_file)", str)
     end
 end
