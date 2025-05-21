@@ -35,7 +35,7 @@ include("utils.jl")
 include("events.jl")
 export readevents, EventList, DictMetadata , AbstractEventList
 #functions for testing purposes
-export validate,energies, times
+export validate,energies, times , get_column
 
 include("lightcurve.jl")
 export create_lightcurve,EventProperty, AbstractLightCurve ,rebin, calculate_errors, LightCurve, LightCurveMetadata
