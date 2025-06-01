@@ -1,5 +1,3 @@
-using FITSIO
-
 """
 Abstract type for all event list implementations
 """
@@ -37,25 +35,52 @@ struct EventList{T} <: AbstractEventList{T}
     energies::Union{Vector{T}, Nothing}
     extra_columns::Dict{String, Vector}
     metadata::DictMetadata
+
+    # Inner constructor with validation
+    function EventList{T}(filename::String, times::Vector{T}, energies::Union{Vector{T}, Nothing}, 
+                         extra_columns::Dict{String, Vector}, metadata::DictMetadata) where T
+        # Validate event times
+        if isempty(times)
+            throw(ArgumentError("Event list cannot be empty"))
+        end
+        
+        if !issorted(times)
+            throw(ArgumentError("Event times must be sorted in ascending order"))
+        end
+        
+        # Validate energy vector length if present
+        if !isnothing(energies) && length(energies) != length(times)
+            throw(ArgumentError("Energy vector length ($(length(energies))) must match times vector length ($(length(times)))"))
+        end
+        
+        # Validate extra columns have consistent lengths
+        for (col_name, col_data) in extra_columns
+            if length(col_data) != length(times)
+                throw(ArgumentError("Column '$col_name' length ($(length(col_data))) must match times vector length ($(length(times)))"))
+            end
+        end
+        
+        new{T}(filename, times, energies, extra_columns, metadata)
+    end
 end
 
-# Simplified constructor that defaults energies to nothing and extra_columns to empty dict
+# Simplified constructors that use the validated inner constructor
 function EventList{T}(filename, times, metadata) where T
     EventList{T}(filename, times, nothing, Dict{String, Vector}(), metadata)
 end
 
-# Constructor that accepts energies but defaults extra_columns to empty dict
 function EventList{T}(filename, times, energies, metadata) where T
     EventList{T}(filename, times, energies, Dict{String, Vector}(), metadata)
 end
 
+# Accessor functions
 times(ev::EventList) = ev.times
 energies(ev::EventList) = ev.energies
 
 """
     readevents(path; T = Float64, energy_alternatives=["ENERGY", "PI", "PHA"])
 
-Read event data from a FITS file into an EventList structure.
+Read event data from a FITS file into an EventList structure with enhanced performance.
 
 ## Arguments
 - `path::String`: Path to the FITS file
@@ -64,146 +89,203 @@ Read event data from a FITS file into an EventList structure.
 
 ## Returns
 - [`EventList`](@ref) containing the extracted data
-
-## Notes
-
-The function extracts `TIME` and energy columns from TableHDUs in the FITS
-file. All headers from each HDU are collected into the metadata field. When it finds
-an HDU containing TIME column, it also looks for energy data and collects additional
-columns from that same HDU, since all event data is typically stored together.
 """
-function readevents(path; T = Float64, energy_alternatives=["ENERGY", "PI", "PHA"])
+function readevents(path::String;
+                   mission::Union{String,Nothing}=nothing,
+                   instrument::Union{String,Nothing}=nothing,
+                   epoch::Union{Float64,Nothing}=nothing,
+                   T::Type=Float64,
+                   energy_alternatives::Vector{String}=["ENERGY", "PI", "PHA"],
+                   sector_column::Union{String,Nothing}=nothing,
+                   event_hdu::Int=2)  #X-ray event files have events in HDU 2
+    
+    # Get mission support if specified
+    mission_support = if !isnothing(mission)
+        ms = get_mission_support(mission, instrument, epoch)
+        # Use mission-specific energy alternatives if available
+        energy_alternatives = ms.energy_alternatives
+        ms
+    else
+        nothing
+    end
+    
+    # Initialize containers
     headers = Dict{String,Any}[]
     times = T[]
     energies = T[]
     extra_columns = Dict{String, Vector}()
     
     FITS(path, "r") do f
-        for i = 1:length(f)  # Iterate over HDUs
+        # Collect headers from all HDUs
+        for i = 1:length(f)
             hdu = f[i]
-            
-            # Always collect headers from all extensions
             header_dict = Dict{String,Any}()
-            for key in keys(read_header(hdu))
-                header_dict[string(key)] = read_header(hdu)[key]
+            try
+                for key in keys(read_header(hdu))
+                    header_dict[string(key)] = read_header(hdu)[key]
+                end
+            catch e
+                @debug "Could not read header from HDU $i: $e"
+            end
+            
+            # Apply mission-specific patches to header information
+            if !isnothing(mission)
+                header_dict = patch_mission_info(header_dict, mission)
             end
             push!(headers, header_dict)
+        end
+        
+        # Try to read event data from the specified HDU (default: HDU 2)
+        try
+            hdu = f[event_hdu]
+            if !isa(hdu, TableHDU)
+                throw(ArgumentError("HDU $event_hdu is not a table HDU"))
+            end
             
-            # Check if the HDU is a table
-            if isa(hdu, TableHDU)
-                colnames = FITSIO.colnames(hdu)
-                
-                # Read TIME and ENERGY data if columns exist and vectors are empty
-                if isempty(times) && ("TIME" in colnames)
-                    times = convert(Vector{T}, read(hdu, "TIME"))
-                    @info "Found TIME column in extension $(i) of $(path)"
-                    
-                    # Once we find the TIME column, process all other columns in this HDU
-                    # as this is where all event data will be
-                    
-                    # Try ENERGY first
-                    if "ENERGY" in colnames && isempty(energies)
-                        energies = convert(Vector{T}, read(hdu, "ENERGY"))
-                        @info "Found ENERGY column in the same extension"
-                    else
-                        # Try alternative energy columns if ENERGY is not available
-                        for energy_col in energy_alternatives[2:end]  # Skip ENERGY as we already checked
-                            if energy_col in colnames && isempty(energies)
-                                energies = convert(Vector{T}, read(hdu, energy_col))
-                                @info "Using '$energy_col' column for energy information"
-                                break
-                            end
-                        end
-                    end
-                    
-                    # Collect all columns from this HDU for extra_columns
-                    for col in colnames
-                        # Add every column to extra_columns for consistent access
-                        try
-                            extra_columns[col] = read(hdu, col)
-                            @debug "Added column '$col' to extra_columns"
-                        catch e
-                            @warn "Failed to read column '$col': $e"
-                        end
-                    end
-                    
-                    # We've found and processed the event data HDU, stop searching
+            colnames = FITSIO.colnames(hdu)
+            @info "Reading events from HDU $event_hdu with columns: $(join(colnames, ", "))"
+            
+            # Read TIME column (case-insensitive search)
+            time_col = nothing
+            for col in colnames
+                if uppercase(col) == "TIME"
+                    time_col = col
                     break
                 end
+            end
+            
+            if isnothing(time_col)
+                throw(ArgumentError("No TIME column found in HDU $event_hdu"))
+            end
+            
+            # Read time data
+            raw_times = read(hdu, time_col)
+            times = convert(Vector{T}, raw_times)
+            @info "Successfully read $(length(times)) events"
+            
+            # Try to read energy data
+            energy_col = nothing
+            for ecol in energy_alternatives
+                for col in colnames
+                    if uppercase(col) == uppercase(ecol)
+                        energy_col = col
+                        @info "Using '$col' column for energy data"
+                        break
+                    end
+                end
+                if !isnothing(energy_col)
+                    break
+                end
+            end
+            
+            if !isnothing(energy_col)
+                try
+                    raw_energy = read(hdu, energy_col)
+                    energies = if !isnothing(mission_support)
+                        @info "Applying mission calibration for $mission"
+                        convert(Vector{T}, apply_calibration(mission_support, raw_energy))
+                    else
+                        convert(Vector{T}, raw_energy)
+                    end
+                    @info "Energy data: $(length(energies)) values, range: $(extrema(energies))"
+                catch e
+                    @warn "Failed to read energy column '$energy_col': $e"
+                    energies = T[]
+                end
+            else
+                @info "No energy column found in available alternatives: $(join(energy_alternatives, ", "))"
+            end
+            
+            # Read additional columns if specified
+            if !isnothing(sector_column)
+                sector_col_found = nothing
+                for col in colnames
+                    if uppercase(col) == uppercase(sector_column)
+                        sector_col_found = col
+                        break
+                    end
+                end
+                
+                if !isnothing(sector_col_found)
+                    try
+                        extra_columns["SECTOR"] = read(hdu, sector_col_found)
+                        @info "Read sector/detector data from '$sector_col_found'"
+                    catch e
+                        @warn "Failed to read sector column '$sector_col_found': $e"
+                    end
+                end
+            end
+            
+        catch e
+            # If default HDU fails, fall back to searching all HDUs
+            @warn "Failed to read from HDU $event_hdu: $e. Searching all HDUs..."
+            
+            event_found = false
+            for i = 1:length(f)
+                hdu = f[i]
+                if isa(hdu, TableHDU)
+                    try
+                        colnames = FITSIO.colnames(hdu)
+                        # Look for TIME column
+                        if any(uppercase(col) == "TIME" for col in colnames)
+                            @info "Found events in HDU $i"
+                            raw_times = read(hdu, "TIME")
+                            times = convert(Vector{T}, raw_times)
+                            
+                            # Try to read energy
+                            for ecol in energy_alternatives
+                                for col in colnames
+                                    if uppercase(col) == uppercase(ecol)
+                                        try
+                                            raw_energy = read(hdu, col)
+                                            energies = convert(Vector{T}, raw_energy)
+                                            break
+                                        catch
+                                            continue
+                                        end
+                                    end
+                                end
+                                if !isempty(energies)
+                                    break
+                                end
+                            end
+                            
+                            event_found = true
+                            break
+                        end
+                    catch
+                        continue
+                    end
+                end
+            end
+            
+            if !event_found
+                throw(ArgumentError("No TIME column found in any HDU of FITS file $(basename(path))"))
             end
         end
     end
     
     if isempty(times)
-        @warn "No TIME data found in FITS file $(path). Time series analysis will not be possible."
-    end
-    if isempty(energies)
-        @warn "No ENERGY data found in FITS file $(path). Energy spectrum analysis will not be possible."
-        energies = nothing
+        throw(ArgumentError("No event data found in FITS file $(basename(path))"))
     end
     
+    @info "Successfully loaded $(length(times)) events from $(basename(path))"
+    
+    # Create metadata and return EventList
     metadata = DictMetadata(headers)
-    return EventList{T}(path, times, energies, extra_columns, metadata)
+    return EventList{T}(path, 
+                       times, 
+                       isempty(energies) ? nothing : energies,
+                       extra_columns, 
+                       metadata)
 end
 
-
+# Basic interface methods
 Base.length(ev::AbstractEventList) = length(times(ev))
 Base.size(ev::AbstractEventList) = (length(ev),)
-
-function Base.getindex(ev::EventList, i)
-    if isnothing(ev.energies)
-        return (ev.times[i], nothing)
-    else
-        return (ev.times[i], ev.energies[i])
-    end
-end
 
 function Base.show(io::IO, ev::EventList{T}) where T
     energy_status = isnothing(ev.energies) ? "no energy data" : "with energy data"
     extra_cols = length(keys(ev.extra_columns))
     print(io, "EventList{$T}(n=$(length(ev)), $energy_status, $extra_cols extra columns, file=$(ev.filename))")
-end
-
-"""
-    validate(events::AbstractEventList)
-
-Validate the event list structure.
-
-## Returns
-- `true` if valid, throws ArgumentError otherwise
-"""
-function validate(events::AbstractEventList)
-    evt_times = times(events)
-    if !issorted(evt_times)
-        throw(ArgumentError("Event times must be sorted in ascending order"))
-    end
-    if length(evt_times) == 0
-        throw(ArgumentError("Event list is empty"))
-    end
-    return true
-end
-
-
-"""
-    get_column(events::EventList, column_name::String)
-
-Get a specific column from the event list.
-
-## Arguments
-- `events::EventList`: Event list object
-- `column_name::String`: Name of the column to retrieve
-
-## Returns
-- The column data if available, nothing otherwise
-"""
-function get_column(events::EventList, column_name::String)
-    if column_name == "TIME"
-        return events.times
-    elseif column_name == "ENERGY" && !isnothing(events.energies)
-        return events.energies
-    elseif haskey(events.extra_columns, column_name)
-        return events.extra_columns[column_name]
-    else
-        return nothing
-    end
 end
