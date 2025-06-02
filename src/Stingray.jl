@@ -33,6 +33,14 @@ export bin_intervals_from_gtis
 include("utils.jl")
 
 include("events.jl")
-export readevents, EventList, DictMetadata
+export readevents, EventList, DictMetadata , AbstractEventList
+#functions for testing purposes
+export energies, times
 
+include("lightcurve.jl")
+export create_lightcurve,EventProperty, AbstractLightCurve ,rebin, calculate_errors, LightCurve, extract_metadata, calculate_additional_properties ,bin_events,create_time_bins,apply_event_filters,validate_lightcurve_inputs
+export LightCurveMetadata
+
+include("missionSupport.jl")
+export MissionSupport, get_mission_support, apply_calibration, patch_mission_info,SIMPLE_CALIBRATION_FUNCS,interpret_fits_data!,AbstractMissionSupport
 end
