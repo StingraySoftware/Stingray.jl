@@ -36,7 +36,7 @@ struct EventList{T} <: AbstractEventList{T}
     extra_columns::Dict{String, Vector}
     metadata::DictMetadata
 
-    # Inner constructor with validation
+    # Inner constructor with validation and automatic sorting
     function EventList{T}(filename::String, times::Vector{T}, energies::Union{Vector{T}, Nothing}, 
                          extra_columns::Dict{String, Vector}, metadata::DictMetadata) where T
         # Validate event times
@@ -44,25 +44,50 @@ struct EventList{T} <: AbstractEventList{T}
             throw(ArgumentError("Event list cannot be empty"))
         end
         
+        # Sort events by time if not already sorted
         if !issorted(times)
-            throw(ArgumentError("Event times must be sorted in ascending order"))
-        end
-        
-        # Validate energy vector length if present
-        if !isnothing(energies) && length(energies) != length(times)
-            throw(ArgumentError("Energy vector length ($(length(energies))) must match times vector length ($(length(times)))"))
-        end
-        
-        # Validate extra columns have consistent lengths
-        for (col_name, col_data) in extra_columns
-            if length(col_data) != length(times)
-                throw(ArgumentError("Column '$col_name' length ($(length(col_data))) must match times vector length ($(length(times)))"))
+            @info "Event times not sorted - sorting events by time"
+            sort_indices = sortperm(times)
+            sorted_times = times[sort_indices]
+            
+            # Sort energies if present
+            sorted_energies = if !isnothing(energies)
+                if length(energies) != length(times)
+                    throw(ArgumentError("Energy vector length ($(length(energies))) must match times vector length ($(length(times)))"))
+                end
+                energies[sort_indices]
+            else
+                nothing
             end
+            
+            # Sort extra columns
+            sorted_extra_columns = Dict{String, Vector}()
+            for (col_name, col_data) in extra_columns
+                if length(col_data) != length(times)
+                    throw(ArgumentError("Column '$col_name' length ($(length(col_data))) must match times vector length ($(length(times)))"))
+                end
+                sorted_extra_columns[col_name] = col_data[sort_indices]
+            end
+            
+            new{T}(filename, sorted_times, sorted_energies, sorted_extra_columns, metadata)
+        else
+            # Validate energy vector length if present
+            if !isnothing(energies) && length(energies) != length(times)
+                throw(ArgumentError("Energy vector length ($(length(energies))) must match times vector length ($(length(times)))"))
+            end
+            
+            # Validate extra columns have consistent lengths
+            for (col_name, col_data) in extra_columns
+                if length(col_data) != length(times)
+                    throw(ArgumentError("Column '$col_name' length ($(length(col_data))) must match times vector length ($(length(times)))"))
+                end
+            end
+            
+            new{T}(filename, times, energies, extra_columns, metadata)
         end
-        
-        new{T}(filename, times, energies, extra_columns, metadata)
     end
 end
+
 
 # Simplified constructors that use the validated inner constructor
 function EventList{T}(filename, times, metadata) where T

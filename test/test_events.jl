@@ -6,7 +6,7 @@
         filename = joinpath(test_dir, "test.fits")
         metadata = DictMetadata([Dict{String,Any}()])
         
-        # Test valid construction
+        # Test valid construction with sorted data
         times = [1.0, 2.0, 3.0, 4.0, 5.0]
         energies = [10.0, 20.0, 15.0, 25.0, 30.0]
         extra_cols = Dict{String, Vector}("DETX" => [0.1, 0.2, 0.3, 0.4, 0.5])
@@ -18,20 +18,27 @@
         @test ev.extra_columns == extra_cols
         @test ev.metadata == metadata
         
+        # Test automatic sorting with unsorted data
+        unsorted_times = [3.0, 1.0, 4.0, 2.0]
+        unsorted_energies = [15.0, 10.0, 25.0, 20.0]
+        unsorted_extra_cols = Dict{String, Vector}("DETX" => [0.3, 0.1, 0.4, 0.2])
+        
+        ev_unsorted = EventList{Float64}(filename, unsorted_times, unsorted_energies, unsorted_extra_cols, metadata)
+        @test issorted(ev_unsorted.times)
+        @test ev_unsorted.times == sort(unsorted_times)
+        @test ev_unsorted.energies == [10.0, 20.0, 15.0, 25.0]  # Values should follow the sorted order
+        @test ev_unsorted.extra_columns["DETX"] == [0.1, 0.2, 0.3, 0.4]  # Values should follow the sorted order
+        
         # Test validation: empty times should throw
         @test_throws ArgumentError EventList{Float64}(filename, Float64[], nothing, Dict{String, Vector}(), metadata)
         
-        # Test validation: unsorted times should throw
-        unsorted_times = [3.0, 1.0, 2.0, 4.0]
-        @test_throws ArgumentError EventList{Float64}(filename, unsorted_times, nothing, Dict{String, Vector}(), metadata)
-        
         # Test validation: mismatched energy vector length
-        wrong_energies = [10.0, 20.0]  # Only 2 elements vs 5 times
-        @test_throws ArgumentError EventList{Float64}(filename, times, wrong_energies, Dict{String, Vector}(), metadata)
+        wrong_energies = [10.0, 20.0]  # Only 2 elements vs 4 times
+        @test_throws ArgumentError EventList{Float64}(filename, unsorted_times, wrong_energies, Dict{String, Vector}(), metadata)
         
         # Test validation: mismatched extra column length
-        wrong_extra = Dict{String, Vector}("DETX" => [0.1, 0.2])  # Only 2 elements vs 5 times
-        @test_throws ArgumentError EventList{Float64}(filename, times, nothing, wrong_extra, metadata)
+        wrong_extra = Dict{String, Vector}("DETX" => [0.1, 0.2])  # Only 2 elements vs 4 times
+        @test_throws ArgumentError EventList{Float64}(filename, unsorted_times, nothing, wrong_extra, metadata)
     end
     
     # Test 2: Simplified constructors
