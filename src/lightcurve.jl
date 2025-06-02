@@ -7,6 +7,12 @@ abstract type AbstractLightCurve{T} end
     EventProperty{T}
 
 A structure to hold additional event properties beyond time and energy.
+
+## Fields
+
+- `name::Symbol`: Name of the property (e.g., :mean_energy, :hardness_ratio)
+- `values::Vector{T}`: Vector of property values, one per time bin
+- `unit::String`: Physical unit of the property values (e.g., "keV", "counts/s")
 """
 struct EventProperty{T}
     name::Symbol
@@ -18,6 +24,17 @@ end
     LightCurveMetadata
 
 A structure containing metadata for light curves.
+
+## Fields
+
+- `telescope::String`: Name of the telescope that collected the data
+- `instrument::String`: Name of the instrument used for observation
+- `object::String`: Name of the observed astronomical object
+- `mjdref::Float64`: Modified Julian Date reference time for the observation
+- `time_range::Tuple{Float64,Float64}`: Start and stop times of the light curve
+- `bin_size::Float64`: Time bin size in seconds
+- `headers::Vector{Dict{String,Any}}`: Original FITS file headers for reference
+- `extra::Dict{String,Any}`: Additional metadata (filtering info, event counts, etc.)
 """
 struct LightCurveMetadata
     telescope::String
@@ -34,6 +51,17 @@ end
     LightCurve{T} <: AbstractLightCurve{T}
 
 A structure representing a binned time series with additional properties.
+
+## Fields
+
+- `timebins::Vector{T}`: Center times of each time bin
+- `bin_edges::Vector{T}`: Edges of time bins (length = length(timebins) + 1)
+- `counts::Vector{Int}`: Number of events in each time bin
+- `count_error::Vector{T}`: Statistical uncertainty for each bin's count
+- `exposure::Vector{T}`: Exposure time for each bin (vector to support variable exposure times)
+- `properties::Vector{EventProperty}`: Additional computed properties per bin (e.g., mean energy)
+- `metadata::LightCurveMetadata`: Metadata information about the light curve
+- `err_method::Symbol`: Method used for error calculation (:poisson or :gaussian)
 """
 struct LightCurve{T} <: AbstractLightCurve{T}
     timebins::Vector{T}
@@ -51,6 +79,22 @@ end
                     gaussian_errors::Union{Nothing,Vector{T}}=nothing) where T
 
 Calculate statistical uncertainties for count data using vectorized operations.
+
+## Arguments
+
+- `counts::Vector{Int}`: Vector of count values per bin
+- `method::Symbol`: Error calculation method (`:poisson` or `:gaussian`)
+- `exposure::Vector{T}`: Exposure times per bin (currently unused but kept for interface consistency)
+- `gaussian_errors::Union{Nothing,Vector{T}}`: User-provided Gaussian errors (required when method=:gaussian)
+
+## Returns
+
+- `Vector{T}`: Statistical uncertainties for each bin
+
+## Notes
+
+For Poisson errors, uses σ = √N with σ = √(N+1) when N = 0 to avoid zero errors.
+For Gaussian errors, the user must provide the error values explicitly.
 """
 function calculate_errors(counts::Vector{Int}, method::Symbol, exposure::Vector{T}; 
                          gaussian_errors::Union{Nothing,Vector{T}}=nothing) where T
@@ -74,6 +118,22 @@ end
     validate_lightcurve_inputs(eventlist, binsize, err_method, gaussian_errors)
 
 Validate all inputs for light curve creation before processing.
+
+## Arguments
+
+- `eventlist`: Event list structure containing time series data
+- `binsize`: Requested time bin size (must be positive)
+- `err_method::Symbol`: Error calculation method (`:poisson` or `:gaussian`)
+- `gaussian_errors`: User-provided Gaussian errors (required when err_method=:gaussian)
+
+## Throws
+
+- `ArgumentError`: If any input validation fails
+
+## Notes
+
+This function performs early validation to catch input errors before expensive processing begins.
+Length validation for gaussian_errors is deferred until after filtering.
 """
 function validate_lightcurve_inputs(eventlist, binsize, err_method, gaussian_errors)
     # Check event list
@@ -106,7 +166,23 @@ end
                        energy_filter::Union{Nothing,Tuple{Real,Real}}) where T
 
 Apply time and energy filters to event data.
-Returns filtered times and energies.
+
+## Arguments
+
+- `times::Vector{T}`: Vector of event times
+- `energies::Union{Nothing,Vector{T}}`: Vector of event energies (or nothing)
+- `tstart::Union{Nothing,Real}`: Start time for filtering (nothing = use minimum time)
+- `tstop::Union{Nothing,Real}`: Stop time for filtering (nothing = use maximum time)
+- `energy_filter::Union{Nothing,Tuple{Real,Real}}`: Energy range as (emin, emax) tuple
+
+## Returns
+
+- `Tuple`: (filtered_times, filtered_energies, start_time, stop_time)
+
+## Notes
+
+Energy filtering is applied first, followed by time filtering. 
+The function logs the number of events remaining after each filter.
 """
 function apply_event_filters(times::Vector{T}, energies::Union{Nothing,Vector{T}}, 
                             tstart::Union{Nothing,Real}, tstop::Union{Nothing,Real},
@@ -153,6 +229,21 @@ end
     create_time_bins(start_time::T, stop_time::T, binsize::T) where T
 
 Create time bin edges and centers for the light curve.
+
+## Arguments
+
+- `start_time::T`: Start time of the time series
+- `stop_time::T`: End time of the time series  
+- `binsize::T`: Size of each time bin
+
+## Returns
+
+- `Tuple`: (bin_edges, bin_centers) where edges define bin boundaries and centers are bin midpoints
+
+## Notes
+
+Bin edges are calculated to ensure complete coverage of the [start_time, stop_time] range.
+The first bin edge is aligned to multiples of binsize for consistent binning.
 """
 function create_time_bins(start_time::T, stop_time::T, binsize::T) where T
     # Ensure we cover the full range including the endpoint
@@ -178,6 +269,20 @@ end
     bin_events(times::Vector{T}, bin_edges::Vector{T}) where T
 
 Bin event times into histogram counts.
+
+## Arguments
+
+- `times::Vector{T}`: Vector of event times to be binned
+- `bin_edges::Vector{T}`: Bin boundary times
+
+## Returns
+
+- `Vector{Int}`: Count of events in each bin
+
+## Notes
+
+Uses StatsBase.Histogram for fast, memory-efficient binning.
+Events are assigned to bins using left-closed, right-open intervals [edge_i, edge_{i+1}).
 """
 function bin_events(times::Vector{T}, bin_edges::Vector{T}) where T
     # Use StatsBase for fast, memory-efficient binning
@@ -190,7 +295,23 @@ end
                                    bin_edges::Vector{T}, bin_centers::Vector{T}) where {T,U}
 
 Calculate additional properties like mean energy per bin.
-handles type mismatches between time and energy vectors.
+
+## Arguments
+
+- `times::Vector{T}`: Vector of event times
+- `energies::Union{Nothing,Vector{U}}`: Vector of event energies (or nothing)
+- `bin_edges::Vector{T}`: Time bin edges
+- `bin_centers::Vector{T}`: Time bin centers
+
+## Returns
+
+- `Vector{EventProperty}`: Vector of computed properties (e.g., mean energy per bin)
+
+## Notes
+
+Currently computes mean energy per bin when energy data is available.
+Handles type mismatches between time and energy vectors by converting to common type.
+Returns empty vector if no energy data is provided.
 """
 function calculate_additional_properties(times::Vector{T}, energies::Union{Nothing,Vector{U}}, 
                                         bin_edges::Vector{T}, bin_centers::Vector{T}) where {T,U}
@@ -232,6 +353,24 @@ end
     extract_metadata(eventlist, start_time, stop_time, binsize, filtered_times, energy_filter)
 
 Extract and create metadata for the light curve.
+
+## Arguments
+
+- `eventlist`: Original event list structure
+- `start_time`: Start time of the light curve
+- `stop_time`: End time of the light curve
+- `binsize`: Time bin size used
+- `filtered_times`: Vector of times after filtering (for event count)
+- `energy_filter`: Energy filter applied (or nothing)
+
+## Returns
+
+- `LightCurveMetadata`: Metadata structure containing observation and processing information
+
+## Notes
+
+Extracts telescope/instrument information from FITS headers and records filtering statistics.
+Missing header values are replaced with empty strings or default values.
 """
 function extract_metadata(eventlist, start_time, stop_time, binsize, filtered_times, energy_filter)
     first_header = isempty(eventlist.metadata.headers) ? Dict{String,Any}() : eventlist.metadata.headers[1]
@@ -359,12 +498,34 @@ function create_lightcurve(
 end
 
 """
-    rebin(lc::LightCurve{T}, new_binsize::Real; 
+    rebin(lc::LightCurve{T}, new_binsize::Real;
           gaussian_errors::Union{Nothing,Vector{T}}=nothing) where T
 
 Rebin a light curve to a new time resolution with enhanced performance.
+
+## Arguments
+
+- `lc::LightCurve{T}`: Input light curve to be rebinned
+- `new_binsize::Real`: New time bin size (must be larger than current bin size)
+- `gaussian_errors::Union{Nothing,Vector{T}}`: New Gaussian errors for rebinned data (required if original uses Gaussian errors)
+
+## Returns
+
+- `LightCurve{T}`: New light curve with larger time bins
+
+## Throws
+
+- `ArgumentError`: If new_binsize ≤ current bin size, or if Gaussian errors are required but not provided
+
+## Notes
+
+- Only supports rebinning to larger bin sizes (time resolution degradation)
+- Counts are summed within new bins
+- Properties (like mean energy) are recalculated using count-weighted averaging
+- Error propagation depends on the original error method
+- Maintains all original metadata with updated bin size information
 """
-function rebin(lc::LightCurve{T}, new_binsize::Real; 
+function rebin(lc::LightCurve{T}, new_binsize::Real;
                gaussian_errors::Union{Nothing,Vector{T}}=nothing) where T
     if new_binsize <= lc.metadata.bin_size
         throw(ArgumentError("New bin size must be larger than current bin size"))

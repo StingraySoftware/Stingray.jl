@@ -145,12 +145,15 @@ function readevents(path::String;
         for i = 1:length(f)
             hdu = f[i]
             header_dict = Dict{String,Any}()
+            
+            # Only catch header reading errors specifically
             try
-                for key in keys(read_header(hdu))
+                header_keys = keys(read_header(hdu))
+                for key in header_keys
                     header_dict[string(key)] = read_header(hdu)[key]
                 end
-            catch e
-                @debug "Could not read header from HDU $i: $e"
+            catch header_error
+                @debug "Could not read header from HDU $i: $header_error"
             end
             
             # Apply mission-specific patches to header information
@@ -161,132 +164,126 @@ function readevents(path::String;
         end
         
         # Try to read event data from the specified HDU (default: HDU 2)
-        try
+        event_found = false
+        
+        # Check if the specified HDU exists and is a table
+        if event_hdu <= length(f)
             hdu = f[event_hdu]
-            if !isa(hdu, TableHDU)
-                throw(ArgumentError("HDU $event_hdu is not a table HDU"))
-            end
-            
-            colnames = FITSIO.colnames(hdu)
-            @info "Reading events from HDU $event_hdu with columns: $(join(colnames, ", "))"
-            
-            # Read TIME column (case-insensitive search)
-            time_col = nothing
-            for col in colnames
-                if uppercase(col) == "TIME"
-                    time_col = col
-                    break
-                end
-            end
-            
-            if isnothing(time_col)
-                throw(ArgumentError("No TIME column found in HDU $event_hdu"))
-            end
-            
-            # Read time data
-            raw_times = read(hdu, time_col)
-            times = convert(Vector{T}, raw_times)
-            @info "Successfully read $(length(times)) events"
-            
-            # Try to read energy data
-            energy_col = nothing
-            for ecol in energy_alternatives
-                for col in colnames
-                    if uppercase(col) == uppercase(ecol)
-                        energy_col = col
-                        @info "Using '$col' column for energy data"
-                        break
-                    end
-                end
-                if !isnothing(energy_col)
-                    break
-                end
-            end
-            
-            if !isnothing(energy_col)
+            if isa(hdu, TableHDU)
                 try
-                    raw_energy = read(hdu, energy_col)
-                    energies = if !isnothing(mission_support)
-                        @info "Applying mission calibration for $mission"
-                        convert(Vector{T}, apply_calibration(mission_support, raw_energy))
+                    colnames = FITSIO.colnames(hdu)
+                    @info "Reading events from HDU $event_hdu with columns: $(join(colnames, ", "))"
+                    
+                    # Read TIME column (case-insensitive search)
+                    time_col = findfirst(col -> uppercase(col) == "TIME", colnames)
+                    
+                    if !isnothing(time_col)
+                        # Read time data
+                        raw_times = read(hdu, colnames[time_col])
+                        times = convert(Vector{T}, raw_times)
+                        @info "Successfully read $(length(times)) events"
+                        
+                        # Try to read energy data
+                        energy_col = nothing
+                        for ecol in energy_alternatives
+                            col_idx = findfirst(col -> uppercase(col) == uppercase(ecol), colnames)
+                            if !isnothing(col_idx)
+                                energy_col = colnames[col_idx]
+                                @info "Using '$energy_col' column for energy data"
+                                break
+                            end
+                        end
+                        
+                        if !isnothing(energy_col)
+                            try
+                                raw_energy = read(hdu, energy_col)
+                                energies = if !isnothing(mission_support)
+                                    @info "Applying mission calibration for $mission"
+                                    convert(Vector{T}, apply_calibration(mission_support, raw_energy))
+                                else
+                                    convert(Vector{T}, raw_energy)
+                                end
+                                @info "Energy data: $(length(energies)) values, range: $(extrema(energies))"
+                            catch energy_error
+                                @warn "Failed to read energy column '$energy_col': $energy_error"
+                                energies = T[]
+                            end
+                        else
+                            @info "No energy column found in available alternatives: $(join(energy_alternatives, ", "))"
+                        end
+                        
+                        # Read additional columns if specified
+                        if !isnothing(sector_column)
+                            sector_col_idx = findfirst(col -> uppercase(col) == uppercase(sector_column), colnames)
+                            
+                            if !isnothing(sector_col_idx)
+                                try
+                                    extra_columns["SECTOR"] = read(hdu, colnames[sector_col_idx])
+                                    @info "Read sector/detector data from '$(colnames[sector_col_idx])'"
+                                catch sector_error
+                                    @warn "Failed to read sector column '$(colnames[sector_col_idx])': $sector_error"
+                                end
+                            end
+                        end
+                        
+                        event_found = true
                     else
-                        convert(Vector{T}, raw_energy)
+                        @warn "No TIME column found in HDU $event_hdu"
                     end
-                    @info "Energy data: $(length(energies)) values, range: $(extrema(energies))"
-                catch e
-                    @warn "Failed to read energy column '$energy_col': $e"
-                    energies = T[]
+                catch hdu_error
+                    @warn "Failed to read from HDU $event_hdu: $hdu_error"
                 end
             else
-                @info "No energy column found in available alternatives: $(join(energy_alternatives, ", "))"
+                @warn "HDU $event_hdu is not a table HDU"
             end
+        else
+            @warn "HDU $event_hdu does not exist in file"
+        end
+        
+        # If default HDU fails, search all HDUs for event data
+        if !event_found
+            @info "Searching all HDUs for event data..."
             
-            # Read additional columns if specified
-            if !isnothing(sector_column)
-                sector_col_found = nothing
-                for col in colnames
-                    if uppercase(col) == uppercase(sector_column)
-                        sector_col_found = col
-                        break
-                    end
-                end
-                
-                if !isnothing(sector_col_found)
-                    try
-                        extra_columns["SECTOR"] = read(hdu, sector_col_found)
-                        @info "Read sector/detector data from '$sector_col_found'"
-                    catch e
-                        @warn "Failed to read sector column '$sector_col_found': $e"
-                    end
-                end
-            end
-            
-        catch e
-            # If default HDU fails, fall back to searching all HDUs
-            @warn "Failed to read from HDU $event_hdu: $e. Searching all HDUs..."
-            
-            event_found = false
             for i = 1:length(f)
                 hdu = f[i]
                 if isa(hdu, TableHDU)
                     try
                         colnames = FITSIO.colnames(hdu)
-                        # Look for TIME column
-                        if any(uppercase(col) == "TIME" for col in colnames)
+                        time_col_idx = findfirst(col -> uppercase(col) == "TIME", colnames)
+                        
+                        if !isnothing(time_col_idx)
                             @info "Found events in HDU $i"
-                            raw_times = read(hdu, "TIME")
+                            raw_times = read(hdu, colnames[time_col_idx])
                             times = convert(Vector{T}, raw_times)
                             
                             # Try to read energy
                             for ecol in energy_alternatives
-                                for col in colnames
-                                    if uppercase(col) == uppercase(ecol)
-                                        try
-                                            raw_energy = read(hdu, col)
-                                            energies = convert(Vector{T}, raw_energy)
-                                            break
-                                        catch
-                                            continue
-                                        end
+                                energy_col_idx = findfirst(col -> uppercase(col) == uppercase(ecol), colnames)
+                                if !isnothing(energy_col_idx)
+                                    try
+                                        raw_energy = read(hdu, colnames[energy_col_idx])
+                                        energies = convert(Vector{T}, raw_energy)
+                                        break
+                                    catch energy_read_error
+                                        @debug "Could not read energy column $(colnames[energy_col_idx]): $energy_read_error"
+                                        continue
                                     end
-                                end
-                                if !isempty(energies)
-                                    break
                                 end
                             end
                             
                             event_found = true
                             break
                         end
-                    catch
+                    catch table_error
+                        @debug "Could not read table HDU $i: $table_error"
                         continue
                     end
                 end
             end
-            
-            if !event_found
-                throw(ArgumentError("No TIME column found in any HDU of FITS file $(basename(path))"))
-            end
+        end
+        
+        if !event_found
+            throw(ArgumentError("No TIME column found in any HDU of FITS file $(basename(path))"))
         end
     end
     
