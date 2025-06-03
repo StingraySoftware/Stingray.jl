@@ -1,5 +1,7 @@
 module Stingray
 
+using DocStringExtensions
+
 using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
@@ -33,6 +35,6 @@ export bin_intervals_from_gtis
 include("utils.jl")
 
 include("events.jl")
-export readevents, EventList, DictMetadata
+export readevents, EventList, filter_time!, filter_energy!
 
 end
