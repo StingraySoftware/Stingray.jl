@@ -12,7 +12,7 @@ function mock_data(times, energies; energy_column = "ENERGY")
     sample_file = joinpath(test_dir, "sample.fits")
     # Create a sample FITS file
     FITS(sample_file, "w") do f
-        # Create primary HDU with a small array instead of emoinpath(@__DIR__, "../..pty
+        # Create primary HDU with a small array instead of empty
         # Use a single element array instead of empty
         write(f, [0])
         # Create event table in HDU 2
