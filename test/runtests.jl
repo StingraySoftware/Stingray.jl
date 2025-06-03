@@ -2,8 +2,6 @@ using Stingray
 using Test
 using FFTW, Distributions, Statistics, StatsBase, HDF5, FITSIO
 using Logging
-include("test_fourier.jl")
-include("test_gti.jl")
 
 TEST_DATA_PATH = joinpath(@__DIR__, "_data")
 
@@ -25,6 +23,14 @@ if !isdir(TEST_DATA_PATH)
     rm(dest)
 else
     @info "Test data is present"
+end
+
+@testset "GTI" begin
+    include("test_gti.jl")
+end
+
+@testset "Fourier" begin
+    include("test_fourier.jl")
 end
 
 @testset "Eventlist" begin
