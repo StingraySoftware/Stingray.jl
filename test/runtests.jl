@@ -16,6 +16,7 @@ if !isdir(TEST_DATA_PATH)
 
     open(dest) do tar_gz
         @assert bytes2hex(sha256(tar_gz)) == TEST_DATA_SHA256
+        seek(tar_gz, 0)
         tar = GzipDecompressorStream(tar_gz)
         Tar.extract(tar, TEST_DATA_PATH)
     end
