@@ -50,7 +50,7 @@ function Base.show(io::IO, ::MIME"text/plain", @nospecialize(ev::EventList))
 end
 
 """
-    Base.filter!(f, ev::EventList)
+    filter_time!(f, ev::EventList)
 
 Filter all columns of the eventlist based on a predicate `f` applied to the
 times.
@@ -59,10 +59,29 @@ times.
 
 ```julia
 # filter only positive times
-filter!(t -> t > 0, ev)
+filter_time!(t -> t > 0, ev)
 ```
+
+See also [`filter_energy!`](@ref).
 """
-function Base.filter!(f, ev::EventList)
+filter_time!(f, ev::EventList) = filter_on!(f, ev.times, ev)
+
+"""
+    filter_energy!(f, ev::EventList)
+
+Filter all columns of the eventlist based on a predicate `f` applied to the
+energies.
+
+See also [`filter_time!`](@ref).
+"""
+function filter_energy!(f, ev::EventList)
+    @assert !isnothing(ev.energies) "No energies present in the EventList."
+    filter_on!(f, ev.energies, ev)
+end
+
+function filter_on!(f, src_col::AbstractVector, ev::EventList)
+    @assert size(src_col) == size(ev.times)
+
     # modified from the Base.filter! implementation
     j = firstindex(ev.times)
 
@@ -77,7 +96,8 @@ function Base.filter!(f, ev::EventList)
             col[j] = col[i]
         end
 
-        j = ifelse(f(ev.times[i])::Bool, nextind(ev.times, j), j)
+        predicate = f(src_col[i])::Bool
+        j = ifelse(predicate, nextind(ev.times, j), j)
     end
 
     if j <= lastindex(ev.times)
