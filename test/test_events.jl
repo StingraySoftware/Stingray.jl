@@ -1,149 +1,75 @@
-@testset "EventList Tests" begin
-    # Test 1: Create a sample FITS file for testing
-    @testset "Sample FITS file creation" begin
-        test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "sample.fits")
-        f = FITS(sample_file, "w")
-        write(f, Int[])  # Empty primary array
-        # Create a binary table HDU with TIME and ENERGY columns
-        times = Float64[1.0, 2.0, 3.0, 4.0, 5.0]
-        energies = Float64[10.0, 20.0, 15.0, 25.0, 30.0]
-        # Add a binary table extension
+using Test, Stingray
+using FITSIO
+
+TEST_DATA_PATH = joinpath(@__DIR__, "_data", "testdata")
+@assert isdir(TEST_DATA_PATH)
+
+readdir(TEST_DATA_PATH)
+
+# generate mock data
+function mock_data(times, energies; energy_column = "ENERGY")
+    test_dir = mktempdir()
+    sample_file = joinpath(test_dir, "sample.fits")
+    # Create a sample FITS file
+    FITS(sample_file, "w") do f
+        # Create primary HDU with a small array instead of emoinpath(@__DIR__, "../..pty
+        # Use a single element array instead of empty
+        write(f, [0])
+        # Create event table in HDU 2
         table = Dict{String,Array}()
         table["TIME"] = times
-        table["ENERGY"] = energies
+        table[energy_column] = energies
+        table["INDEX"] = collect(1:length(times))
         write(f, table)
-        close(f)
-
-        @test isfile(sample_file)
-
-        # Test reading the sample file
-        data = readevents(sample_file)
-        @test data.filename == sample_file
-        @test length(data.times) == 5
-        @test length(data.energies) == 5
-        @test eltype(data.times) == Float64
-        @test eltype(data.energies) == Float64
     end
-
-    # Test 2: Test with different data types
-    @testset "Different data types" begin
-        test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "sample_float32.fits")
-        f = FITS(sample_file, "w")
-        write(f, Int[])
-        # Create data
-        times = Float64[1.0, 2.0, 3.0]
-        energies = Float64[10.0, 20.0, 30.0]
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        table["ENERGY"] = energies
-        write(f, table)
-        close(f)
-        # Test with Float32
-        data_f32 = readevents(sample_file, T = Float32)
-        @test eltype(data_f32.times) == Float32
-        @test eltype(data_f32.energies) == Float32
-        # Test with Int64
-        data_i64 = readevents(sample_file, T = Int64)
-        @test eltype(data_i64.times) == Int64
-        @test eltype(data_i64.energies) == Int64
-    end
-
-    # Test 3: Test with missing columns
-    @testset "Missing columns" begin
-        test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "sample_no_energy.fits")
-        # Create a sample FITS file with only TIME column
-        f = FITS(sample_file, "w")
-        write(f, Int[])
-        times = Float64[1.0, 2.0, 3.0]
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        write(f, table)
-        close(f)
-        local data
-        @test_logs (:warn, "No ENERGY data found in FITS file $(sample_file). Energy spectrum analysis will not be possible.") begin
-            data = readevents(sample_file)
-        end
-        @test length(data.times) == 3
-        @test length(data.energies) == 0
-        #create a file with only ENERGY column
-        sample_file2 = joinpath(test_dir, "sample_no_time.fits")
-        f = FITS(sample_file2, "w")
-        write(f, Int[])  # Empty primary array
-        energies = Float64[10.0, 20.0, 30.0]
-        table = Dict{String,Array}()
-        table["ENERGY"] = energies
-        write(f, table)
-        close(f)
-        local data2
-        @test_logs (:warn, "No TIME data found in FITS file $(sample_file2). Time series analysis will not be possible.") begin
-            data2 = readevents(sample_file2)
-        end
-        @test length(data2.times) == 0  # No TIME column
-        @test length(data2.energies) == 3
-    end
-
-    # Test 4: Test with multiple HDUs
-    @testset "Multiple HDUs" begin
-        test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "sample_multi_hdu.fits")
-        # Create a sample FITS file with multiple HDUs
-        f = FITS(sample_file, "w")
-        write(f, Int[])
-        times1 = Float64[1.0, 2.0, 3.0]
-        energies1 = Float64[10.0, 20.0, 30.0]
-        table1 = Dict{String,Array}()
-        table1["TIME"] = times1
-        table1["ENERGY"] = energies1
-        write(f, table1)
-        # Second table HDU (with OTHER column)
-        other_data = Float64[100.0, 200.0, 300.0]
-        table2 = Dict{String,Array}()
-        table2["OTHER"] = other_data
-        write(f, table2)
-        # Third table HDU (with TIME only)
-        times3 = Float64[4.0, 5.0, 6.0]
-        table3 = Dict{String,Array}()
-        table3["TIME"] = times3
-        write(f, table3)
-        close(f)
-        data = readevents(sample_file)
-        @test length(data.metadata.headers) == 4  # Primary + 3 table HDUs
-        # Should read the first HDU with both TIME and ENERGY
-        @test length(data.times) == 3
-        @test length(data.energies) == 3
-    end
-
-    # Test 5: Test with monol_testA.evt
-    @testset "test monol_testA.evt" begin
-        test_filepath = joinpath("data", "monol_testA.evt")
-        if isfile(test_filepath)
-            @testset "monol_testA.evt" begin
-                old_logger = global_logger(ConsoleLogger(stderr, Logging.Error))
-                try
-                    data = readevents(test_filepath)
-                    @test data.filename == test_filepath
-                    @test length(data.metadata.headers) > 0
-                finally
-                    global_logger(old_logger)
-                end
-            end
-        else
-            @info "Test file '$(test_filepath)' not found. Skipping this test."
-        end
-    end
-
-    @testset "Error handling" begin
-        # Test with non-existent file - using a more generic approach
-        @test_throws Exception readevents("non_existent_file.fits")
-
-        # Test with invalid FITS file
-        invalid_file = tempname()
-        open(invalid_file, "w") do io
-            write(io, "This is not a FITS file")
-        end
-        @test_throws Exception readevents(invalid_file)
-    end
+    sample_file
 end
+
+mock_times = Float64[1.0, 2.0, 3.0, 4.0, 5.0]
+mock_energies = Float64[10.0, 20.0, 15.0, 25.0, 30.0]
+sample = mock_data(mock_times, mock_energies)
+
+# try reading mock data
+data = readevents(sample)
+@test data.times == mock_times
+@test data.energies == mock_energies
+@test length(data.meta.headers) == 17
+@test length(data.meta.extra_columns) == 0
+
+data = readevents(sample; extra_columns = ["INDEX"])
+@test length(data.meta.extra_columns) == 1
+
+# try reading sample datasets
+data = readevents(joinpath(TEST_DATA_PATH, "monol_testA.evt"))
+
+@test length(data.energies) == 1000
+@test length(data.times) == 1000
+@test first(data.energies) == 174.0
+
+data = readevents(joinpath(TEST_DATA_PATH, "chandra_test.fits"))
+@test length(data.times) == 4612
+@test length(data.energies) == 4612
+@test data.meta.energy_units == "ENERGY"
+
+# should just read the PI column
+data = readevents(joinpath(TEST_DATA_PATH, "chandra_noener_test.fits"))
+@test length(data.times) == 4612
+@test length(data.energies) == 4612
+@test data.meta.energy_units == "PI"
+
+data = readevents(joinpath(TEST_DATA_PATH, "xmm_test.fits"))
+@test length(data.times) == 1708244
+@test length(data.energies) == 1708244
+@test data.meta.energy_units == "PI"
+
+@test_throws AssertionError("Times are not sorted (pass `sort = true` to force sorting).") readevents(
+    joinpath(TEST_DATA_PATH, "monol_testA_calib_unsrt.evt"),
+)
+data = readevents(joinpath(TEST_DATA_PATH, "monol_testA_calib_unsrt.evt"), sort = true)
+@test length(data.times) == 1000
+@test length(data.energies) == 1000
+@test issorted(data.times)
+@test data.meta.energy_units == "ENERGY"
+# make sure the energy column got sorted correctly
+@test data.energies[1:100:1000] ≈
+      [9.56, 42.40, 41.36, 3.55, 6.40, 5.55, 40.24, 27.15, 20.31, 35.52] rtol=1e-2

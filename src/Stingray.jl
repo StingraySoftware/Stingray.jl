@@ -1,5 +1,7 @@
 module Stingray
 
+using DocStringExtensions
+
 using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
