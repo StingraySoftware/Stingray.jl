@@ -262,7 +262,6 @@ let
     # Test filter_energy error with no energies
     @test_throws AssertionError filter_energy(e -> e > 10.0, ev_no_energy)
 
-    println("✓ Non-mutating filter function tests passed")
 end
 
 # Test complex filtering scenarios
