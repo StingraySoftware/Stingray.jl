@@ -359,7 +359,6 @@ let
     @test data_hdu3.times == times
     @test data_hdu3.energies == energies
 
-    println("✓ HDU handling tests passed")
 end
 
 # Test readevents alternative energy columns
