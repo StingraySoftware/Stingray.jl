@@ -36,19 +36,19 @@ include("utils.jl")
 
 include("events.jl")
 export FITSMetadata,
-       EventList,
-       times,
-       energies,
-       has_energies,
-       filter_time!,
-       filter_energy!,
-       filter_time,
-       filter_energy,
-       colnames,
-       read_energy_column,
-       readevents,
-       summary,
-       filter_on!
+    EventList,
+    times,
+    energies,
+    has_energies,
+    filter_time!,
+    filter_energy!,
+    filter_time,
+    filter_energy,
+    colnames,
+    read_energy_column,
+    readevents,
+    summary,
+    filter_on!
 
 
 end
