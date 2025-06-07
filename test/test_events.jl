@@ -125,7 +125,6 @@ let
     @test ev_extra.energies == [30.0, 40.0]
     @test ev_extra.meta.extra_columns["INDEX"] == [3, 4]
 
-    println("✓ filter_time! function tests passed")
 end
 
 # Test filter_energy! function (in-place filtering by energy)
