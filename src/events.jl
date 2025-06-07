@@ -257,7 +257,7 @@ filter_energy!(x -> x < 10.0, filter_time!(t -> t > 100.0, ev))
 See also [`filter_time!`](@ref), [`filter_energy`](@ref).
 """
 function filter_energy!(f, ev::EventList)
-    @assert !isnothing(ev.energies) "No energies present in the EventList."
+    @assert has_energies(ev) "No energies present in the EventList."
     filter_on!(f, ev.energies, ev)
 end
 
