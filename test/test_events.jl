@@ -42,7 +42,6 @@ let
     @test isnothing(ev_no_energy.energies)
     @test !has_energies(ev_no_energy)
 
-    println("✓ Basic EventList creation tests passed")
 end
 
 # Test accessor functions
