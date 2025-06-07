@@ -574,16 +574,7 @@ function readevents(
 
         # Get actual column names to find the correct TIME column
         all_cols = FITSIO.colnames(selected_hdu)
-        time_col = findfirst(col -> uppercase(col) == "TIME", all_cols)
-        
-        if isnothing(time_col)
-            error("TIME column not found in HDU $hdu")
-        end
-        
-        actual_time_col = all_cols[time_col]
-        
-        # Read time column with case-insensitive option
-        time = convert(Vector{T}, read(selected_hdu, actual_time_col, case_sensitive=false))
+        time = convert(Vector{T}, read(selected_hdu, "TIME", case_sensitive=false))
 
         # Read energy column using separated function
         energy_column, energy = read_energy_column(
