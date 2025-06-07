@@ -63,7 +63,6 @@ let
     ev_no_energy = EventList(times_vec)
     @test isnothing(energies(ev_no_energy))
 
-    println("✓ Accessor function tests passed")
 end
 
 # Test Base interface methods
