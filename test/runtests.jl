@@ -8,7 +8,3 @@ include("test_gti.jl")
 @testset "Eventlist" begin
     include("test_events.jl")
 end
-
-@testset "LightCurve" begin
-    include("test_lightcurve.jl")
-end

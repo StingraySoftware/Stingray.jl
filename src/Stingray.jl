@@ -51,18 +51,4 @@ export FITSMetadata,
        filter_on!
 
 
-include("Lightcurve.jl")
-export AbstractLightCurve
-export LightCurve,
-       LightCurveMetadata,
-       EventProperty,
-       extract_metadata
-export create_lightcurve,
-       rebin
-export calculate_errors
-export validate_lightcurve_inputs,
-       apply_event_filters,
-       create_time_bins,
-       bin_events,
-       calculate_additional_properties
 end
