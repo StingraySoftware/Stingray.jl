@@ -323,7 +323,6 @@ let
     @test haskey(data.meta.extra_columns, "INDEX")
     @test data.meta.extra_columns["INDEX"] == collect(1:5)
 
-    println("✓ Basic readevents tests passed")
 end
 
 # Test readevents HDU handling
