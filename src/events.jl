@@ -537,11 +537,6 @@ if has_energies(ev)
 end
 ```
 
-# Type Stability
-This function is designed to be type-stable with proper type annotations
-on return values from FITS reading operations. The return type is fully
-specified to enable compiler optimizations.
-
 # Error Handling
 - Throws `AssertionError` if time and energy vectors have different sizes
 - Throws `AssertionError` if times are not sorted and `sort=false`
