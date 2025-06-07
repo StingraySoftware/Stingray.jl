@@ -300,7 +300,6 @@ let
     @test ev_all_pass.energies == original_energies
     @test length(ev_all_pass) == 3
 
-    println("✓ Complex filtering scenario tests passed")
 end
 
 # Test readevents basic functionality with mock data
