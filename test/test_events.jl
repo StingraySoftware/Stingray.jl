@@ -383,7 +383,6 @@ let
     @test data_pha.energies == pi_values
     @test data_pha.meta.energy_units == "PHA"
 
-    println("✓ Alternative energy column tests passed")
 end
 
 # Test readevents missing columns
