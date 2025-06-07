@@ -448,5 +448,4 @@ let
     @test data.times == times
     @test data.energies == energies
 
-    println("✓ Case insensitive column tests passed")
 end
