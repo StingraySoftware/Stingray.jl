@@ -54,7 +54,6 @@ end
 
 # Test EventProperty structure creation and validation
 let
-    println("Testing EventProperty structure...")
 
     # Test basic EventProperty creation
     prop = EventProperty{Float64}(:test, [1.0, 2.0, 3.0], "units")
@@ -72,12 +71,10 @@ let
     prop_empty = EventProperty{Float64}(:empty, Float64[], "none")
     @test isempty(prop_empty.values)
 
-    println("✓ EventProperty structure tests passed")
 end
 
 # Test LightCurveMetadata structure creation and validation
 let
-    println("Testing LightCurveMetadata structure...")
 
     # Test complete metadata creation
     metadata = LightCurveMetadata(
@@ -115,12 +112,10 @@ let
     @test isempty(metadata_minimal.headers)
     @test isempty(metadata_minimal.extra)
 
-    println("✓ LightCurveMetadata structure tests passed")
 end
 
 # Test LightCurve basic structure creation and validation
 let
-    println("Testing LightCurve basic structure...")
 
     # Create test data
     timebins = [1.5, 2.5, 3.5]
@@ -164,12 +159,10 @@ let
     # Test inheritance
     @test lc isa AbstractLightCurve{Float64}
 
-    println("✓ LightCurve basic structure tests passed")
 end
 
 # Test Poisson error calculation
 let
-    println("Testing Poisson error calculation...")
 
     # Test basic Poisson errors
     counts = [0, 1, 4, 9, 16]
@@ -188,13 +181,10 @@ let
     large_errors = calculate_errors(large_counts, :poisson, fill(1.0, 3))
     @test large_errors ≈ [10.0, 20.0, 30.0]
 
-    println("✓ Poisson error calculation tests passed")
 end
 
 # Test Gaussian error calculation
 let
-    println("Testing Gaussian error calculation...")
-
     counts = [1, 4, 9, 16, 25]
     exposure = fill(1.0, length(counts))
     gaussian_errs = [0.5, 1.0, 1.5, 2.0, 2.5]
@@ -213,13 +203,10 @@ let
         gaussian_errors = different_gaussian,
     )
     @test errors_diff == different_gaussian
-
-    println("✓ Gaussian error calculation tests passed")
 end
 
 # Test error calculation edge cases and exceptions
 let
-    println("Testing error calculation exceptions...")
 
     counts = [1, 2, 3]
     exposure = fill(1.0, 3)
@@ -241,13 +228,10 @@ let
     # Test empty arrays
     empty_errors = calculate_errors(Int[], :poisson, Float64[])
     @test isempty(empty_errors)
-
-    println("✓ Error calculation exception tests passed")
 end
 
 # Test input validation for lightcurve creation
 let
-    println("Testing lightcurve input validation...")
 
     # Create valid EventList
     times = [1.0, 2.0, 3.0, 4.0, 5.0]
@@ -300,13 +284,10 @@ let
         :gaussian,
         nothing,
     )
-
-    println("✓ Input validation tests passed")
 end
 
 # Test empty event list validation
 let
-    println("Testing empty event list validation...")
 
     # Create empty EventList
     empty_events = create_mock_eventlist(Float64[], nothing)
@@ -319,12 +300,10 @@ let
         nothing,
     )
 
-    println("✓ Empty event list validation tests passed")
 end
 
 # Test time filtering functionality
 let
-    println("Testing time filtering...")
 
     times = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     energies = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
@@ -352,12 +331,10 @@ let
     filtered_stop, _, _, _ = apply_event_filters(times, energies, nothing, 4.0, nothing)
     @test all(filtered_stop .<= 4.0)
 
-    println("✓ Time filtering tests passed")
 end
 
 # Test energy filtering functionality
 let
-    println("Testing energy filtering...")
 
     times = [1.0, 2.0, 3.0, 4.0, 5.0]
     energies = [5.0, 15.0, 25.0, 35.0, 45.0]
@@ -380,13 +357,10 @@ let
         apply_event_filters(times, nothing, nothing, nothing, (10.0, 30.0))
     @test length(filtered_times3) == length(times)
     @test isnothing(filtered_energies3)
-
-    println("✓ Energy filtering tests passed")
 end
 
 # Test combined time and energy filtering
 let
-    println("Testing combined filtering...")
 
     times = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     energies = [5.0, 15.0, 25.0, 35.0, 45.0, 55.0]
@@ -403,12 +377,10 @@ let
         (times .>= 2.0) .& (times .<= 4.0) .& (energies .>= 10.0) .& (energies .< 40.0)
     @test length(filtered_times) == sum(expected_mask)
 
-    println("✓ Combined filtering tests passed")
 end
 
 # Test filtering edge cases and error conditions
 let
-    println("Testing filtering edge cases...")
 
     times = [1.0, 2.0, 3.0]
     energies = [10.0, 20.0, 30.0]
@@ -433,13 +405,10 @@ let
         20.0,
         (100.0, 200.0),
     )
-
-    println("✓ Filtering edge cases tests passed")
 end
 
 # Test time bin creation
 let
-    println("Testing time bin creation...")
 
     # Test basic bin creation
     start_time = 1.0
@@ -469,12 +438,10 @@ let
     @test length(centers_single) >= 1
     @test edges_single[end] >= 1.5
 
-    println("✓ Time bin creation tests passed")
 end
 
 # Test event binning functionality
 let
-    println("Testing event binning...")
 
     # Test basic binning
     times = [1.1, 1.2, 2.3, 2.4, 3.5]
@@ -505,12 +472,10 @@ let
     many_counts = bin_events(many_times, edges)
     @test sum(many_counts) == length(many_times)
 
-    println("✓ Event binning tests passed")
 end
 
 # Test additional properties calculation
 let
-    println("Testing additional properties calculation...")
 
     # Test with energy data
     times = [1.1, 1.2, 2.3, 2.4, 3.5]
@@ -552,12 +517,10 @@ let
     @test length(props_single) == 1
     @test props_single[1].values[1] ≈ 15.0
 
-    println("✓ Additional properties calculation tests passed")
 end
 
 # Test metadata extraction
 let
-    println("Testing metadata extraction...")
 
     # Create mock eventlist with proper metadata
     times = [1.0, 2.0, 3.0]
@@ -606,14 +569,11 @@ let
     @test metadata.extra["energy_filter"] == energy_filter
     @test metadata.extra["binning_method"] == "histogram"
 
-    # Test that we preserve metadata without forcing specific telescope names
-    println("✓ Metadata extraction tests passed - preserves ALL original metadata")
 end
 
 
 # Test full lightcurve creation
 let
-    println("Testing full lightcurve creation...")
 
     # Create test data
     times = [1.1, 1.2, 2.3, 2.4, 3.5, 4.1, 4.2]
@@ -640,12 +600,10 @@ let
     @test !isempty(lc.properties)
     @test lc.properties[1].name === :mean_energy
 
-    println("✓ Full lightcurve creation tests passed")
 end
 
 # Test lightcurve creation with filtering
 let
-    println("Testing lightcurve creation with filtering...")
 
     times = [1.1, 1.2, 2.3, 2.4, 3.5, 4.1, 4.2]
     energies = [5.0, 15.0, 25.0, 35.0, 45.0, 55.0, 65.0]
@@ -673,12 +631,10 @@ let
     @test sum(lc_combined.counts) <= sum(lc_energy.counts)
     @test sum(lc_combined.counts) <= sum(lc_time.counts)
 
-    println("✓ Lightcurve creation with filtering tests passed")
 end
 
 # Test lightcurve creation with custom event filter
 let
-    println("Testing lightcurve creation with custom event filter...")
 
     times = [1.0, 2.0, 3.0, 4.0, 5.0]
     energies = [10.0, 20.0, 30.0, 40.0, 50.0]
@@ -699,12 +655,9 @@ let
         1.0,
         event_filter = no_events_filter,
     )
-
-    println("✓ Lightcurve creation with custom event filter tests passed")
 end
 # Test lightcurve creation with Gaussian errors
 let
-    println("Testing lightcurve creation with Gaussian errors...")
 
     times = [1.1, 1.2, 2.3, 2.4]
     energies = [10.0, 20.0, 15.0, 25.0]
@@ -749,11 +702,9 @@ let
         gaussian_errors = another_wrong_length,
     )
 
-    println("✓ Lightcurve creation with Gaussian errors tests passed")
 end
 # Test basic rebinning functionality
 let
-    println("Testing basic rebinning...")
 
     # Create test lightcurve
     start_time = 1.0
@@ -798,13 +749,10 @@ let
     # Test error when rebinning to smaller bins
     @test_throws ArgumentError rebin(lc, old_binsize / 2)
     @test_throws ArgumentError rebin(lc, old_binsize)
-
-    println("✓ Basic rebinning tests passed")
 end
 
 # Test rebinning with properties
 let
-    println("Testing rebinning with properties...")
 
     # Create lightcurve with properties
     start_time = 1.0
@@ -865,12 +813,10 @@ let
     @test length(lc_half.counts) == n_half_bins
     @test sum(lc_half.counts) == sum(lc.counts)
 
-    println("✓ Rebinning with properties tests passed")
 end
 
 # Test rebinning edge cases
 let
-    println("Testing rebinning edge cases...")
 
     # Test rebinning with non-aligned time structure
     start_time = 1.3
@@ -937,12 +883,10 @@ let
     @test sum(single_rebinned.counts) == sum(single_counts)
     @test length(single_rebinned.counts) >= 1
 
-    println("✓ Rebinning edge cases tests passed")
 end
 
 # Test rebinning error conditions
 let
-    println("Testing rebinning error conditions...")
 
     # Create test lightcurve
     start_time = 1.0
@@ -984,13 +928,10 @@ let
     @test length(large_rebinned.counts) == 1
     @test sum(large_rebinned.counts) == sum(lc.counts)
 
-    println("✓ Rebinning error conditions tests passed")
 end
 
 # Test rebinning preserves Gaussian errors
-# Test rebinning preserves Gaussian errors
 let
-    println("Testing rebinning with Gaussian errors...")
 
     # Create lightcurve with Gaussian errors
     start_time = 1.0
@@ -1040,8 +981,6 @@ let
 
     # Test that rebinned errors are properly combined
     @test new_lc_gauss.count_error[1] ≈ expected_combined_error
-
-    println("✓ Rebinning with Gaussian errors tests passed")
 end
 function Base.iterate(lc::LightCurve)
     if length(lc.timebins) == 0
@@ -1059,7 +998,6 @@ end
 
 # Test lightcurve array interface
 let
-    println("Testing lightcurve array interface...")
 
     times = [1.5, 2.5, 3.5]
     counts = [1, 2, 1]
@@ -1102,13 +1040,10 @@ let
     # Test bounds checking
     @test_throws BoundsError lc[0]
     @test_throws BoundsError lc[4]
-
-    println("✓ Lightcurve array interface tests passed")
 end
 
 # Test rebinning with multiple properties
 let
-    println("Testing rebinning with multiple properties...")
 
     start_time = 1.0
     end_time = 5.0
@@ -1161,14 +1096,10 @@ let
     for prop in new_lc_multi.properties
         @test length(prop.values) == length(new_lc_multi.counts)
     end
-
-    println("✓ Rebinning with multiple properties tests passed")
 end
 
 # Test rebinning with empty lightcurve
 let
-    println("Testing rebinning with empty lightcurve...")
-
     # Create empty lightcurve
     empty_lc = LightCurve{Float64}(
         Float64[],
@@ -1196,12 +1127,10 @@ let
     @test sum(rebinned_empty.counts) == 0
     @test rebinned_empty.metadata.bin_size == 2.0
 
-    println("✓ Rebinning with empty lightcurve tests passed")
 end
 
 # Test rebinning preserves metadata
 let
-    println("Testing rebinning preserves metadata...")
 
     # Create lightcurve with rich metadata
     start_time = 1.0
@@ -1249,5 +1178,4 @@ let
     @test rebinned_rich.metadata.extra["custom_param"] == 42
     @test rebinned_rich.metadata.extra["processing_version"] == "1.0"
 
-    println("✓ Rebinning preserves metadata tests passed")
 end
