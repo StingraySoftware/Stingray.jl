@@ -218,7 +218,6 @@ let
     @test ev_extra.energies == [10.0, 30.0, 50.0]
     @test ev_extra.meta.extra_columns["FLAG"] == [1, 1, 1]
 
-    println("✓ filter_on! function tests passed")
 end
 
 # Test non-mutating filter functions (filter_time and filter_energy)
