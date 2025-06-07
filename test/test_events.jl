@@ -420,7 +420,6 @@ let
     end
     @test_throws Exception readevents(invalid_file)
 
-    println("✓ Error handling tests passed")
 end
 
 # Test case insensitive column names
