@@ -79,7 +79,6 @@ let
     @test size(ev) == (4,)
     @test size(ev) == (length(times_vec),)
 
-    println("✓ Base interface method tests passed")
 end
 
 # Test filter_time! function (in-place filtering by time)
