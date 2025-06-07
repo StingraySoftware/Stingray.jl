@@ -168,7 +168,6 @@ let
     @test ev_extra.energies == [35.0, 45.0]
     @test ev_extra.meta.extra_columns["DETX"] == [0.3, 0.4]
 
-    println("✓ filter_energy! function tests passed")
 end
 
 # Test filter_on! function (generic in-place filtering)
