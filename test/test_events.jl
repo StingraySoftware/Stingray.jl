@@ -405,7 +405,6 @@ let
     @test isnothing(data.energies)
     @test isnothing(data.meta.energy_units)
 
-    println("✓ Missing column tests passed")
 end
 
 # Test error handling
