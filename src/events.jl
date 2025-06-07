@@ -112,7 +112,7 @@ ev = EventList([1.0, 2.0, 3.0], [0.5, 1.2, 2.1])
 """
 function EventList(times::Vector{T}, energies::Union{Nothing,Vector{T}} = nothing) where {T}
     dummy_meta = FITSMetadata(
-        "",  # filepath
+        "[no file]",  # filepath
         1,   # hdu
         nothing,  # energy_units
         Dict{String,Vector}(),  # extra_columns
