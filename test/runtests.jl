@@ -5,5 +5,6 @@ using Logging ,LinearAlgebra
 using CFITSIO
 include("test_fourier.jl")
 include("test_gti.jl")
-include("test_events.jl")
-include("test_lightcurve.jl")
+@testset "Eventlist" begin
+    include("test_events.jl")
+end
