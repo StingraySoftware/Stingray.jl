@@ -982,20 +982,6 @@ let
     # Test that rebinned errors are properly combined
     @test new_lc_gauss.count_error[1] ≈ expected_combined_error
 end
-function Base.iterate(lc::LightCurve)
-    if length(lc.timebins) == 0
-        return nothing
-    end
-    return (lc.timebins[1], lc.counts[1]), 2
-end
-
-function Base.iterate(lc::LightCurve, state)
-    if state > length(lc.timebins)
-        return nothing
-    end
-    return (lc.timebins[state], lc.counts[state]), state + 1
-end
-
 # Test lightcurve array interface
 let
 
