@@ -14,12 +14,19 @@ makedocs(;
         edit_link="master",
         assets=String[],
     ),
-    pages=[
+    pages = [
         "Home" => "index.md",
-    ],
+        "Contributing" => "contributing.md",
+        "Advanced Topics" => [
+            "Benchmarks" => "benchmarks.md",
+            "Changelog" => "changelog.md",
+        ]
+    ]
 )
 
 deploydocs(;
     repo="https://github.com/matteobachetti/Stingray.jl",
     devbranch="main",
 )
+
+println("Documentation build complete!")
