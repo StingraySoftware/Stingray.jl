@@ -3,6 +3,8 @@ module Stingray
 using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
+using DocStringExtensions
+using LinearAlgebra
 
 include("fourier.jl")
 export positive_fft_bins
@@ -33,6 +35,20 @@ export bin_intervals_from_gtis
 include("utils.jl")
 
 include("events.jl")
-export readevents, EventList, DictMetadata
+export FITSMetadata,
+    EventList,
+    times,
+    energies,
+    has_energies,
+    filter_time!,
+    filter_energy!,
+    filter_time,
+    filter_energy,
+    colnames,
+    read_energy_column,
+    readevents,
+    summary,
+    filter_on!
+
 
 end
