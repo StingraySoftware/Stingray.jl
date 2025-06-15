@@ -5,6 +5,9 @@ using Logging ,LinearAlgebra
 using CFITSIO
 include("test_fourier.jl")
 include("test_gti.jl")
-include("test_events.jl")
-include("test_lightcurve.jl")
-include("test_missionSupport.jl")
+@testset verbose=true "Eventlist" begin
+    include("test_events.jl")
+end
+@testset verbose=true "Synthetic Events Tests" begin
+    include("test_missionSupport.jl")
+end

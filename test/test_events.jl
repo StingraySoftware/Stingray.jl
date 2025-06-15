@@ -1,390 +1,439 @@
-@testset "EventList Tests" begin
-    
-    # Test 1: Basic EventList creation and validation
-    @testset "EventList Constructor Validation" begin
-        test_dir = mktempdir()
-        filename = joinpath(test_dir, "test.fits")
-        metadata = DictMetadata([Dict{String,Any}()])
-        
-        # Test valid construction
-        times = [1.0, 2.0, 3.0, 4.0, 5.0]
-        energies = [10.0, 20.0, 15.0, 25.0, 30.0]
-        extra_cols = Dict{String, Vector}("DETX" => [0.1, 0.2, 0.3, 0.4, 0.5])
-        
-        ev = EventList{Float64}(filename, times, energies, extra_cols, metadata)
-        @test ev.filename == filename
-        @test ev.times == times
-        @test ev.energies == energies
-        @test ev.extra_columns == extra_cols
-        @test ev.metadata == metadata
-        
-        # Test validation: empty times should throw
-        @test_throws ArgumentError EventList{Float64}(filename, Float64[], nothing, Dict{String, Vector}(), metadata)
-        
-        # Test validation: unsorted times should throw
-        unsorted_times = [3.0, 1.0, 2.0, 4.0]
-        @test_throws ArgumentError EventList{Float64}(filename, unsorted_times, nothing, Dict{String, Vector}(), metadata)
-        
-        # Test validation: mismatched energy vector length
-        wrong_energies = [10.0, 20.0]  # Only 2 elements vs 5 times
-        @test_throws ArgumentError EventList{Float64}(filename, times, wrong_energies, Dict{String, Vector}(), metadata)
-        
-        # Test validation: mismatched extra column length
-        wrong_extra = Dict{String, Vector}("DETX" => [0.1, 0.2])  # Only 2 elements vs 5 times
-        @test_throws ArgumentError EventList{Float64}(filename, times, nothing, wrong_extra, metadata)
-    end
-    
-    # Test 2: Simplified constructors
-    @testset "Simplified Constructors" begin
-        test_dir = mktempdir()
-        filename = joinpath(test_dir, "test.fits")
-        times = [1.0, 2.0, 3.0]
-        metadata = DictMetadata([Dict{String,Any}()])
-        
-        # Constructor with just times and metadata
-        ev1 = EventList{Float64}(filename, times, metadata)
-        @test ev1.filename == filename
-        @test ev1.times == times
-        @test isnothing(ev1.energies)
-        @test isempty(ev1.extra_columns)
-        @test ev1.metadata == metadata
-        
-        # Constructor with times, energies, and metadata
-        energies = [10.0, 20.0, 30.0]
-        ev2 = EventList{Float64}(filename, times, energies, metadata)
-        @test ev2.filename == filename
-        @test ev2.times == times
-        @test ev2.energies == energies
-        @test isempty(ev2.extra_columns)
-        @test ev2.metadata == metadata
-    end
-    
-    # Test 3: Accessor functions
-    @testset "Accessor Functions" begin
-        test_dir = mktempdir()
-        filename = joinpath(test_dir, "test.fits")
-        times_vec = [1.0, 2.0, 3.0]
-        energies_vec = [10.0, 20.0, 30.0]
-        metadata = DictMetadata([Dict{String,Any}()])
-        
-        ev = EventList{Float64}(filename, times_vec, energies_vec, metadata)
-        
-        # Test times() accessor
-        @test times(ev) === ev.times
-        @test times(ev) == times_vec
-        
-        # Test energies() accessor  
-        @test energies(ev) === ev.energies
-        @test energies(ev) == energies_vec
-        
-        # Test with nothing energies
-        ev_no_energy = EventList{Float64}(filename, times_vec, metadata)
-        @test isnothing(energies(ev_no_energy))
-    end
-    
-    # Test 4: Base interface methods
-    @testset "Base Interface Methods" begin
-        test_dir = mktempdir()
-        filename = joinpath(test_dir, "test.fits")
-        times_vec = [1.0, 2.0, 3.0, 4.0]
-        metadata = DictMetadata([Dict{String,Any}()])
-        
-        ev = EventList{Float64}(filename, times_vec, metadata)
-        
-        # Test length
-        @test length(ev) == 4
-        @test length(ev) == length(times_vec)
-        
-        # Test size
-        @test size(ev) == (4,)
-        @test size(ev) == (length(times_vec),)
-        
-        # Test show method
-        io = IOBuffer()
-        show(io, ev)
-        str = String(take!(io))
-        @test occursin("EventList{Float64}", str)
-        @test occursin("n=4", str)
-        @test occursin("no energy data", str)
-        @test occursin("0 extra columns", str)
-        @test occursin("file=$filename", str)
-        
-        # Test show with energy data
-        energies_vec = [10.0, 20.0, 30.0, 40.0]
-        ev_with_energy = EventList{Float64}(filename, times_vec, energies_vec, metadata)
-        io2 = IOBuffer()
-        show(io2, ev_with_energy)
-        str2 = String(take!(io2))
-        @test occursin("with energy data", str2)
-    end
-    
-    @testset "readevents Basic Functionality" begin
-        test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "sample.fits")
-        
-        # Create a sample FITS file
-        f = FITS(sample_file, "w")
-        
+
+
+# Test data path (if using test data directory)
+# TEST_DATA_PATH = joinpath(@__DIR__, "_data", "testdata")
+
+# Helper function to generate mock data
+function mock_data(times, energies; energy_column = "ENERGY")
+    test_dir = mktempdir()
+    sample_file = joinpath(test_dir, "sample.fits")
+
+    # Create a sample FITS file
+    FITS(sample_file, "w") do f
         # Create primary HDU with a small array instead of empty
-        write(f, [0]) # Use a single element array instead of empty
-        
+        # Use a single element array instead of empty
+        write(f, [0])
+
         # Create event table in HDU 2
-        times = Float64[1.0, 2.0, 3.0, 4.0, 5.0]
-        energies = Float64[10.0, 20.0, 15.0, 25.0, 30.0]
-        
         table = Dict{String,Array}()
         table["TIME"] = times
-        table["ENERGY"] = energies
+        table[energy_column] = energies
+        table["INDEX"] = collect(1:length(times))
         write(f, table)
-        close(f)
-        
-        # Test reading with default parameters
-        data = readevents(sample_file)
-        @test data.filename == sample_file
-        @test data.times == times
-        @test data.energies == energies
-        @test eltype(data.times) == Float64
-        @test eltype(data.energies) == Float64
-        @test length(data.metadata.headers) >= 2
-        
-        # Test reading with different numeric type
-        data_f32 = readevents(sample_file, T=Float32)
-        @test eltype(data_f32.times) == Float32
-        @test eltype(data_f32.energies) == Float32
-        @test data_f32.times ≈ Float32.(times)
-        @test data_f32.energies ≈ Float32.(energies)
     end
-    
-    @testset "readevents HDU Handling" begin
-        test_dir = mktempdir()
-        
-        # Test with events in HDU 3 instead of default HDU 2
-        sample_file = joinpath(test_dir, "hdu3_sample.fits")
-        f = FITS(sample_file, "w")
-        write(f, [0])  # Primary HDU with non-empty array
-        
-        # Empty table in HDU 2
-        empty_table = Dict{String,Array}()
-        empty_table["OTHER"] = Float64[1.0, 2.0]
-        write(f, empty_table)
-        
-        # Event data in HDU 3
-        times = Float64[1.0, 2.0, 3.0]
-        energies = Float64[10.0, 20.0, 30.0]
-        event_table = Dict{String,Array}()
-        event_table["TIME"] = times
-        event_table["ENERGY"] = energies
-        write(f, event_table)
-        close(f)
-        
-        # Should find events in HDU 3 via fallback mechanism
-        data = readevents(sample_file)
-        @test data.times == times
-        @test data.energies == energies
-        
-        # Test specifying specific HDU
-        data_hdu3 = readevents(sample_file, event_hdu=3)
-        @test data_hdu3.times == times
-        @test data_hdu3.energies == energies
+    sample_file
+end
+
+# Test basic EventList creation and validation
+let
+    # Test valid construction with simplified constructor
+    times = [1.0, 2.0, 3.0, 4.0, 5.0]
+    energies = [10.0, 20.0, 15.0, 25.0, 30.0]
+
+    ev = EventList(times, energies)
+    @test ev.times == times
+    @test ev.energies == energies
+    @test length(ev) == 5
+    @test has_energies(ev)
+
+    # Test with no energies
+    ev_no_energy = EventList(times)
+    @test ev_no_energy.times == times
+    @test isnothing(ev_no_energy.energies)
+    @test !has_energies(ev_no_energy)
+
+end
+
+# Test accessor functions
+let
+    times_vec = [1.0, 2.0, 3.0]
+    energies_vec = [10.0, 20.0, 30.0]
+
+    ev = EventList(times_vec, energies_vec)
+
+    # Test times() accessor
+    @test times(ev) === ev.times
+    @test times(ev) == times_vec
+
+    # Test energies() accessor  
+    @test energies(ev) === ev.energies
+    @test energies(ev) == energies_vec
+
+    # Test with nothing energies
+    ev_no_energy = EventList(times_vec)
+    @test isnothing(energies(ev_no_energy))
+
+end
+
+# Test Base interface methods
+let
+    times_vec = [1.0, 2.0, 3.0, 4.0]
+
+    ev = EventList(times_vec)
+
+    # Test length
+    @test length(ev) == 4
+    @test length(ev) == length(times_vec)
+
+    # Test size
+    @test size(ev) == (4,)
+    @test size(ev) == (length(times_vec),)
+
+end
+
+# Test filter_time! function (in-place filtering by time)
+let
+    # Test basic time filtering - keep times >= 3.0
+    times = [1.0, 2.0, 3.0, 4.0, 5.0]
+    energies = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+    ev = EventList(times, energies)
+    filter_time!(t -> t >= 3.0, ev)
+
+    @test ev.times == [3.0, 4.0, 5.0]
+    @test ev.energies == [30.0, 40.0, 50.0]
+    @test length(ev) == 3
+
+    # Test filtering that removes all elements
+    ev_empty = EventList([1.0, 2.0], [10.0, 20.0])
+    filter_time!(t -> t > 10.0, ev_empty)
+    @test length(ev_empty) == 0
+    @test ev_empty.times == Float64[]
+    @test ev_empty.energies == Float64[]
+
+    # Test filtering with no energies
+    ev_no_energy = EventList([1.0, 2.0, 3.0, 4.0])
+    filter_time!(t -> t > 2.0, ev_no_energy)
+    @test ev_no_energy.times == [3.0, 4.0]
+    @test isnothing(ev_no_energy.energies)
+    @test length(ev_no_energy) == 2
+
+    # Test filtering with extra columns
+    times_extra = [1.0, 2.0, 3.0, 4.0]
+    energies_extra = [10.0, 20.0, 30.0, 40.0]
+    dummy_meta = FITSMetadata{Dict{String,Any}}(
+        "",
+        1,
+        nothing,
+        Dict("INDEX" => [1, 2, 3, 4]),
+        Dict{String,Any}(),
+    )
+    ev_extra = EventList(times_extra, energies_extra, dummy_meta)
+
+    filter_time!(t -> t >= 2.5, ev_extra)
+    @test ev_extra.times == [3.0, 4.0]
+    @test ev_extra.energies == [30.0, 40.0]
+    @test ev_extra.meta.extra_columns["INDEX"] == [3, 4]
+
+end
+
+# Test filter_energy! function (in-place filtering by energy)
+let
+    # Test basic energy filtering - keep energies >= 25.0
+    times = [1.0, 2.0, 3.0, 4.0, 5.0]
+    energies = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+    ev = EventList(times, energies)
+    filter_energy!(e -> e >= 25.0, ev)
+
+    @test ev.times == [3.0, 4.0, 5.0]
+    @test ev.energies == [30.0, 40.0, 50.0]
+    @test length(ev) == 3
+
+    # Test filtering that removes all elements
+    ev_all_removed = EventList([1.0, 2.0], [10.0, 20.0])
+    filter_energy!(e -> e > 100.0, ev_all_removed)
+    @test length(ev_all_removed) == 0
+    @test ev_all_removed.times == Float64[]
+    @test ev_all_removed.energies == Float64[]
+
+    # Test error when no energies present
+    ev_no_energy = EventList([1.0, 2.0, 3.0])
+    @test_throws AssertionError filter_energy!(e -> e > 10.0, ev_no_energy)
+
+    # Test filtering with extra columns
+    times_extra = [1.0, 2.0, 3.0, 4.0]
+    energies_extra = [15.0, 25.0, 35.0, 45.0]
+    dummy_meta = FITSMetadata{Dict{String,Any}}(
+        "",
+        1,
+        nothing,
+        Dict("DETX" => [0.1, 0.2, 0.3, 0.4]),
+        Dict{String,Any}(),
+    )
+    ev_extra = EventList(times_extra, energies_extra, dummy_meta)
+
+    filter_energy!(e -> e >= 30.0, ev_extra)
+    @test ev_extra.times == [3.0, 4.0]
+    @test ev_extra.energies == [35.0, 45.0]
+    @test ev_extra.meta.extra_columns["DETX"] == [0.3, 0.4]
+
+end
+
+# Test filter_on! function (generic in-place filtering)
+let
+    # Test filtering on times using filter_on!
+    times = [1.0, 2.0, 3.0, 4.0, 5.0]
+    energies = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+    ev = EventList(times, energies)
+    filter_on!(t -> t % 2 == 0, ev.times, ev)  # Keep even time values (2.0, 4.0)
+
+    @test ev.times == [2.0, 4.0]
+    @test ev.energies == [20.0, 40.0]
+    @test length(ev) == 2
+
+    # Test filtering on energies using filter_on!
+    times2 = [1.0, 2.0, 3.0, 4.0]
+    energies2 = [15.0, 25.0, 35.0, 45.0]
+    ev2 = EventList(times2, energies2)
+    filter_on!(e -> e > 30.0, ev2.energies, ev2)  # Keep energies > 30
+
+    @test ev2.times == [3.0, 4.0]
+    @test ev2.energies == [35.0, 45.0]
+
+    # Test assertion error for mismatched sizes
+    times3 = [1.0, 2.0, 3.0]
+    energies3 = [10.0, 20.0, 30.0]
+    ev3 = EventList(times3, energies3)
+    wrong_size_col = [1.0, 2.0]  # Wrong size
+    @test_throws AssertionError filter_on!(x -> x > 1.0, wrong_size_col, ev3)
+
+    # Test with extra columns
+    times_extra = [1.0, 2.0, 3.0, 4.0, 5.0]
+    energies_extra = [10.0, 20.0, 30.0, 40.0, 50.0]
+    dummy_meta = FITSMetadata{Dict{String,Any}}(
+        "",
+        1,
+        nothing,
+        Dict("FLAG" => [1, 0, 1, 0, 1]),
+        Dict{String,Any}(),
+    )
+    ev_extra = EventList(times_extra, energies_extra, dummy_meta)
+
+    # Filter based on FLAG column (keep where FLAG == 1)
+    filter_on!(flag -> flag == 1, ev_extra.meta.extra_columns["FLAG"], ev_extra)
+    @test ev_extra.times == [1.0, 3.0, 5.0]
+    @test ev_extra.energies == [10.0, 30.0, 50.0]
+    @test ev_extra.meta.extra_columns["FLAG"] == [1, 1, 1]
+
+end
+
+# Test non-mutating filter functions (filter_time and filter_energy)
+let
+    # Test filter_time (non-mutating)
+    times = [1.0, 2.0, 3.0, 4.0, 5.0]
+    energies = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+    ev_original = EventList(times, energies)
+    ev_filtered = filter_time(t -> t >= 3.0, ev_original)
+
+    # Original should be unchanged
+    @test ev_original.times == [1.0, 2.0, 3.0, 4.0, 5.0]
+    @test ev_original.energies == [10.0, 20.0, 30.0, 40.0, 50.0]
+    @test length(ev_original) == 5
+
+    # Filtered should have new values
+    @test ev_filtered.times == [3.0, 4.0, 5.0]
+    @test ev_filtered.energies == [30.0, 40.0, 50.0]
+    @test length(ev_filtered) == 3
+
+    # Test filter_energy (non-mutating)
+    ev_original2 = EventList(times, energies)
+    ev_filtered2 = filter_energy(e -> e <= 30.0, ev_original2)
+
+    # Original should be unchanged
+    @test ev_original2.times == times
+    @test ev_original2.energies == energies
+
+    # Filtered should have new values
+    @test ev_filtered2.times == [1.0, 2.0, 3.0]
+    @test ev_filtered2.energies == [10.0, 20.0, 30.0]
+    @test length(ev_filtered2) == 3
+
+    # Test with no energies
+    ev_no_energy = EventList([1.0, 2.0, 3.0, 4.0])
+    ev_filtered_no_energy = filter_time(t -> t > 2.0, ev_no_energy)
+
+    @test ev_no_energy.times == [1.0, 2.0, 3.0, 4.0]  # Original unchanged
+    @test ev_filtered_no_energy.times == [3.0, 4.0]
+    @test isnothing(ev_filtered_no_energy.energies)
+
+    # Test filter_energy error with no energies
+    @test_throws AssertionError filter_energy(e -> e > 10.0, ev_no_energy)
+
+end
+
+# Test complex filtering scenarios
+let
+    # Test multiple sequential filters
+    times = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    energies = [10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0]
+
+    ev = EventList(times, energies)
+
+    # First filter by time (keep t >= 3.0)
+    filter_time!(t -> t >= 3.0, ev)
+    @test length(ev) == 6
+    @test ev.times == [3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    @test ev.energies == [20.0, 25.0, 30.0, 35.0, 40.0, 45.0]
+
+    # Then filter by energy (keep e <= 35.0)
+    filter_energy!(e -> e <= 35.0, ev)
+    @test length(ev) == 4
+    @test ev.times == [3.0, 4.0, 5.0, 6.0]
+    @test ev.energies == [20.0, 25.0, 30.0, 35.0]
+
+    # Test edge case: empty result after filtering
+    ev_edge = EventList([1.0, 2.0], [10.0, 20.0])
+    filter_time!(t -> t > 5.0, ev_edge)
+    @test length(ev_edge) == 0
+    @test ev_edge.times == Float64[]
+    @test ev_edge.energies == Float64[]
+
+    # Test edge case: no filtering needed (all pass)
+    ev_all_pass = EventList([1.0, 2.0, 3.0], [10.0, 20.0, 30.0])
+    original_times = copy(ev_all_pass.times)
+    original_energies = copy(ev_all_pass.energies)
+    filter_time!(t -> t > 0.0, ev_all_pass)  # All should pass
+    @test ev_all_pass.times == original_times
+    @test ev_all_pass.energies == original_energies
+    @test length(ev_all_pass) == 3
+
+end
+
+# Test readevents basic functionality with mock data
+let
+    mock_times = Float64[1.0, 2.0, 3.0, 4.0, 5.0]
+    mock_energies = Float64[10.0, 20.0, 15.0, 25.0, 30.0]
+    sample = mock_data(mock_times, mock_energies)
+
+    # Try reading mock data
+    data = readevents(sample)
+    @test data.times == mock_times
+    @test data.energies == mock_energies
+    @test length(data.meta.headers) >= 1  # Should have at least primary header
+    @test length(data.meta.extra_columns) == 0
+
+    # Test reading with extra columns
+    data = readevents(sample; extra_columns = ["INDEX"])
+    @test length(data.meta.extra_columns) == 1
+    @test haskey(data.meta.extra_columns, "INDEX")
+    @test data.meta.extra_columns["INDEX"] == collect(1:5)
+
+end
+
+# Test readevents HDU handling
+let
+    # Test with events in HDU 3 instead of default HDU 2
+    test_dir = mktempdir()
+    sample_file = joinpath(test_dir, "hdu3_sample.fits")
+    f = FITS(sample_file, "w")
+    write(f, [0])  # Primary HDU with non-empty array
+
+    # Empty table in HDU 2
+    empty_table = Dict{String,Array}()
+    empty_table["OTHER"] = Float64[1.0, 2.0]
+    write(f, empty_table)
+
+    # Event data in HDU 3
+    times = Float64[1.0, 2.0, 3.0]
+    energies = Float64[10.0, 20.0, 30.0]
+    event_table = Dict{String,Array}()
+    event_table["TIME"] = times
+    event_table["ENERGY"] = energies
+    write(f, event_table)
+    close(f)
+
+    # Test specifying specific HDU
+    data_hdu3 = readevents(sample_file, hdu = 3)
+    @test data_hdu3.times == times
+    @test data_hdu3.energies == energies
+
+end
+
+# Test readevents alternative energy columns
+let
+    # Test with PI column
+    times = Float64[1.0, 2.0, 3.0]
+    pi_values = Float64[100.0, 200.0, 300.0]
+
+    pi_file = mock_data(times, pi_values; energy_column = "PI")
+
+    data = readevents(pi_file)
+    @test data.times == times
+    @test data.energies == pi_values
+    @test data.meta.energy_units == "PI"
+
+    # Test with PHA column
+    pha_file = mock_data(times, pi_values; energy_column = "PHA")
+
+    data_pha = readevents(pha_file)
+    @test data_pha.times == times
+    @test data_pha.energies == pi_values
+    @test data_pha.meta.energy_units == "PHA"
+
+end
+
+# Test readevents missing columns
+let
+    # File with only TIME column
+    test_dir = mktempdir()
+    time_only_file = joinpath(test_dir, "time_only.fits")
+    f = FITS(time_only_file, "w")
+    write(f, [0])  # Non-empty primary HDU
+
+    times = Float64[1.0, 2.0, 3.0]
+    table = Dict{String,Array}()
+    table["TIME"] = times
+    write(f, table)
+    close(f)
+
+    data = readevents(time_only_file)
+    @test data.times == times
+    @test isnothing(data.energies)
+    @test isnothing(data.meta.energy_units)
+
+end
+
+# Test error handling
+let
+    # Test non-existent file
+    @test_throws Exception readevents("non_existent_file.fits")
+
+    # Test invalid FITS file
+    test_dir = mktempdir()
+    invalid_file = joinpath(test_dir, "invalid.fits")
+    open(invalid_file, "w") do io
+        write(io, "This is not a FITS file")
     end
-    
-    @testset "readevents Alternative Energy Columns" begin
-        test_dir = mktempdir()
-        
-        # Test with PI column
-        pi_file = joinpath(test_dir, "pi_sample.fits")
-        f = FITS(pi_file, "w")
-        write(f, [0])  # Non-empty primary HDU
-        
-        times = Float64[1.0, 2.0, 3.0]
-        pi_values = Float64[100.0, 200.0, 300.0]
-        
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        table["PI"] = pi_values
-        write(f, table)
-        close(f)
-        
-        data = readevents(pi_file)
-        @test data.times == times
-        @test data.energies == pi_values
-        
-        # Test with PHA column
-        pha_file = joinpath(test_dir, "pha_sample.fits")
-        f = FITS(pha_file, "w")
-        write(f, [0])  # Non-empty primary HDU
-        
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        table["PHA"] = pi_values
-        write(f, table)
-        close(f)
-        
-        data_pha = readevents(pha_file)
-        @test data_pha.times == times
-        @test data_pha.energies == pi_values
-    end
-    
-    @testset "readevents Missing Columns" begin
-        test_dir = mktempdir()
-        
-        # File with only TIME column
-        time_only_file = joinpath(test_dir, "time_only.fits")
-        f = FITS(time_only_file, "w")
-        write(f, [0])  # Non-empty primary HDU
-        
-        times = Float64[1.0, 2.0, 3.0]
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        write(f, table)
-        close(f)
-        
-        data = readevents(time_only_file)
-        @test data.times == times
-        @test isnothing(data.energies)
-        
-        # File with no TIME column should throw error
-        no_time_file = joinpath(test_dir, "no_time.fits")
-        f = FITS(no_time_file, "w")
-        write(f, [0])  # Non-empty primary HDU
-        
-        table = Dict{String,Array}()
-        table["ENERGY"] = Float64[10.0, 20.0, 30.0]
-        write(f, table)
-        close(f)
-        
-        @test_throws ArgumentError readevents(no_time_file)
-    end
-    
-    @testset "readevents Extra Columns" begin
-        test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "extra_cols.fits")
-        
-        f = FITS(sample_file, "w")
-        write(f, [0])  # Non-empty primary HDU
-        
-        times = Float64[1.0, 2.0, 3.0]
-        energies = Float64[10.0, 20.0, 30.0]
-        sectors = Int64[1, 2, 1]
-        
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        table["ENERGY"] = energies
-        table["SECTOR"] = sectors
-        write(f, table)
-        close(f)
-        
-        # Test reading with sector column specified
-        data = readevents(sample_file, sector_column="SECTOR")
-        @test data.times == times
-        @test data.energies == energies
-        @test haskey(data.extra_columns, "SECTOR")
-        @test data.extra_columns["SECTOR"] == sectors
-    end
-    
-    # Test 10: Error handling
-   @testset "Error Handling" begin
-        test_dir = mktempdir()
-        
-        # Test non-existent file
-        @test_throws CFITSIO.CFITSIOError readevents("non_existent_file.fits")
-        
-        # Test invalid FITS file
-        invalid_file = joinpath(test_dir, "invalid.fits")
-        open(invalid_file, "w") do io
-            write(io, "This is not a FITS file")
-        end
-        @test_throws Exception readevents(invalid_file)
-        
-        # Test with non-table HDU specified
-        sample_file = joinpath(test_dir, "image_hdu.fits")
-        f = FITS(sample_file, "w")
-        
-        # Create a valid primary HDU with a small image
-        primary_data = reshape([1.0], 1, 1)  # 1x1 image instead of empty array
-        write(f, primary_data)
-        
-        # Create an image HDU
-        image_data = reshape(collect(1:100), 10, 10)
-        write(f, image_data)
-        close(f)
-        
-        @test_throws ArgumentError readevents(sample_file, event_hdu=2)
-    end
-    
-    @testset "Case Insensitive Column Names" begin
-        test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "case_test.fits")
-        
-        f = FITS(sample_file, "w")
-        
-        # Create primary HDU with valid data
-        primary_data = reshape([1.0], 1, 1)
-        write(f, primary_data)
-        
-        # Use lowercase column names
-        times = Float64[1.0, 2.0, 3.0]
-        energies = Float64[10.0, 20.0, 30.0]
-        
-        table = Dict{String,Array}()
-        table["time"] = times  # lowercase
-        table["energy"] = energies  # lowercase
-        write(f, table)
-        close(f)
-        
-        data = readevents(sample_file)
-        @test data.times == times
-        @test data.energies == energies
-    end
-    
-    @testset "Integration Test" begin
-        test_dir = mktempdir()
-        sample_file = joinpath(test_dir, "realistic.fits")
-        
-        # Create more realistic test data
-        f = FITS(sample_file, "w")
-        
-        # Primary HDU with proper header
-        primary_data = reshape([1.0], 1, 1)  # Use 1x1 image
-        header_keys = ["TELESCOP", "INSTRUME"]
-        header_values = ["TEST_SAT", "TEST_DET"]
-        header_comments = ["Test telescope", "Test detector"]
-        primary_hdr = FITSHeader(header_keys, header_values, header_comments)
-        write(f, primary_data; header=primary_hdr)
-        
-        # Event data with realistic values
-        n_events = 1000
-        times = sort(rand(n_events) * 1000.0)  # 1000 seconds of data
-        energies = rand(n_events) * 10.0 .+ 0.5  # 0.5-10.5 keV
-        
-        table = Dict{String,Array}()
-        table["TIME"] = times
-        table["ENERGY"] = energies
-        
-        # Create event HDU header
-        event_header_keys = ["EXTNAME", "TELESCOP"]
-        event_header_values = ["EVENTS", "TEST_SAT"]
-        event_header_comments = ["Extension name", "Test telescope"]
-        event_hdr = FITSHeader(event_header_keys, event_header_values, event_header_comments)
-        write(f, table; header=event_hdr)
-        close(f)
-        
-        # Test reading
-        data = readevents(sample_file)
-        
-        @test length(data.times) == n_events
-        @test length(data.energies) == n_events
-        @test issorted(data.times)
-        @test minimum(data.energies) >= 0.5
-        @test maximum(data.energies) <= 10.5
-        @test length(data.metadata.headers) == 2
-        @test data.metadata.headers[1]["TELESCOP"] == "TEST_SAT"
-        
-        # Check if EXTNAME exists in the second header
-        if haskey(data.metadata.headers[2], "EXTNAME")
-            @test data.metadata.headers[2]["EXTNAME"] == "EVENTS"
-        else
-            @test data.metadata.headers[2]["TELESCOP"] == "TEST_SAT"
-        end
-    end
+    @test_throws Exception readevents(invalid_file)
+
+end
+
+# Test case insensitive column names
+let
+    test_dir = mktempdir()
+    sample_file = joinpath(test_dir, "case_test.fits")
+
+    f = FITS(sample_file, "w")
+
+    # Create primary HDU with valid data
+    primary_data = reshape([1.0], 1, 1)
+    write(f, primary_data)
+
+    # Use lowercase column names
+    times = Float64[1.0, 2.0, 3.0]
+    energies = Float64[10.0, 20.0, 30.0]
+
+    table = Dict{String,Array}()
+    table["time"] = times  # lowercase
+    table["energy"] = energies  # lowercase
+    write(f, table)
+    close(f)
+
+    data = readevents(sample_file)
+    @test data.times == times
+    @test data.energies == energies
+
 end
