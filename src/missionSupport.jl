@@ -105,8 +105,7 @@ function get_mission_support(mission::String,
     end
     
     mission_lower = lowercase(mission)
-    
-    # Handle chandra/axaf aliases - normalize to chandra
+
     if mission_lower in ["chandra", "axaf"]
         mission_lower = "chandra"
     end
@@ -117,10 +116,9 @@ function get_mission_support(mission::String,
         @warn "Mission $mission not recognized, using identity function"
         identity
     end
-    
-    # Mission-specific energy alternatives (order matters!)
+
     energy_alts = if mission_lower in ["chandra", "axaf"]
-        ["ENERGY", "PI", "PHA"]  # Chandra usually has ENERGY column
+        ["ENERGY", "PI", "PHA"]
     elseif mission_lower == "xte"
         ["PHA", "PI", "ENERGY"]
     elseif mission_lower == "nustar"
@@ -215,7 +213,6 @@ function patch_mission_info(info::Dict{String,Any}, mission::Union{String,Nothin
         if haskey(patched_info, "DETNAM")
             patched_info["detector"] = patched_info["DETNAM"]
         end
-        # Add Chandra-specific time reference if needed
         if haskey(patched_info, "TIMESYS")
             patched_info["time_system"] = patched_info["TIMESYS"]
         end
@@ -225,6 +222,5 @@ function patch_mission_info(info::Dict{String,Any}, mission::Union{String,Nothin
 end
 function interpret_fits_data!(f::FITS, mission_support::MissionSupport)
     # Placeholder for mission-specific interpretation
-    # This would contain mission-specific FITS handling logic
     return nothing
 end
