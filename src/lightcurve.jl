@@ -131,7 +131,7 @@ See also [`create_lightcurve`](@ref), [`rebin`](@ref).
 """
 mutable struct LightCurve{T} <: AbstractLightCurve{T}
     "Time bin centers"
-    timebins::Vector{T}
+    time::Vector{T}
     "Time bin edges (length = timebins + 1)"
     dt::Union{T,Vector{T}}
     "Photon counts in each bin"
