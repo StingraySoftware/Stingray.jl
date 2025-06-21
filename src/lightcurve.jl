@@ -1,9 +1,5 @@
 """
-Abstract type for all light curve implementations.
-
-This serves as the base type for all light curve structures, enabling
-polymorphic behavior and type-safe operations across different light curve
-implementations.
+    abstract type AbstractLightCurve{T} end
 
 # Examples
 ```julia
