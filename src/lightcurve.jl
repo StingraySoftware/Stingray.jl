@@ -137,7 +137,7 @@ mutable struct LightCurve{T} <: AbstractLightCurve{T}
     "Photon counts in each bin"
     counts::Vector{Int}
     "Statistical uncertainties on counts"
-    count_error::Vector{T}
+    count_error::Union{Nothing,Vector{T}}
     "Exposure time for each bin"
     exposure::Vector{T}
     "Additional computed properties"
