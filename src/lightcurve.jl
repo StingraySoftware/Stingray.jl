@@ -141,7 +141,7 @@ struct LightCurve{T} <: AbstractLightCurve{T}
     "Exposure time for each bin"
     exposure::Vector{T}
     "Additional computed properties"
-    properties::Vector{EventProperty}
+    properties::Vector{EventProperty{T}}
     "Comprehensive metadata"
     metadata::LightCurveMetadata
     "Error calculation method used (:poisson or :gaussian)"
