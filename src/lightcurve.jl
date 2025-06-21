@@ -1,9 +1,5 @@
 """
-Abstract type for all light curve implementations.
-
-This serves as the base type for all light curve structures, enabling
-polymorphic behavior and type-safe operations across different light curve
-implementations.
+    abstract type AbstractLightCurve{T} end
 
 # Examples
 ```julia
@@ -133,19 +129,19 @@ println("Mean count rate: ", mean(lc.counts ./ lc.exposure))
 
 See also [`create_lightcurve`](@ref), [`rebin`](@ref).
 """
-struct LightCurve{T} <: AbstractLightCurve{T}
+mutable struct LightCurve{T} <: AbstractLightCurve{T}
     "Time bin centers"
-    timebins::Vector{T}
+    time::Vector{T}
     "Time bin edges (length = timebins + 1)"
-    bin_edges::Vector{T}
+    dt::Union{T,Vector{T}}
     "Photon counts in each bin"
     counts::Vector{Int}
     "Statistical uncertainties on counts"
-    count_error::Vector{T}
+    count_error::Union{Nothing,Vector{T}}
     "Exposure time for each bin"
-    exposure::Vector{T}
+    exposure::Union{Nothing,Vector{T}}
     "Additional computed properties"
-    properties::Vector{EventProperty}
+    properties::Vector{EventProperty{T}}
     "Comprehensive metadata"
     metadata::LightCurveMetadata
     "Error calculation method used (:poisson or :gaussian)"
@@ -621,7 +617,7 @@ bin_idx = floor(Int, (time - start_bin) / binsize) + 1
 ```
 This ensures consistent binning with `create_time_bins` and `bin_events`.
 """
-function calculate_additional_properties(
+function calculate_event_properties(
     times::TimeType,
     energies::Union{Nothing,EnergyType},
     bin_edges::Vector{T},
