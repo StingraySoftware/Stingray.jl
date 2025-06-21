@@ -133,7 +133,7 @@ struct LightCurve{T} <: AbstractLightCurve{T}
     "Time bin centers"
     timebins::Vector{T}
     "Time bin edges (length = timebins + 1)"
-    bin_edges::Vector{T}
+    dt::Union{T,Vector{T}}
     "Photon counts in each bin"
     counts::Vector{Int}
     "Statistical uncertainties on counts"
