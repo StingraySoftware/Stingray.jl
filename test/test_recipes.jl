@@ -1,4 +1,3 @@
-#just playing with graphs:) i liked my implmentaion eheheh
 @testset "Plotting Recipes" begin
     @testset "EventList Light Curve Recipe" begin
         # Create sample data for testing
@@ -103,7 +102,3 @@
         end
     end
 end
-#this are some basic tests for the plotting recipes in the Stingray.jl package.
-#they are not exhaustive and only test the basic functionality of the recipes.
-#more tests should be added to cover all the edge cases and possible inputs.
-#the tests are written in a way that they can be easily extended and modified.

@@ -3,9 +3,10 @@ module Stingray
 using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
-using RecipesBase
 using DocStringExtensions
 using LinearAlgebra
+using RecipesBase
+
 
 include("fourier.jl")
 export positive_fft_bins
@@ -36,10 +37,6 @@ export bin_intervals_from_gtis
 include("utils.jl")
 
 include("events.jl")
-export readevents, EventList, DictMetadata, AbstractEventList , validate
-
-include("lightcurve.jl")
-export LightCurve, create_lightcurve, AbstractLightCurve
 export FITSMetadata,
     EventList,
     times,
@@ -75,4 +72,4 @@ export validate_lightcurve_inputs,
 include("recipes.jl")
 export f
 
-end # module
+end
