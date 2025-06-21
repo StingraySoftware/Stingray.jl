@@ -5,6 +5,8 @@ using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
 using DocStringExtensions
 using LinearAlgebra
+using RecipesBase
+
 
 include("fourier.jl")
 export positive_fft_bins
@@ -50,5 +52,24 @@ export FITSMetadata,
     summary,
     filter_on!
 
+include("lightcurve.jl")
+export validate_lightcurve_inputs,
+    apply_event_filters,
+    create_time_bins,
+    bin_events,
+    calculate_additional_properties,
+    extract_metadata,
+    create_lightcurve,
+    rebin,
+    EventProperty,
+    LightCurveMetadata,
+    LightCurve,
+    extract_metadata,
+    AbstractLightCurve,
+    calculate_errors
+
+
+include("recipes.jl")
+export f
 
 end
