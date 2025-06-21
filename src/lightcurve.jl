@@ -617,7 +617,7 @@ bin_idx = floor(Int, (time - start_bin) / binsize) + 1
 ```
 This ensures consistent binning with `create_time_bins` and `bin_events`.
 """
-function calculate_additional_properties(
+function calculate_event_properties(
     times::TimeType,
     energies::Union{Nothing,EnergyType},
     bin_edges::Vector{T},
