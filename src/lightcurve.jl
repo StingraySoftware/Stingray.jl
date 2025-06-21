@@ -139,7 +139,7 @@ mutable struct LightCurve{T} <: AbstractLightCurve{T}
     "Statistical uncertainties on counts"
     count_error::Union{Nothing,Vector{T}}
     "Exposure time for each bin"
-    exposure::Vector{T}
+    exposure::Union{Nothing,Vector{T}}
     "Additional computed properties"
     properties::Vector{EventProperty{T}}
     "Comprehensive metadata"
