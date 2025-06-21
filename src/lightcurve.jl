@@ -129,7 +129,7 @@ println("Mean count rate: ", mean(lc.counts ./ lc.exposure))
 
 See also [`create_lightcurve`](@ref), [`rebin`](@ref).
 """
-struct LightCurve{T} <: AbstractLightCurve{T}
+mutable struct LightCurve{T} <: AbstractLightCurve{T}
     "Time bin centers"
     timebins::Vector{T}
     "Time bin edges (length = timebins + 1)"
