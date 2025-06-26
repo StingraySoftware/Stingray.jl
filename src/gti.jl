@@ -427,3 +427,78 @@ function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
     
     return result
 end
+"""
+    create_filtered_lightcurve(lc::LightCurve{T}, mask::BitVector, 
+                              gti_start::T, gti_stop::T, gti_index::Int) -> LightCurve{T}
+
+Internal function to create a filtered LightCurve from a boolean mask.
+
+Creates a new LightCurve containing only the time bins specified by the mask,
+while preserving all metadata, properties, and statistical characteristics.
+
+# Arguments
+- `lc::LightCurve{T}`: Source light curve
+- `mask::BitVector`: Boolean mask indicating which bins to include
+- `gti_start::T`: Start time of the GTI (for metadata)
+- `gti_stop::T`: Stop time of the GTI (for metadata)  
+- `gti_index::Int`: GTI sequence number (for metadata tracking)
+
+# Returns
+- `LightCurve{T}`: Filtered light curve with updated metadata reflecting the GTI application
+
+# Implementation Notes
+- Preserves bin size and exposure information
+- Maintains all computed properties (e.g., mean energy)
+- Updates metadata to reflect GTI filtering
+- Recalculates statistical errors for the filtered dataset
+"""
+function create_filtered_lightcurve(lc::LightCurve{T}, mask::BitVector, 
+                                   gti_start::T, gti_stop::T, gti_index::Int) where T
+    # Filter all primary arrays
+    filtered_time = lc.time[mask]
+    filtered_counts = lc.counts[mask]
+    filtered_exposure = isnothing(lc.exposure) ? nothing : lc.exposure[mask]
+    
+    # Filter all computed properties
+    filtered_properties = EventProperty{T}[]
+    for prop in lc.properties
+        filtered_values = prop.values[mask]
+        push!(filtered_properties, EventProperty(prop.name, filtered_values, prop.unit))
+    end
+    
+    # Update metadata with GTI information
+    updated_metadata = LightCurveMetadata(
+        lc.metadata.telescope,
+        lc.metadata.instrument, 
+        lc.metadata.object,
+        lc.metadata.mjdref,
+        (Float64(gti_start), Float64(gti_stop)),  # Update time range to GTI bounds
+        lc.metadata.bin_size,
+        lc.metadata.headers,
+        merge(lc.metadata.extra, Dict{String,Any}(
+            "gti_applied" => true,
+            "gti_index" => gti_index,
+            "gti_bounds" => [Float64(gti_start), Float64(gti_stop)],
+            "original_time_range" => lc.metadata.time_range,
+            "filtered_nbins" => length(filtered_time),
+            "original_nbins" => length(lc.time)
+        ))
+    )
+    
+    # Create new LightCurve with filtered data
+    filtered_lc = LightCurve{T}(
+        filtered_time,
+        lc.dt,  # Preserve original bin size
+        filtered_counts,
+        nothing,  # Errors will be recalculated
+        filtered_exposure,
+        filtered_properties,
+        updated_metadata,
+        lc.err_method
+    )
+    
+    # Recalculate errors for the filtered dataset
+    calculate_errors!(filtered_lc)
+    
+    return filtered_lc
+end
