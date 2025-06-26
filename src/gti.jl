@@ -286,3 +286,67 @@ end
         @yield times[idx0+1] - dt / 2, times[min(idx1, length(times) - 1)] - dt / 2,idx0, idx1
     end
 end
+"""
+    apply_gtis(el::EventList, gtis::AbstractMatrix{<:Real}) -> Vector{EventList}
+
+Apply Good Time Intervals (GTIs) to an EventList, returning a separate EventList for each GTI.
+
+This function filters the input EventList based on the provided GTI boundaries, creating 
+independent EventList objects for each valid time interval. This is essential for 
+X-ray timing analysis where data quality varies and only specific time intervals 
+contain reliable observations.
+
+# Arguments
+- `el::EventList`: Input event list containing photon arrival times and energies
+- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row contains 
+  [start_time, stop_time] for a valid observation interval
+
+# Returns
+- `Vector{EventList}`: Array of EventList objects, one for each GTI containing events 
+  that fall within the corresponding time interval. Empty GTIs are excluded from results.
+
+# Notes
+- Events are filtered based on arrival times: `gti_start ≤ time ≤ gti_stop`
+- Maintains all original metadata and extra columns for each filtered EventList
+- GTIs are validated using `check_gtis()` to ensure proper formatting and ordering
+- Only non-empty EventLists are returned (GTIs with zero events are excluded)
+
+# Examples
+```julia
+# Apply GTIs to filter data during good observation periods
+gtis = [100.0 200.0; 300.0 400.0; 500.0 600.0]  # Three GTI intervals
+filtered_events = apply_gtis(eventlist, gtis)
+println("Number of valid GTI segments: ", length(filtered_events))
+
+# Each segment can be analyzed independently
+for (i, segment) in enumerate(filtered_events)
+    println("GTI \$i: \$(length(segment)) events")
+end
+```
+
+# References
+- Stingray documentation on GTI handling
+- X-ray timing analysis best practices (Belloni et al. 2000)
+"""
+function apply_gtis(el::EventList, gtis::AbstractMatrix{<:Real})
+    check_gtis(gtis)
+    
+    result = EventList[]
+    
+    for i in 1:size(gtis, 1)
+        gti_start, gti_stop = gtis[i, 1], gtis[i, 2]
+        
+        # Create filter function for this specific GTI
+        gti_filter = t -> gti_start ≤ t ≤ gti_stop
+        
+        # Apply temporal filtering using existing infrastructure
+        filtered_el = filter_time(gti_filter, el)
+        
+        # Only include GTIs that contain events
+        if length(filtered_el.times) > 0
+            push!(result, filtered_el)
+        end
+    end
+    
+    return result
+end
