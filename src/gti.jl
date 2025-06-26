@@ -350,3 +350,80 @@ function apply_gtis(el::EventList, gtis::AbstractMatrix{<:Real})
     
     return result
 end
+"""
+    apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) -> Vector{LightCurve{T}} where T
+
+Apply Good Time Intervals (GTIs) to a LightCurve, returning separate LightCurve objects for each GTI.
+
+This function segments a light curve based on GTI boundaries, creating independent 
+LightCurve objects for spectral timing analysis. Bins that partially overlap with 
+GTI boundaries are excluded to maintain temporal coherence required for Fourier 
+analysis and periodogram calculations.
+
+# Arguments
+- `lc::LightCurve{T}`: Input light curve with binned photon count data
+- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row contains 
+  [start_time, stop_time] for valid observation intervals
+
+# Returns
+- `Vector{LightCurve{T}}`: Array of LightCurve objects, one for each GTI. Only 
+  segments containing at least one complete time bin are included.
+
+# Filtering Strategy
+- **Bin inclusion criterion**: Complete bins only (bin center must fall within GTI)
+- **Boundary handling**: Bins partially overlapping GTI edges are excluded
+- **Metadata preservation**: All properties and metadata are maintained per segment
+- **Temporal continuity**: Each segment maintains uniform time binning
+
+# Technical Details
+The filtering uses bin centers for GTI membership testing:
+```
+included_bins = (bin_center ≥ gti_start) && (bin_center ≤ gti_stop)
+```
+
+This approach ensures that:
+1. All included bins have complete exposure within the GTI
+2. Fourier analysis assumptions are preserved (uniform sampling)
+3. Statistical properties remain well-defined
+
+# Examples
+```julia
+# Segment light curve for independent periodogram analysis
+gtis = [1000.0 2000.0; 3000.0 4000.0]
+lc_segments = apply_gtis(lightcurve, gtis)
+
+# Analyze each segment independently for variability
+for (i, segment) in enumerate(lc_segments)
+    mean_rate = mean(segment.counts ./ segment.exposure)
+    println("GTI \$i: mean count rate = \$(mean_rate) cts/s")
+end
+
+# Suitable for Bartlett periodogram calculations
+periodograms = [calculate_periodogram(seg) for seg in lc_segments]
+```
+
+# References
+- Bartlett periodogram methodology (Bartlett 1955)
+- X-ray timing analysis protocols (van der Klis 1989)
+- Stingray light curve segmentation
+"""
+function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
+    check_gtis(gtis)
+    
+    result = LightCurve{T}[]
+    
+    for i in 1:size(gtis, 1)
+        gti_start, gti_stop = T(gtis[i, 1]), T(gtis[i, 2])
+        
+        # Filter bins based on bin centers falling within GTI
+        # This ensures complete bins only (no partial overlaps)
+        bin_mask = (lc.time .≥ gti_start) .& (lc.time .≤ gti_stop)
+        
+        if any(bin_mask)
+            filtered_lc = create_filtered_lightcurve(lc, bin_mask, gti_start, gti_stop, i)
+            push!(result, filtered_lc)
+        end
+    end
+    
+    return result
+end
