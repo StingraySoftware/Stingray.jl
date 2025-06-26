@@ -640,3 +640,10 @@ function fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real};
     
     return el
 end
+#todo
+# create a function that fills the bad time intervals in a light curve
+# in order to maintain optiizational sampling for periodograms
+# can be intially start like :
+# fill_bad_time_intervals!(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}; 
+#                             dt::Real=1.0, random_fill_threshold::Real=10.0,
+#                             rng::AbstractRNG=Random.GLOBAL_RNG) where T<:Real
