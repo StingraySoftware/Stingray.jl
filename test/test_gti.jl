@@ -1,3 +1,73 @@
+# Helper function to create mock EventList for testing
+function create_test_eventlist(times::Vector{Float64}, energies::Union{Vector{Float64}, Nothing}=nothing)
+    mock_headers = Dict{String,Any}()
+    mock_metadata = FITSMetadata(
+        "", 1, "keV",
+        Dict{String,Vector}(),
+        mock_headers
+    )
+    
+    return EventList(times, energies, mock_metadata)
+end
+# Helper function to create mock LightCurve for testing
+function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt::Float64=1.0)
+    metadata = LightCurveMetadata(
+        "", "", "", 0.0, 
+        (minimum(times)-dt/2, maximum(times)+dt/2), 
+        dt, 
+        Vector{Dict{String,Any}}(),
+        Dict{String,Any}()
+    )
+    
+    return LightCurve(
+        times, dt, counts, nothing, nothing, EventProperty{Float64}[], 
+        metadata, :poisson
+    )
+end
+# Helper function to create EventProperty
+function create_event_property(name::String, values::Vector{Float64}, unit::String="")
+    return EventProperty{Float64}(Symbol(name), values, unit)
+end
+# Helper functions for common test data
+function get_basic_times()
+    return [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
+end
+
+function get_basic_energies()
+    return [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+end
+
+function get_basic_counts()
+    return [10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
+end
+
+function get_simple_times()
+    return [1.0, 2.0, 3.0, 4.0, 5.0]
+end
+
+function get_simple_energies()
+    return [1.0, 2.0, 3.0, 4.0, 5.0]
+end
+
+function get_simple_counts()
+    return [10, 20, 30, 40, 50]
+end
+
+function get_sparse_times()
+    return [0.5, 1.5, 8.5, 9.5]
+end
+
+function get_sparse_energies()
+    return [1.0, 2.0, 3.0, 4.0]
+end
+
+function get_bti_test_times()
+    return [1.0, 2.0, 6.0, 7.0]
+end
+
+function get_bti_test_energies()
+    return [1.0, 2.0, 3.0, 4.0]
+end
 # test_load_gtis
 let
     fname = joinpath(@__DIR__ ,"data","monol_testA.evt")
