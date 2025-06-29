@@ -185,9 +185,13 @@ function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real
         push!(btis, [first(interval), last(interval)])
     end
 
+    # Fix: Handle empty btis vector
+    if isempty(btis)
+        return reshape(T[], 0, 2)  # Return empty matrix with correct dimensions
+    end
+
     return mapreduce(permutedims, vcat, btis)
 end
-
 function time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real;
                                   fraction_step::Real=1, epsilon::Real=1e-5)  
     spectrum_start_times = Float64[]
