@@ -456,8 +456,11 @@ while preserving all metadata, properties, and statistical characteristics.
 - Updates metadata to reflect GTI filtering
 - Recalculates statistical errors for the filtered dataset
 """
-function create_filtered_lightcurve(lc::LightCurve{T}, mask::BitVector, 
+function create_filtered_lightcurve(lc::LightCurve{T}, mask::AbstractVector{Bool}, 
                                    gti_start::T, gti_stop::T, gti_index::Int) where T
+
+    # Ensure mask is proper boolean vector
+    bool_mask = mask isa BitVector ? mask : BitVector(mask)
     # Filter all primary arrays
     filtered_time = lc.time[mask]
     filtered_counts = lc.counts[mask]
