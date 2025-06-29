@@ -31,6 +31,9 @@ export operations_on_gtis
 export get_btis
 export time_intervals_from_gtis
 export bin_intervals_from_gtis
+export apply_gtis
+export fill_bad_time_intervals!
+export create_filtered_lightcurve
 
 include("utils.jl")
 
