@@ -416,11 +416,11 @@ function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
         gti_start, gti_stop = T(gtis[i, 1]), T(gtis[i, 2])
         
         # Filter bins based on bin centers falling within GTI
-        # This ensures complete bins only (no partial overlaps)
         bin_mask = (lc.time .≥ gti_start) .& (lc.time .≤ gti_stop)
         
         if any(bin_mask)
-            filtered_lc = create_filtered_lightcurve(lc, bin_mask, gti_start, gti_stop, i)
+            # Convert to BitVector before passing to create_filtered_lightcurve
+            filtered_lc = create_filtered_lightcurve(lc, BitVector(bin_mask), gti_start, gti_stop, i)
             push!(result, filtered_lc)
         end
     end
@@ -629,13 +629,16 @@ function fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real};
         end
         
         # Update metadata with BTI filling information
-        merge!(el.meta.extra_columns, Dict{String,Any}(
-            "bti_filled" => true,
-            "n_synthetic_events" => n_synthetic_events,
-            "filled_bti_durations" => filled_intervals,
-            "random_fill_threshold" => random_fill_threshold,
-            "bti_fill_dt" => dt
+        # Store scalar metadata in headers since extra_columns expects vectors
+        merge!(el.meta.headers, Dict{String,Any}(
+            "BTI_FILLED" => true,
+            "N_SYNTH_EVENTS" => n_synthetic_events,
+            "RAND_FILL_THRESH" => random_fill_threshold,
+            "BTI_FILL_DT" => dt
         ))
+        
+        # Store vector metadata in extra_columns
+        el.meta.extra_columns["filled_bti_durations"] = filled_intervals
     end
     
     return el
