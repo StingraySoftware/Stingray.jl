@@ -24,13 +24,18 @@ struct FITSMetadata{H}
     extra_columns::Dict{String,Vector}
     "FITS headers from the selected HDU"
     headers::H
+    "Good Time Intervals (GTIs) if present in the file"
+    gti::Union{Nothing,Matrix{Float64}}
+    "GTI HDU name or index used"
+    gti_source::Union{Nothing,String,Int}
 end
 
 function Base.show(io::IO, ::MIME"text/plain", m::FITSMetadata)
-    println(
-        io,
-        "FITSMetadata for $(basename(m.filepath))[$(m.hdu)] with $(length(m.extra_columns)) extra column(s)",
-    )
+    println(io, "FITSMetadata for $(basename(m.filepath))[$(m.hdu)] with $(length(m.extra_columns)) extra column(s)")
+    if !isnothing(m.gti)
+        gti_exposure = sum(diff(m.gti; dims=2))
+        println(io, "GTI: $(size(m.gti, 1)) intervals, total exposure: $(gti_exposure) s")
+    end
 end
 
 """
@@ -94,6 +99,8 @@ function EventList(times::Vector{T}, energies::Union{Nothing,Vector{T}} = nothin
         nothing,  # energy_units
         Dict{String,Vector}(),  # extra_columns
         Dict{String,Any}(),  # headers
+        nothing,  # gti
+        nothing   # gti_source
     )
     EventList(times, energies, dummy_meta)
 end
@@ -167,6 +174,133 @@ end
 ```
 """
 has_energies(ev::EventList) = !isnothing(ev.energies)
+"""
+    has_gti(ev::EventList) -> Bool
+
+Check if the EventList has GTI information loaded.
+
+# Arguments
+- `ev::EventList`: EventList to check
+
+# Returns
+`Bool`: `true` if GTI data is present, `false` otherwise
+
+# Examples
+```julia
+ev = readevents("events.fits")
+if has_gti(ev)
+    println("GTI data available")
+    gti_info(ev)
+else
+    println("No GTI data found")
+end
+```
+"""
+has_gti(ev::EventList) = !isnothing(ev.meta.gti)
+
+"""
+    gti(ev::EventList) -> Union{Nothing, Matrix{Float64}}
+
+Get the GTI matrix from an EventList.
+
+# Arguments
+- `ev::EventList`: EventList containing GTI data
+
+# Returns
+`Union{Nothing, Matrix{Float64}}`: GTI matrix (2×N) with START and STOP times, or `nothing` if no GTI
+
+# Examples
+```julia
+ev = readevents("events.fits")
+gti_matrix = gti(ev)
+
+if !isnothing(gti_matrix)
+    println("GTI intervals:")
+    for i in 1:size(gti_matrix, 1)
+        println("  \$(gti_matrix[i,1]) - \$(gti_matrix[i,2])")
+    end
+end
+```
+"""
+gti(ev::EventList) = ev.meta.gti
+
+"""
+    gti_exposure(ev::EventList) -> Float64
+
+Calculate total exposure time from GTI intervals or fallback to time span.
+
+# Arguments
+- `ev::EventList`: EventList to calculate exposure for
+
+# Returns
+`Float64`: Total exposure time in seconds
+
+# Behavior
+- If GTI data is present: sum of all GTI interval durations
+- If no GTI data: time span from minimum to maximum event time
+- Returns 0.0 for empty event lists
+
+# Examples
+```julia
+ev = readevents("events.fits")
+exposure = gti_exposure(ev)
+println("Total exposure: \$exposure seconds")
+
+# Compare with simple time span
+time_span = maximum(times(ev)) - minimum(times(ev))
+println("Time span: \$time_span seconds")
+println("Live time fraction: \$(exposure / time_span)")
+```
+"""
+function gti_exposure(ev::EventList)
+    if has_gti(ev)
+        return sum(diff(ev.meta.gti; dims=2))
+    else
+        return isempty(ev.times) ? 0.0 : maximum(ev.times) - minimum(ev.times)
+    end
+end
+
+"""
+    gti_info(ev::EventList)
+
+Display comprehensive GTI information for an EventList.
+
+# Arguments
+- `ev::EventList`: EventList to display GTI information for
+
+# Output
+Prints detailed GTI information including:
+- GTI source (HDU name or detection method)
+- Number of intervals
+- Total exposure time
+- Time range covered by GTI
+
+# Examples
+```julia
+ev = readevents("events.fits")
+gti_info(ev)
+# Output:
+# ┌ Info: GTI Information
+# │   source = "GTI"
+# │   intervals = 15
+# │   exposure = 3547.2
+# │   time_range = (12345.6, 15892.8)
+# └
+```
+
+# Notes
+- Issues a warning if no GTI information is available
+- Information is logged using the `@info` macro for structured output
+"""
+function gti_info(ev::EventList)
+    if !has_gti(ev)
+        @warn "No GTI information available"
+        return
+    end
+    
+    gti_matrix = ev.meta.gti
+    @debug "GTI Information" source=ev.meta.gti_source intervals=size(gti_matrix, 1) exposure=gti_exposure(ev) time_range=(minimum(gti_matrix), maximum(gti_matrix))
+end
 
 # ============================================================================
 # Filtering Functions (Composable and In-Place)
@@ -468,17 +602,109 @@ function read_energy_column(
 
     return nothing, nothing
 end
+"""
+    read_gti_from_fits(fits_file; gti_hdu_candidates=["GTI", "STDGTI"], gti_hdu_indices=Int[])
 
+Read Good Time Intervals (GTI) from a FITS file using multiple search strategies.
 
+# Arguments
+- `fits_file::String`: Path to the FITS file
+
+# Keyword Arguments
+- `gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"]`: HDU names to search for GTI data
+- `gti_hdu_indices::Vector{Int} = []`: Specific HDU indices to check for GTI data
+
+# Returns
+`Tuple{Union{Nothing,Matrix{Float64}}, Union{Nothing,String}}`: 
+- GTI matrix (2×N where N is number of intervals) with START and STOP times
+- Source identifier indicating where GTI was found
+
+# Search Strategy
+1. Try HDU names in `gti_hdu_candidates`
+2. Try HDU indices in `gti_hdu_indices`
+3. Auto-detect by scanning all HDUs for START/STOP columns
+
+# Examples
+```julia
+# Basic GTI reading
+gti_data, source = read_gti_from_fits("events.fits")
+
+# Custom HDU names
+gti_data, source = read_gti_from_fits("events.fits", 
+                                     gti_hdu_candidates=["MYGTI", "GOODTIME"])
+
+# Specific HDU indices
+gti_data, source = read_gti_from_fits("events.fits", 
+                                     gti_hdu_indices=[3, 4, 5])
+
+if !isnothing(gti_data)
+    println("Found GTI from: \$source")
+    println("Number of intervals: \$(size(gti_data, 1))")
+    println("Total exposure: \$(sum(diff(gti_data; dims=2))) seconds")
+end
+```
+
+# Notes
+- Returns `(nothing, nothing)` if no GTI data is found
+- Errors in individual HDUs are logged but don't stop the search
+- Auto-detection looks for any HDU with "START" and "STOP" columns
+"""
+function read_gti_from_fits(fits_file::String; 
+                           gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"],
+                           gti_hdu_indices::Vector{Int} = Int[])::Tuple{Union{Nothing,Matrix{Float64}}, Union{Nothing,String}}
+    
+    FITS(fits_file, "r") do f
+        # Try string-based HDU names
+        for gti_name in gti_hdu_candidates
+            try
+                if haskey(f, gti_name)
+                    gti_data = get_gti_from_hdu(f[gti_name])
+                    return gti_data, gti_name
+                end
+            catch e
+                @debug "Failed to read GTI from HDU '$gti_name': $e"
+            end
+        end
+        
+        # Try numeric indices
+        for gti_idx in gti_hdu_indices
+            try
+                if length(f) >= gti_idx
+                    gti_data = get_gti_from_hdu(f[gti_idx])
+                    return gti_data, string(gti_idx)
+                end
+            catch e
+                @debug "Failed to read GTI from HDU index $gti_idx: $e"
+            end
+        end
+        
+        # Auto-detect by looking for HDUs with START/STOP columns
+        for (i, hdu) in enumerate(f)
+            if isa(hdu, TableHDU)
+                try
+                    cols = FITSIO.colnames(hdu)
+                    if any(x -> uppercase(x) in ["START", "STOP"], cols)
+                        gti_data = get_gti_from_hdu(hdu)
+                        return gti_data, "auto_detected_$i"
+                    end
+                catch e
+                    @debug "Failed to check HDU $i for GTI columns: $e"
+                end
+            end
+        end
+    end
+    
+    return nothing, nothing
+end
 """
     readevents(path; kwargs...)
 
-Read an [`EventList`](@ref) from a FITS file. Will attempt to read an energy
+Read an [`EventList`](@ref) from a FITS file with optional GTI support. Will attempt to read an energy
 column if one exists.
 
 This is the primary function for loading X-ray event data from FITS files.
 It handles the complexities of different file formats and provides a consistent
-interface for accessing event data.
+interface for accessing event data, including Good Time Intervals (GTIs).
 
 # Arguments
 - `path::AbstractString`: Path to the FITS file
@@ -489,42 +715,58 @@ interface for accessing event data.
 - `sort::Bool = false`: Whether to sort by time if not already sorted
 - `extra_columns::Vector{String} = []`: Extra columns to read from the same HDU
 - `energy_alternatives::Vector{String} = ["ENERGY", "PI", "PHA"]`: Energy column alternatives to try
+- `load_gti::Bool = true`: Whether to attempt loading GTI information
+- `gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"]`: GTI HDU names to search for
+- `gti_hdu_indices::Vector{Int} = []`: GTI HDU indices to try if name search fails
+- `apply_gti_filter::Bool = false`: Whether to automatically filter events using GTI
 
 # Returns
-`EventList{Vector{T}, FITSMetadata{FITSIO.FITSHeader}}`: EventList containing the event data
+`EventList{Vector{T}, FITSMetadata{FITSIO.FITSHeader}}`: EventList containing the event data and GTI metadata
 
 # Examples
 ```julia
-# Basic usage
+# Basic usage with GTI loading
 ev = readevents("events.fits")
 
+# With GTI filtering applied automatically
+ev = readevents("events.fits", apply_gti_filter=true)
+
+# Custom GTI HDU specification
+ev = readevents("events.fits", gti_hdu_candidates=["MYGTI"], gti_hdu_indices=[4])
+
 # With custom options
-ev = readevents("events.fits", hdu=3, sort=true, T=Float32)
+ev = readevents("events.fits", hdu=3, sort=true, T=Float32, load_gti=false)
 
-# Reading extra columns
-ev = readevents("events.fits", extra_columns=["RAWX", "RAWY", "DETX", "DETY"])
+# Reading extra columns with GTI
+ev = readevents("events.fits", extra_columns=["RAWX", "RAWY"], apply_gti_filter=true)
 
-# Accessing the data
+# Accessing the data and GTI
 println("Number of events: \$(length(ev))")
 println("Time range: \$(extrema(times(ev)))")
-if has_energies(ev)
-    println("Energy range: \$(extrema(energies(ev)))")
-    println("Energy column: \$(ev.meta.energy_units)")
+if has_gti(ev)
+    println("GTI exposure: \$(gti_exposure(ev)) seconds")
+    gti_info(ev)
 end
 ```
+# GTI Behavior
+- GTI data is automatically searched for in common HDU names ("GTI", "STDGTI")
+- If `apply_gti_filter=true`, events outside GTI intervals are automatically removed
+- GTI information is stored in the metadata for later use
+- Auto-detection searches for HDUs containing "START" and "STOP" columns
 
 # Error Handling
 - Throws `AssertionError` if time and energy vectors have different sizes
 - Throws `AssertionError` if times are not sorted and `sort=false`
+- GTI reading errors are logged as debug messages and don't fail the main read
 - FITS reading errors are propagated from the FITSIO.jl library
 
 # Implementation Notes
 - Uses type-stable FITS reading with explicit type conversions
 - Handles missing energy data gracefully
 - Supports efficient multi-column sorting when `sort=true`
-- Creates metadata with all relevant file information
+- Creates metadata with all relevant file information including GTI
 - Validates data consistency before returning
-- Added case_sensitive=false parameter: This tells FITSIO.jl to use the old behavior for backward compatibility
+- Uses case_sensitive=false parameter for backward compatibility
 """
 function readevents(
     path::AbstractString;
@@ -533,10 +775,20 @@ function readevents(
     sort::Bool = false,
     extra_columns::Vector{String} = String[],
     energy_alternatives::Vector{String} = ["ENERGY", "PI", "PHA"],
+    load_gti::Bool = true,
+    gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"],
+    gti_hdu_indices::Vector{Int} = Int[],
+    apply_gti_filter::Bool = false,
     kwargs...,
 )::EventList{Vector{T},FITSMetadata{FITSIO.FITSHeader}}
 
-    # Read data from FITS file with type-stable operations
+    # Read GTI first if requested
+    gti_data, gti_source = nothing, nothing
+    if load_gti
+        gti_data, gti_source = read_gti_from_fits(path; gti_hdu_candidates, gti_hdu_indices)
+    end
+
+    # Read main event data
     time::Vector{T},
     energy::Union{Nothing,Vector{T}},
     energy_col::Union{Nothing,String},
@@ -544,31 +796,24 @@ function readevents(
     extra_data::Dict{String,Vector} = FITS(path, "r") do f
 
         selected_hdu = f[hdu]
-
-        # Read header (type-stable)
         header = read_header(selected_hdu)
-
-        # Get actual column names to find the correct TIME column
         all_cols = FITSIO.colnames(selected_hdu)
         time = convert(Vector{T}, read(selected_hdu, "TIME", case_sensitive = false))
 
-        # Read energy column using separated function
+        # Read energy column
         energy_column, energy = read_energy_column(
             selected_hdu;
             T = T,
             energy_alternatives = energy_alternatives,
         )
 
-        # Read extra columns with case-insensitive option
+        # Read extra columns
         extra_data = Dict{String,Vector}()
         for col_name in extra_columns
-            # Find actual column name (case-insensitive)
-            actual_col_idx =
-                findfirst(col -> uppercase(col) == uppercase(col_name), all_cols)
+            actual_col_idx = findfirst(col -> uppercase(col) == uppercase(col_name), all_cols)
             if !isnothing(actual_col_idx)
                 actual_col_name = all_cols[actual_col_idx]
-                extra_data[col_name] =
-                    read(selected_hdu, actual_col_name, case_sensitive = false)
+                extra_data[col_name] = read(selected_hdu, actual_col_name, case_sensitive = false)
             else
                 @warn "Column '$col_name' not found in FITS file"
             end
@@ -577,15 +822,27 @@ function readevents(
         (time, energy, energy_column, header, extra_data)
     end
 
-    # Validate energy-time consistency
+    # Validate data consistency
     if !isnothing(energy)
-        @assert size(time) == size(energy) "Time and energy do not match sizes ($(size(time)) != $(size(energy)))"
+        @assert size(time) == size(energy) "Time and energy arrays have mismatched sizes: $(size(time)) != $(size(energy))"
     end
 
-    # Handle sorting if requested
+    # Apply GTI filtering if requested
+    if apply_gti_filter && !isnothing(gti_data)
+        gti_mask, _ = create_gti_mask(time, gti_data)
+        
+        time = time[gti_mask]
+        if !isnothing(energy)
+            energy = energy[gti_mask]
+        end
+        for (col_name, col_data) in extra_data
+            extra_data[col_name] = col_data[gti_mask]
+        end
+    end
+
+    # Handle sorting
     if !issorted(time)
         if sort
-            # Efficient sorting of multiple arrays
             sort_indices = sortperm(time)
             time = time[sort_indices]
 
@@ -593,7 +850,6 @@ function readevents(
                 energy = energy[sort_indices]
             end
 
-            # Sort extra columns
             for (col_name, col_data) in extra_data
                 extra_data[col_name] = col_data[sort_indices]
             end
@@ -601,12 +857,9 @@ function readevents(
             @assert false "Times are not sorted (pass `sort = true` to force sorting)"
         end
     end
+    meta = FITSMetadata(path, hdu, energy_col, extra_data, header, gti_data, gti_source)
 
-    # Create metadata - just record the column name that was found
-    meta = FITSMetadata(path, hdu, energy_col, extra_data, header)
-
-    # Return type-stable EventList
-    EventList(time, energy, meta)
+    return EventList(time, energy, meta)
 end
 
 # ============================================================================
@@ -639,9 +892,9 @@ println(summary(ev))
 function Base.summary(ev::EventList)
     n_events = length(ev)
     time_span = isempty(ev.times) ? 0.0 : maximum(ev.times) - minimum(ev.times)
-
+    
     summary_str = "EventList: $n_events events over $(time_span) time units"
-
+    
     if has_energies(ev)
         energy_range = extrema(ev.energies)
         summary_str *= ", energies: $(energy_range[1]) - $(energy_range[2])"
@@ -649,10 +902,16 @@ function Base.summary(ev::EventList)
             summary_str *= " ($(ev.meta.energy_units))"
         end
     end
-
+    
+    if has_gti(ev)
+        n_gti = size(ev.meta.gti, 1)
+        exposure = gti_exposure(ev)
+        summary_str *= ", GTI: $n_gti intervals ($(exposure) s exposure)"
+    end
+    
     if !isempty(ev.meta.extra_columns)
         summary_str *= ", $(length(ev.meta.extra_columns)) extra columns"
     end
-
+    
     return summary_str
 end
