@@ -39,6 +39,21 @@ export FITSMetadata,
     summary,
     filter_on!
 
+include("lightcurve.jl")
+export AbstractLightCurve,
+       EventProperty,
+       LightCurveMetadata,
+       LightCurve,
+       calculate_errors,
+       set_errors!,
+       calculate_errors!,
+       create_time_bins,
+       bin_events,
+       apply_filters,
+       calculate_event_properties,
+       extract_metadata,
+       create_lightcurve,
+       rebin
 
 include("lightcurve.jl")
 export AbstractLightCurve,

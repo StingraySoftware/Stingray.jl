@@ -875,4 +875,4 @@ Base.getindex(lc::LightCurve, r::UnitRange{Int}) = [(lc.time[i], lc.counts[i]) f
 Base.iterate(lc::LightCurve) = 
     isempty(lc.time) ? nothing : ((lc.time[1], lc.counts[1]), 2)
 Base.iterate(lc::LightCurve, state) = 
-    state > length(lc.time) ? nothing : ((lc.time[state], lc.counts[state]), state + 1)
+state > length(lc.time) ? nothing : ((lc.time[state], lc.counts[state]), state + 1)
