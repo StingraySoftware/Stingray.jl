@@ -495,6 +495,7 @@ function apply_filters(
     
     return filtered_times, filtered_energies, start_t, stop_t
 end
+
 """
     calculate_event_properties(times, energies, dt, bin_centers) -> Vector{EventProperty}
 
