@@ -269,7 +269,7 @@ let
     el = create_test_eventlist(times, energies)
     
     gtis = [2.0 6.0; 7.0 9.0]
-    result = apply_gtis(el, gtis)
+    result = split_by_gtis(el, gtis)
     
     @test length(result) == 2
     @test result[1].times ≈ [2.5, 3.5, 4.5, 5.5]
@@ -286,7 +286,7 @@ let
     el = create_test_eventlist(times, energies)
     gtis = [2.0 3.0; 4.0 5.0]
     
-    result = apply_gtis(el, gtis)
+    result = split_by_gtis(el, gtis)
     @test length(result) == 0
 end
 
@@ -298,7 +298,7 @@ let
     el = create_test_eventlist(times, energies)
     gtis = [0.5 5.5]
     
-    result = apply_gtis(el, gtis)
+    result = split_by_gtis(el, gtis)
     @test length(result) == 1
     @test result[1].times == times
     @test result[1].energies == energies
