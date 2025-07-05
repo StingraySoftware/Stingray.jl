@@ -291,7 +291,7 @@ end
     end
 end
 """
-    apply_gtis(el::EventList, gtis::AbstractMatrix{<:Real}) -> Vector{EventList}
+    split_by_gtis(el::EventList, gtis::AbstractMatrix{<:Real}) -> Vector{EventList}
 
 Apply Good Time Intervals (GTIs) to an EventList, returning a separate EventList for each GTI.
 
