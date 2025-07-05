@@ -85,5 +85,6 @@ export apply_gtis
 export fill_bad_time_intervals!
 export create_filtered_lightcurve
 export check_gtis
+export split_by_gtis
 
 end

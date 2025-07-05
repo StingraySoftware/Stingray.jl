@@ -332,7 +332,7 @@ end
 - Stingray documentation on GTI handling
 - X-ray timing analysis best practices (Belloni et al. 2000)
 """
-function apply_gtis(el::EventList, gtis::AbstractMatrix{<:Real})
+function split_by_gtis(el::EventList, gtis::AbstractMatrix{<:Real})
     check_gtis(gtis)
     
     result = EventList[]
@@ -359,57 +359,94 @@ end
 
 Apply Good Time Intervals (GTIs) to a LightCurve, returning separate LightCurve objects for each GTI.
 
-This function segments a light curve based on GTI boundaries, creating independent 
-LightCurve objects for spectral timing analysis. Bins that partially overlap with 
-GTI boundaries are excluded to maintain temporal coherence required for Fourier 
-analysis and periodogram calculations.
+This function segments a light curve based on GTI boundaries, creating independent
+LightCurve objects for spectral timing analysis. Only complete time bins that fall
+entirely within GTI boundaries are included to maintain temporal coherence required
+for Fourier analysis and periodogram calculations.
 
 # Arguments
 - `lc::LightCurve{T}`: Input light curve with binned photon count data
-- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row contains 
+- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row contains
   [start_time, stop_time] for valid observation intervals
 
 # Returns
-- `Vector{LightCurve{T}}`: Array of LightCurve objects, one for each GTI. Only 
-  segments containing at least one complete time bin are included.
+- `Vector{LightCurve{T}}`: Array of LightCurve objects, one for each GTI. Only
+  segments containing at least one complete time bin are included. Empty segments
+  are excluded from the result.
 
 # Filtering Strategy
-- **Bin inclusion criterion**: Complete bins only (bin center must fall within GTI)
+- **Bin inclusion criterion**: Complete bins only - bin center must fall within GTI
 - **Boundary handling**: Bins partially overlapping GTI edges are excluded
 - **Metadata preservation**: All properties and metadata are maintained per segment
-- **Temporal continuity**: Each segment maintains uniform time binning
+- **Temporal continuity**: Each segment maintains uniform time binning from original
 
 # Technical Details
 The filtering uses bin centers for GTI membership testing:
-```
+```julia
 included_bins = (bin_center ≥ gti_start) && (bin_center ≤ gti_stop)
 ```
 
-This approach ensures that:
+This conservative approach ensures that:
 1. All included bins have complete exposure within the GTI
 2. Fourier analysis assumptions are preserved (uniform sampling)
 3. Statistical properties remain well-defined
+4. No partial bins introduce systematic errors
+
+# Periodogram Compatibility
+!!! warning "Bartlett Periodogram Limitation"
+    This function is **NOT** suitable for Bartlett periodogram calculations, which
+    require segments of identical length. The resulting segments will have different
+    lengths depending on GTI durations.
+
+!!! note "Suitable Methods"
+    Use with Welch's method, Lomb-Scargle periodograms, or other techniques that
+    can handle variable-length segments.
 
 # Examples
 ```julia
-# Segment light curve for independent periodogram analysis
-gtis = [1000.0 2000.0; 3000.0 4000.0]
+# Basic segmentation
+gtis = [1000.0 2000.0; 3000.0 4000.0; 5000.0 6000.0]
 lc_segments = apply_gtis(lightcurve, gtis)
 
-# Analyze each segment independently for variability
+println("Created \$(length(lc_segments)) light curve segments")
+
+# Analyze each segment independently
 for (i, segment) in enumerate(lc_segments)
     mean_rate = mean(segment.counts ./ segment.exposure)
-    println("GTI \$i: mean count rate = \$(mean_rate) cts/s")
+    duration = segment.time[end] - segment.time[1] + segment.dt
+    println("GTI \$i: mean rate = \$(mean_rate) cts/s, duration = \$(duration) s")
 end
 
-# Suitable for Bartlett periodogram calculations
-periodograms = [calculate_periodogram(seg) for seg in lc_segments]
+# Variable-length periodogram analysis (NOT Bartlett)
+using FFTW
+periodograms = []
+for segment in lc_segments
+    # Welch's method can handle different segment lengths
+    pgram = welch_periodogram(segment.counts, segment.dt)
+    push!(periodograms, pgram)
+end
+
+# Check segment properties
+for (i, seg) in enumerate(lc_segments)
+    println("Segment \$i: \$(length(seg.time)) bins, Δt = \$(seg.dt) s")
+end
 ```
 
+# Performance Notes
+- Time complexity: O(n) where n is the number of time bins
+- Memory usage: Creates new LightCurve objects for each segment
+- For large datasets, consider processing segments individually rather than
+  storing all segments in memory
+
 # References
-- Bartlett periodogram methodology (Bartlett 1955)
+- Welch periodogram methodology for variable-length segments
 - X-ray timing analysis protocols (van der Klis 1989)
-- Stingray light curve segmentation
+- Stingray light curve segmentation documentation
+
+# See Also
+- [`LightCurve`](@ref): Light curve data structure
+- [`check_gtis`](@ref): Validate GTI format
+- [`create_filtered_lightcurve`](@ref): Create filtered light curve segments
 """
 function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
     check_gtis(gtis)
@@ -510,21 +547,22 @@ function create_filtered_lightcurve(lc::LightCurve{T}, mask::AbstractVector{Bool
     return filtered_lc
 end
 """
-    fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real}; 
-                            dt::Real=1.0, random_fill_threshold::Real=10.0,
-                            rng::AbstractRNG=Random.GLOBAL_RNG) -> EventList
+    fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real};
+                             dt::Real=1.0, random_fill_threshold::Real=10.0,
+                             rng::AbstractRNG=Random.GLOBAL_RNG) -> EventList
 
 Fill Bad Time Intervals (BTIs) in an EventList with synthetic events for analysis continuity.
 
-This function identifies gaps between GTIs (Bad Time Intervals) and conditionally 
-fills them to maintain temporal sampling for certain analysis methods. Very short 
-gaps may be filled with random synthetic events, while longer gaps remain empty 
-to preserve data integrity.
+This function identifies gaps between Good Time Intervals (GTIs) and conditionally
+fills short gaps with synthetic events to maintain temporal sampling for certain 
+analysis methods. The synthetic events are generated based on event rates from 
+nearby GTIs to preserve statistical properties.
 
 # Arguments
 - `el::EventList`: EventList to modify in-place
-- `gtis::AbstractMatrix{<:Real}`: GTI boundaries defining good observation periods
-- `dt::Real=1.0`: Time step for potential synthetic event generation (seconds)
+- `gtis::AbstractMatrix{<:Real}`: GTI boundaries defining good observation periods,
+  where each row contains [start_time, stop_time]
+- `dt::Real=1.0`: Time step parameter (retained for API compatibility, not used in calculations)
 - `random_fill_threshold::Real=10.0`: Maximum BTI duration for random filling (seconds)
 - `rng::AbstractRNG=Random.GLOBAL_RNG`: Random number generator for synthetic events
 
@@ -532,36 +570,71 @@ to preserve data integrity.
 - `EventList`: The modified EventList (same object, modified in-place)
 
 # Filling Strategy
-- **Short BTIs** (< `random_fill_threshold`): Fill with random synthetic events
-- **Long BTIs** (≥ `random_fill_threshold`): Leave empty (no filling)
-- **Purpose**: Maintain sampling for specific analysis methods while preserving data quality
+- **Short BTIs** (< `random_fill_threshold`): Fill with synthetic events based on 
+  event rates calculated from nearby GTIs
+- **Long BTIs** (≥ `random_fill_threshold`): Leave empty to preserve data integrity
+- **Rate calculation**: Uses median event rate from all GTIs, with fallback to 
+  overall event rate if no GTI rates are available
 
 # Technical Implementation
 1. Compute BTIs using `get_btis()` based on GTI boundaries and EventList time range
-2. For qualifying short BTIs, generate synthetic times with uniform random spacing
-3. Assign synthetic energies from the original energy distribution
-4. Maintain chronological ordering of all events
+2. For each qualifying short BTI:
+   - Calculate event rates from all GTIs: `events_in_gti / gti_duration`
+   - Use median rate to determine number of synthetic events
+   - Generate uniformly distributed synthetic times within BTI boundaries
+   - Sample energies and extra column values from events in adjacent GTIs
+3. Append all synthetic data and re-sort chronologically
+4. Update metadata with filling statistics
+
+# Metadata Updates
+The function adds the following metadata to `el.meta.headers`:
+- `"BTI_FILLED"`: Boolean indicating if any BTIs were filled
+- `"N_SYNTH_EVENTS"`: Total number of synthetic events added
+- `"RAND_FILL_THRESH"`: The random fill threshold used
+- `"BTI_FILL_DT"`: The dt parameter used
+
+Additional metadata in `el.meta.extra_columns`:
+- `"filled_bti_durations"`: Vector of durations of filled BTIs
 
 # Warnings
-- **Data integrity**: Synthetic events are clearly marked in metadata
-- **Analysis impact**: Consider whether filled intervals affect your specific analysis
-- **Statistical validity**: Synthetic events may bias certain statistical measures
+!!! warning "Data Integrity"
+    Synthetic events are clearly marked in metadata but are indistinguishable 
+    from real events in the main data arrays. Exercise caution in subsequent analysis.
+
+!!! note "Statistical Validity"
+    Synthetic events may bias certain statistical measures. Consider the impact
+    on your specific analysis before using this function.
 
 # Examples
 ```julia
-# Fill short gaps for periodogram analysis continuity
-gtis = load_gtis("observation.fits")
-fill_bad_time_intervals!(eventlist, gtis, dt=0.5, random_fill_threshold=5.0)
+# Basic usage with default parameters
+gtis = [1000.0 2000.0; 3000.0 4000.0; 5000.0 6000.0]
+fill_bad_time_intervals!(eventlist, gtis)
+
+# Custom parameters for short gaps only
+fill_bad_time_intervals!(eventlist, gtis, 
+                        random_fill_threshold=5.0)
 
 # Check what was filled
-if haskey(eventlist.meta.extra, "bti_filled")
-    println("Filled \$(eventlist.meta.extra["n_synthetic_events"]) synthetic events")
+if get(eventlist.meta.headers, "BTI_FILLED", false)
+    n_synth = eventlist.meta.headers["N_SYNTH_EVENTS"]
+    println("Filled \$n_synth synthetic events")
+    
+    # Access filled interval durations
+    if haskey(eventlist.meta.extra_columns, "filled_bti_durations")
+        durations = eventlist.meta.extra_columns["filled_bti_durations"]
+        println("Filled BTI durations: \$durations")
+    end
 end
 ```
 
 # References
-- Stingray BTI handling documentation
-- Statistical considerations in X-ray timing (Vaughan et al. 2003)
+- Stingray BTI handling: https://stingray.readthedocs.io/en/stable/
+- Statistical considerations in X-ray timing analysis (Vaughan et al. 2003)
+
+# See Also
+- [`get_btis`](@ref): Function to compute Bad Time Intervals
+- [`apply_gtis`](@ref): Apply GTIs to segment data
 """
 function fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real}; 
                                   dt::Real=1.0, random_fill_threshold::Real=10.0,
@@ -579,50 +652,148 @@ function fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real};
     n_synthetic_events = 0
     filled_intervals = Float64[]
     
+    # Store all synthetic data before appending to avoid index issues
+    all_synthetic_times = Float64[]
+    all_synthetic_energies = Float64[]
+    synthetic_extra_columns = Dict{String, Vector}()
+    
+    # Initialize synthetic extra columns
+    for (col_name, col_data) in el.meta.extra_columns
+        synthetic_extra_columns[col_name] = similar(col_data, 0)
+    end
+    
     # Process each BTI
     for i in 1:size(btis, 1)
         bti_start, bti_stop = btis[i, 1], btis[i, 2]
         bti_duration = bti_stop - bti_start
         
-        # Only fill short BTIs with random events
-        if bti_duration < random_fill_threshold && bti_duration > 0
-            # Generate random synthetic times within the BTI
-            n_synthetic = max(1, floor(Int, bti_duration / dt))
-            synthetic_times = sort!(rand(rng, n_synthetic) .* bti_duration .+ bti_start)
+        # Skip BTIs that are too long or have zero/negative duration
+        if bti_duration >= random_fill_threshold || bti_duration <= 0
+            continue
+        end
+        
+        # Calculate number of synthetic events based on event rate in nearby GTIs
+        gti_rates = Float64[]
+        for j in 1:size(gtis, 1)
+            gti_start, gti_stop = gtis[j, 1], gtis[j, 2]
+            events_in_gti = count(t -> gti_start <= t <= gti_stop, el.times)
+            gti_duration_j = gti_stop - gti_start
             
-            # Add synthetic times to the EventList
-            append!(el.times, synthetic_times)
+            if gti_duration_j > 0 && events_in_gti > 0
+                push!(gti_rates, events_in_gti / gti_duration_j)
+            end
+        end
+        
+        # Determine synthetic event count
+        n_synthetic = 0
+        if isempty(gti_rates)
+            # Fallback to overall event rate
+            if length(el.times) > 1
+                total_duration = maximum(el.times) - minimum(el.times)
+                if total_duration > 0
+                    overall_rate = length(el.times) / total_duration
+                    n_synthetic = max(1, round(Int, overall_rate * bti_duration))
+                end
+            end
+        else
+            # Use median rate from nearby GTIs
+            median_rate = Statistics.median(gti_rates)
+            n_synthetic = max(1, round(Int, median_rate * bti_duration))
+        end
+        
+        if n_synthetic > 0
+            # Generate uniformly distributed synthetic times within the BTI
+            # Generate times strictly within (bti_start, bti_stop) exclusive bounds
+            # Use a small epsilon to ensure we don't hit the exact boundaries
+            epsilon = 1e-10
+            effective_start = bti_start + epsilon
+            effective_stop = bti_stop - epsilon
+            effective_duration = effective_stop - effective_start
+            
+            synthetic_times = sort!(rand(rng, n_synthetic) .* effective_duration .+ effective_start)
+            append!(all_synthetic_times, synthetic_times)
+            
             n_synthetic_events += n_synthetic
             push!(filled_intervals, bti_duration)
             
-            # Handle energy values if present
+            # Handle energy values if present - sample from nearby GTI events
             if !isnothing(el.energies)
-                # Sample energies from existing distribution
-                if !isempty(el.energies)
-                    synthetic_energies = rand(rng, el.energies, n_synthetic)
-                    append!(el.energies, synthetic_energies)
-                else
-                    # Fallback to zero energy if no existing energies
-                    append!(el.energies, zeros(eltype(el.energies), n_synthetic))
+                nearby_energies = Float64[]
+                
+                # Find energies from GTIs that are adjacent to this BTI
+                for j in 1:size(gtis, 1)
+                    gti_start, gti_stop = gtis[j, 1], gtis[j, 2]
+                    
+                    # Check if this GTI is adjacent to the BTI
+                    if abs(gti_stop - bti_start) < 1e-10 || abs(gti_start - bti_stop) < 1e-10
+                        # Find events in this GTI
+                        for (idx, t) in enumerate(el.times)
+                            if gti_start <= t <= gti_stop
+                                push!(nearby_energies, el.energies[idx])
+                            end
+                        end
+                    end
                 end
+                
+                # Sample energies
+                if !isempty(nearby_energies)
+                    synthetic_energies = rand(rng, nearby_energies, n_synthetic)
+                elseif !isempty(el.energies)
+                    synthetic_energies = rand(rng, el.energies, n_synthetic)
+                else
+                    synthetic_energies = zeros(eltype(el.energies), n_synthetic)
+                end
+                
+                append!(all_synthetic_energies, synthetic_energies)
             end
             
-            # Handle extra columns with appropriate fill values
+            # Handle extra columns with values from nearby GTIs
             for (col_name, col_data) in el.meta.extra_columns
-                if !isempty(col_data)
-                    # Sample from existing values
-                    synthetic_values = rand(rng, col_data, n_synthetic)
-                    append!(col_data, synthetic_values)
-                else
-                    # Use zero/default values
-                    append!(col_data, zeros(eltype(col_data), n_synthetic))
+                nearby_values = similar(col_data, 0)
+                
+                # Find values from GTIs that are adjacent to this BTI
+                for j in 1:size(gtis, 1)
+                    gti_start, gti_stop = gtis[j, 1], gtis[j, 2]
+                    
+                    # Check if this GTI is adjacent to the BTI
+                    if abs(gti_stop - bti_start) < 1e-10 || abs(gti_start - bti_stop) < 1e-10
+                        # Find events in this GTI
+                        for (idx, t) in enumerate(el.times)
+                            if gti_start <= t <= gti_stop
+                                push!(nearby_values, col_data[idx])
+                            end
+                        end
+                    end
                 end
+                
+                # Sample values
+                if !isempty(nearby_values)
+                    synthetic_values = rand(rng, nearby_values, n_synthetic)
+                elseif !isempty(col_data)
+                    synthetic_values = rand(rng, col_data, n_synthetic)
+                else
+                    synthetic_values = zeros(eltype(col_data), n_synthetic)
+                end
+                
+                append!(synthetic_extra_columns[col_name], synthetic_values)
             end
         end
     end
     
-    # Re-sort all arrays to maintain chronological order
+    # Now append all synthetic data at once
     if n_synthetic_events > 0
+        append!(el.times, all_synthetic_times)
+        
+        if !isnothing(el.energies)
+            append!(el.energies, all_synthetic_energies)
+        end
+        
+        # Append synthetic extra columns
+        for (col_name, col_data) in el.meta.extra_columns
+            append!(col_data, synthetic_extra_columns[col_name])
+        end
+        
+        # Re-sort all arrays to maintain chronological order
         sort_indices = sortperm(el.times)
         el.times[:] = el.times[sort_indices]
         
@@ -635,8 +806,7 @@ function fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real};
             col_data[:] = col_data[sort_indices]
         end
         
-        # Update metadata with BTI filling information
-        # Store scalar metadata in headers since extra_columns expects vectors
+        # metadata with BTI filling information
         merge!(el.meta.headers, Dict{String,Any}(
             "BTI_FILLED" => true,
             "N_SYNTH_EVENTS" => n_synthetic_events,
