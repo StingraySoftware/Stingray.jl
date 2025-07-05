@@ -232,67 +232,71 @@ Compute averaged power density spectrum from an iterable of flux segments.
 ## Parameters
 - `flux_iterable`: Iterator of flux segments
 - `dt::Real`: Time resolution
-- `norm::String="frac"`: Normalization type
+- `norm::String="frac"`: Normalization type ("frac", "leahy", "abs", "none")
 - `use_common_mean::Bool=true`: Use common mean across segments
 - `silent::Bool=false`: Suppress progress output
+
+## Example Usage
+```julia
+# Create flux segments from events
+segments = create_flux_segments(events, 0.01, 100.0) 
+ps = avg_pds_from_iterable(segments, 0.01, norm=:leahy)
+```
 """
-function avg_pds_from_iterable(flux_iterable, dt::Real; 
-                             norm::String="frac", 
+function avg_pds_from_iterable(flux_iterable, dt::Real;
+                             norm::String="frac",
                              use_common_mean::Bool=true,
                              silent::Bool=false)
-    
+   
     # Initialize accumulators
     cross = unnorm_cross = nothing
     n_ave = 0
     freq = nothing
-
-    sum_of_photons = 0
+    sum_of_photons = 0.0
     common_variance = nothing
     fgt0 = nothing
     n_bin = nothing
-
+    
     for flux in flux_iterable
         # Validate segment
-        if isnothing(flux) || all(iszero, flux)
+        if isnothing(flux) || all(iszero, flux) || isempty(flux)
             continue
         end
-
-        # If the iterable returns the uncertainty, use it to calculate the
-        # variance.
+        
+        # Handle tuple input (flux, error)
         variance = nothing
         if flux isa Tuple
             flux, err = flux
             variance = Statistics.mean(err)^2
         end
-
-        # Calculate the FFT
+        
+        # Calculate the FFT with windowing
         n_bin = length(flux)
-        ft = fft(flux)
-
-        # This will only be used by the Leahy normalization, so only if
-        # the input light curve is in units of counts/bin
+        windowed_flux = flux .* hanning(n_bin)
+        ft = fft(windowed_flux)
+        
+        # Calculate photon statistics
         n_ph = sum(flux)
-        unnorm_power = real.(ft .* conj.(ft))
-
-        # Accumulate the sum of means and variances, to get the final mean and
-        # variance the end
+        unnorm_power = abs2.(ft)
+        
         sum_of_photons += n_ph
-
+        
         if !isnothing(variance)
             common_variance = isnothing(common_variance) ? variance : common_variance + variance
         end
-
-        # In the first loop, define the frequency and the freq. interval > 0
-        # Initialize frequency arrays
+        
+        # Initialize frequency arrays on first iteration
         if isnothing(cross)
             fgt0 = positive_fft_bins(n_bin)
-            freq = FFTW.fftfreq(n_bin, dt)[fgt0]
+            # Create frequency array properly
+            all_freqs = FFTW.fftfreq(n_bin, 1.0/dt)
+            freq = all_freqs[fgt0]  # Only positive frequencies
         end
-
-        keepat!(unnorm_power, fgt0)
-
-        # If the user wants to normalize using the mean of the total
-        # lightcurve, normalize it here
+        
+        # Keep only positive frequencies
+        unnorm_power = unnorm_power[fgt0]
+        
+        # Apply per-segment normalization if not using common mean
         cs_seg = unnorm_power
         if !use_common_mean
             mean_flux = n_ph / n_bin
@@ -306,35 +310,32 @@ function avg_pds_from_iterable(flux_iterable, dt::Real;
                 power_type = "real"
             )
         end
-
-        # Accumulate the total sum cross spectrum
+        
+        # Accumulate cross spectra
         cross = sum_if_not_none_or_initialize(cross, cs_seg)
         unnorm_cross = sum_if_not_none_or_initialize(unnorm_cross, unnorm_power)
-
+        
         n_ave += 1
     end
-
-    # Validate results
+    
+    # CHANGED: Return nothing instead of throwing ArgumentError
     if isnothing(cross) || n_ave == 0
-        return nothing
+        return nothing  # Return nothing for bad input cases
     end
-
-    # Calculate the mean number of photons per chunk
+    
+    # Calculate statistics
     n_ph = sum_of_photons / n_ave
-    # Calculate the mean number of photons per bin
     common_mean = n_ph / n_bin
-
+    
     if !isnothing(common_variance)
-        # Note: the variances we summed were means, not sums.
-        # Hence M, not M*n_bin
         common_variance /= n_ave
     end
-
-    # Transform a sum into the average
+    
+    # Average the accumulated spectra
     unnorm_cross = unnorm_cross / n_ave
     cross = cross / n_ave
-
-    # Final normalization (If not done already!)
+    
+    # Apply final normalization if using common mean
     if use_common_mean
         cross = normalize_periodograms(
             unnorm_cross,
@@ -346,15 +347,22 @@ function avg_pds_from_iterable(flux_iterable, dt::Real;
             power_type = "real"
         )
     end
-
+    
     # Calculate power errors
     power_errors = cross ./ sqrt(n_ave)
-
-    # Return AveragedPowerspectrum
-    return AveragedPowerspectrum(
-        freq[2:end],
-        cross[2:end],
-        power_errors[2:end],
+    
+    T = typeof(dt)
+    
+    # Ensure we remove DC component consistently
+    # Remove the first element (DC component) from both freq and power arrays
+    freq_final = freq[2:end]
+    cross_final = cross[2:end]
+    power_errors_final = power_errors[2:end]
+    
+    return AveragedPowerspectrum{T}(
+        convert(Vector{T}, freq_final),
+        convert(Vector{T}, cross_final),
+        convert(Vector{T}, power_errors_final),
         n_ave,
         n_bin,
         dt
@@ -712,7 +720,8 @@ function avg_pds_from_events(times::AbstractVector{<:Real}, gti::AbstractMatrix{
                                                   n_bin, fluxes=fluxes,
                                                   errors=errors)
     
-    return avg_pds_from_iterable(flux_iterable, dt, norm=norm,
+    # return nothing for bad input cases []
+    return avg_pds_from_iterable(flux_iterable, dt; norm=norm,
                                use_common_mean=use_common_mean,
                                silent=silent)
 end
