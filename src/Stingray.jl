@@ -3,6 +3,8 @@ module Stingray
 using ResumableFunctions, StatsBase, Statistics, DataFrames
 using FFTW, NaNMath, FITSIO, Intervals
 using ProgressBars: tqdm as show_progress
+using DocStringExtensions
+using LinearAlgebra
 
 include("fourier.jl")
 export positive_fft_bins
@@ -33,9 +35,37 @@ export bin_intervals_from_gtis
 include("utils.jl")
 
 include("events.jl")
-export readevents, EventList, DictMetadata, AbstractEventList
+export FITSMetadata,
+    EventList,
+    times,
+    energies,
+    has_energies,
+    filter_time!,
+    filter_energy!,
+    filter_time,
+    filter_energy,
+    colnames,
+    read_energy_column,
+    readevents,
+    summary,
+    filter_on!
+
+include("lightcurve.jl")
+export AbstractLightCurve,
+       EventProperty,
+       LightCurveMetadata,
+       LightCurve,
+       calculate_errors,
+       set_errors!,
+       calculate_errors!,
+       create_time_bins,
+       bin_events,
+       apply_filters,
+       calculate_event_properties,
+       extract_metadata,
+       create_lightcurve,
+       rebin
 
 include("powerspectrum.jl")
 export AveragedPowerspectrum, validate, AbstractPowerSpectrum ,powerspectrum, normalize_power
-
 end
