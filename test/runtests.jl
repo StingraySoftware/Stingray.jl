@@ -1,6 +1,7 @@
 using Stingray
 using Test
 using FFTW, Distributions, Statistics, StatsBase, HDF5, FITSIO
+using Logging ,Plots
 using Logging ,LinearAlgebra
 using CFITSIO
 include("test_fourier.jl")
