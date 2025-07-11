@@ -27,7 +27,56 @@ function get_gti_from_hdu(gtihdu::TableHDU)
     return mapreduce(permutedims, vcat, 
     [[a, b] for (a,b) in zip(gtistart, gtistop)])
 end
+"""
+    check_gtis(gti::AbstractMatrix)
 
+Validate Good Time Intervals (GTIs) for proper formatting and temporal ordering.
+
+Performs comprehensive validation of GTI matrices to ensure they meet the requirements
+for X-ray timing analysis. GTIs must be properly formatted, temporally ordered, and
+non-overlapping to maintain data integrity in subsequent analysis steps.
+
+# Arguments
+- `gti::AbstractMatrix`: Matrix of GTI boundaries where each row contains [start_time, stop_time]
+
+# Validation Rules
+1. **Format**: Must be a 2D matrix with exactly 2 columns
+2. **Temporal ordering**: End times must be greater than start times for each GTI
+3. **Non-overlapping**: GTIs must not overlap (start[i+1] ≥ end[i])
+
+# Throws
+- `ArgumentError`: If GTI format is invalid (not 2D or wrong number of columns)
+- `ArgumentError`: If any GTI has end_time < start_time
+- `ArgumentError`: If GTIs have temporal overlaps
+
+# Examples
+```julia
+# Valid GTIs
+gtis = [100.0 200.0; 300.0 400.0; 500.0 600.0]
+check_gtis(gtis)  # No error
+
+# Invalid format
+bad_gtis = [100.0 200.0 300.0]  # Too many columns
+check_gtis(bad_gtis)  # Throws ArgumentError
+
+# Invalid temporal order
+bad_gtis = [200.0 100.0]  # End < Start
+check_gtis(bad_gtis)  # Throws ArgumentError
+
+# Overlapping GTIs
+bad_gtis = [100.0 200.0; 150.0 250.0]  # Overlap
+check_gtis(bad_gtis)  # Throws ArgumentError
+```
+
+# Performance Notes
+- Uses views to avoid unnecessary array copying
+- O(n) time complexity for n GTI intervals
+- Minimal memory allocation
+
+# See Also
+- [`get_btis`](@ref): Calculate Bad Time Intervals from GTIs
+- [`apply_gtis`](@ref): Apply GTIs to filter data
+"""
 function check_gtis(gti::AbstractMatrix)
 
     if ndims(gti) != 2 || size(gti,2) != 2
@@ -154,14 +203,115 @@ function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}},
 
     return mapreduce(permutedims, vcat, final_gti)
 end
+"""
+    get_btis(gtis::AbstractMatrix{<:Real}) -> Matrix{<:Real}
 
+Calculate Bad Time Intervals (BTIs) from GTIs using the full GTI time range.
+
+Convenience method that automatically uses the first GTI start time and last GTI 
+end time as the total observation window. Equivalent to calling 
+`get_btis(gtis, gtis[1,1], gtis[end,2])`.
+
+# Arguments
+- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries
+
+# Returns
+- `Matrix{<:Real}`: BTI matrix with same format as GTIs, or empty matrix if no gaps exist
+
+# Throws
+- `ArgumentError`: If GTIs are empty
+
+# Examples
+```julia
+# GTIs with gaps
+gtis = [100.0 200.0; 300.0 400.0; 500.0 600.0]
+btis = get_btis(gtis)
+# Returns: [200.0 300.0; 400.0 500.0]
+
+# Continuous GTIs (no gaps)
+gtis = [100.0 200.0; 200.0 300.0; 300.0 400.0]
+btis = get_btis(gtis)
+# Returns: 0×2 Matrix{Float64}
+```
+
+# See Also
+- [`get_btis(gtis, start_time, stop_time)`](@ref): Full method with custom time range
+"""
 function get_btis(gtis::AbstractMatrix{<:Real})
     if isempty(gtis)
         throw(ArgumentError("Empty GTI and no valid start_time and stop_time"))
     end
     return get_btis(gtis, gtis[1,1], gtis[end,2])
 end
+"""
+    get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) -> Matrix{T} where {T<:Real}
 
+Calculate Bad Time Intervals (BTIs) from GTIs within a specified time range.
+
+Computes the complement of GTIs within the given time window, identifying all 
+time intervals that are not covered by good time intervals. Uses interval 
+arithmetic to ensure precise boundary handling and proper gap identification.
+
+# Arguments
+- `gtis::AbstractMatrix{T}`: Matrix of GTI boundaries where each row contains [start_time, stop_time]
+- `start_time`: Overall observation start time
+- `stop_time`: Overall observation stop time
+
+# Returns
+- `Matrix{T}`: BTI matrix with same format as GTIs. Each row contains [bti_start, bti_stop].
+  Returns empty matrix (0×2) if no bad time intervals exist.
+
+# Algorithm
+1. Create total observation interval [start_time, stop_time)
+2. Convert GTIs to interval set with [start, stop) boundaries
+3. Compute set difference: BTIs = Total - GTIs
+4. Convert result back to matrix format
+
+# Interval Semantics
+- Uses closed-open intervals [start, stop) for precise boundary handling
+- Ensures no overlap between adjacent GTIs and BTIs
+- Maintains temporal continuity across interval boundaries
+
+# Examples
+```julia
+# Basic usage
+gtis = [100.0 200.0; 300.0 400.0]
+btis = get_btis(gtis, 50.0, 450.0)
+# Returns: [50.0 100.0; 200.0 300.0; 400.0 450.0]
+
+# No gaps (continuous GTIs)
+gtis = [100.0 200.0; 200.0 300.0; 300.0 400.0]
+btis = get_btis(gtis, 100.0, 400.0)
+# Returns: 0×2 Matrix{Float64}
+
+# Single GTI with gaps
+gtis = [150.0 250.0]
+btis = get_btis(gtis, 100.0, 300.0)
+# Returns: [100.0 150.0; 250.0 300.0]
+
+# Empty GTIs
+btis = get_btis(reshape(Float64[], 0, 2), 100.0, 200.0)
+# Returns: [100.0 200.0]
+```
+
+# Edge Cases
+- **Empty GTIs**: Returns single BTI covering entire time range
+- **No gaps**: Returns empty matrix (0×2)
+- **GTIs covering entire range**: Returns empty matrix
+
+# Dependencies
+- Requires `IntervalSets.jl` for interval arithmetic
+- Uses `Interval{T, Closed, Open}` for precise boundary handling
+
+# Performance Notes
+- Time complexity: O(n log n) for n GTI intervals
+- Memory usage: O(n) for interval set operations
+- Efficient for large GTI sets due to interval tree implementation
+
+# See Also
+- [`check_gtis`](@ref): Validate GTI format and ordering
+- [`fill_bad_time_intervals!`](@ref): Fill BTIs with synthetic events
+"""
 function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real}
     if isempty(gtis)
         return T[start_time stop_time]
@@ -341,7 +491,7 @@ function split_by_gtis(el::EventList, gtis::AbstractMatrix{<:Real})
         gti_start, gti_stop = gtis[i, 1], gtis[i, 2]
         
         # Create filter function for this specific GTI
-        gti_filter = t -> gti_start ≤ t ≤ gti_stop
+        gti_filter(t) = gti_start ≤ t ≤ gti_stop
         
         # Apply temporal filtering using existing infrastructure
         filtered_el = filter_time(gti_filter, el)
@@ -453,15 +603,17 @@ function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
     
     result = LightCurve{T}[]
     
+    # Pre-allocate the mask buffer once
+    bin_mask = similar(lc.time, Bool)
+    
     for i in 1:size(gtis, 1)
         gti_start, gti_stop = T(gtis[i, 1]), T(gtis[i, 2])
         
-        # Filter bins based on bin centers falling within GTI
-        bin_mask = (lc.time .≥ gti_start) .& (lc.time .≤ gti_stop)
+        # Use @. to vectorize the mask creation
+        @. bin_mask = (lc.time ≥ gti_start) & (lc.time ≤ gti_stop)
         
         if any(bin_mask)
-            # Convert to BitVector before passing to create_filtered_lightcurve
-            filtered_lc = create_filtered_lightcurve(lc, BitVector(bin_mask), gti_start, gti_stop, i)
+            filtered_lc = create_filtered_lightcurve(lc, bin_mask, gti_start, gti_stop, i)
             push!(result, filtered_lc)
         end
     end
@@ -642,8 +794,7 @@ function fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real};
     check_gtis(gtis)
     
     # Determine the time range for BTI calculation
-    time_start = minimum(el.times)
-    time_stop = maximum(el.times)
+    time_start, time_stop = extrema(el.times)
     
     # Calculate Bad Time Intervals
     btis = get_btis(gtis, time_start, time_stop)
