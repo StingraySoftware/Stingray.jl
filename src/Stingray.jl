@@ -60,21 +60,6 @@ export AbstractLightCurve,
        create_lightcurve,
        rebin
 
-include("lightcurve.jl")
-export AbstractLightCurve,
-       EventProperty,
-       LightCurveMetadata,
-       LightCurve,
-       calculate_errors,
-       set_errors!,
-       calculate_errors!,
-       create_time_bins,
-       bin_events,
-       apply_filters,
-       calculate_event_properties,
-       extract_metadata,
-       create_lightcurve,
-       rebin
 include("utils.jl")
 
 include("gti.jl")
@@ -90,5 +75,6 @@ export apply_gtis
 export fill_bad_time_intervals!
 export create_filtered_lightcurve
 export check_gtis
+export split_by_gtis
 
 end
