@@ -651,50 +651,66 @@ end
 """
 function read_gti_from_fits(fits_file::String; 
                            gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"],
-                           gti_hdu_indices::Vector{Int} = Int[])::Tuple{Union{Nothing,Matrix{Float64}}, Union{Nothing,String}}
+                           gti_hdu_indices::Union{Vector{Int}, Nothing} = nothing,
+                           combine_gtis::Bool = true)::Tuple{Union{Nothing,Matrix{Float64}}, Union{Nothing,String}}
+    
+    all_gtis = Matrix{Float64}[]
+    gti_sources = String[]
     
     FITS(fits_file, "r") do f
-        # Try string-based HDU names
         for gti_name in gti_hdu_candidates
             try
                 if haskey(f, gti_name)
                     gti_data = get_gti_from_hdu(f[gti_name])
-                    return gti_data, gti_name
+                    if !isnothing(gti_data) && size(gti_data, 1) > 0
+                        push!(all_gtis, gti_data)
+                        push!(gti_sources, gti_name)
+                    end
                 end
             catch e
                 @debug "Failed to read GTI from HDU '$gti_name': $e"
             end
         end
+        hdu_indices = if gti_hdu_indices === nothing
+            3:length(f)
+        else
+            gti_hdu_indices
+        end
         
-        # Try numeric indices
-        for gti_idx in gti_hdu_indices
+        for gti_idx in hdu_indices
             try
                 if length(f) >= gti_idx
                     gti_data = get_gti_from_hdu(f[gti_idx])
-                    return gti_data, string(gti_idx)
+                    if !isnothing(gti_data) && size(gti_data, 1) > 0
+                        push!(all_gtis, gti_data)
+                        push!(gti_sources, "HDU_$gti_idx")
+                    end
                 end
             catch e
                 @debug "Failed to read GTI from HDU index $gti_idx: $e"
             end
         end
-        
-        # Auto-detect by looking for HDUs with START/STOP columns
-        for (i, hdu) in enumerate(f)
-            if isa(hdu, TableHDU)
-                try
-                    cols = FITSIO.colnames(hdu)
-                    if any(x -> uppercase(x) in ["START", "STOP"], cols)
-                        gti_data = get_gti_from_hdu(hdu)
-                        return gti_data, "auto_detected_$i"
-                    end
-                catch e
-                    @debug "Failed to check HDU $i for GTI columns: $e"
-                end
-            end
-        end
     end
     
-    return nothing, nothing
+    if isempty(all_gtis)
+        return nothing, nothing
+    end
+    
+    if combine_gtis && length(all_gtis) > 1
+        # Combine all GTIs into one matrix
+        combined_gti = vcat(all_gtis...)
+        # Sort by start time
+        sort_indices = sortperm(combined_gti[:, 1])
+        combined_gti = combined_gti[sort_indices, :]
+        
+        # Merge overlapping intervals
+        merged_gti = merge_overlapping_gtis(combined_gti)
+        
+        return merged_gti, "combined_" * join(gti_sources, "_")
+    else
+        # Return the first GTI found
+        return all_gtis[1], gti_sources[1]
+    end
 end
 """
     readevents(path; kwargs...)
@@ -777,7 +793,8 @@ function readevents(
     energy_alternatives::Vector{String} = ["ENERGY", "PI", "PHA"],
     load_gti::Bool = true,
     gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"],
-    gti_hdu_indices::Vector{Int} = Int[],
+    gti_hdu_indices::Union{Vector{Int}, Nothing} = nothing,
+    combine_gtis::Bool = true,
     apply_gti_filter::Bool = false,
     kwargs...,
 )::EventList{Vector{T},FITSMetadata{FITSIO.FITSHeader}}
@@ -785,7 +802,15 @@ function readevents(
     # Read GTI first if requested
     gti_data, gti_source = nothing, nothing
     if load_gti
-        gti_data, gti_source = read_gti_from_fits(path; gti_hdu_candidates, gti_hdu_indices)
+        gti_data, gti_source = read_gti_from_fits(path; 
+            gti_hdu_candidates, gti_hdu_indices, combine_gtis)
+        
+        if !isnothing(gti_data)
+            println("Found GTI data: $(size(gti_data, 1)) intervals")
+            println("GTI time range: $(minimum(gti_data)) to $(maximum(gti_data))")
+        else
+            println("No GTI data found")
+        end
     end
 
     # Read main event data
@@ -857,8 +882,8 @@ function readevents(
             @assert false "Times are not sorted (pass `sort = true` to force sorting)"
         end
     end
+    
     meta = FITSMetadata(path, hdu, energy_col, extra_data, header, gti_data, gti_source)
-
     return EventList(time, energy, meta)
 end
 

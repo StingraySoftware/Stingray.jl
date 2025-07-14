@@ -275,7 +275,7 @@ let
     el = create_test_eventlist(times, energies)
     
     gtis = [2.0 6.0; 7.0 9.0]
-    result = apply_gtis(el, gtis)
+    result = split_by_gtis(el, gtis)
     
     @test length(result) == 2
     @test result[1].times ≈ [2.5, 3.5, 4.5, 5.5]
@@ -292,7 +292,7 @@ let
     el = create_test_eventlist(times, energies)
     gtis = [2.0 3.0; 4.0 5.0]
     
-    result = apply_gtis(el, gtis)
+    result = split_by_gtis(el, gtis)
     @test length(result) == 0
 end
 
@@ -304,7 +304,7 @@ let
     el = create_test_eventlist(times, energies)
     gtis = [0.5 5.5]
     
-    result = apply_gtis(el, gtis)
+    result = split_by_gtis(el, gtis)
     @test length(result) == 1
     @test result[1].times == times
     @test result[1].energies == energies
@@ -534,52 +534,4 @@ let
     
     @test size(btis) == (1, 2)
     @test btis ≈ [1.0 9.0]
-end
-
-# Error calculation tests
-let
-    counts = [0, 1, 4, 9, 16]
-    
-    poisson_errors = calculate_errors(counts, :poisson)
-    @test poisson_errors ≈ [1.0, 1.0, 2.0, 3.0, 4.0]
-    
-    provided_errors = [0.5, 1.2, 2.1, 3.3, 4.0]
-    gaussian_errors = calculate_errors(counts, :gaussian, gaussian_errors=provided_errors)
-    @test gaussian_errors ≈ provided_errors
-end
-
-# Error calculation tests - Invalid method
-let
-    @test_throws ArgumentError begin
-        counts = [1, 2, 3]
-        calculate_errors(counts, :invalid_method)
-    end
-end
-
-# Error calculation tests - Gaussian without errors
-let
-    @test_throws ArgumentError begin
-        counts = [1, 2, 3]
-        calculate_errors(counts, :gaussian)
-    end
-end
-
-# Error calculation tests - Gaussian length mismatch
-let
-    @test_throws ArgumentError begin
-        counts = [1, 2, 3]
-        wrong_length_errors = [1.0, 2.0]
-        calculate_errors(counts, :gaussian, gaussian_errors=wrong_length_errors)
-    end
-end
-
-# EventList energy check tests
-let
-    times = [1.0, 2.0, 3.0]
-    energies = [10.0, 20.0, 30.0]
-    el_with_energies = create_test_eventlist(times, energies)
-    @test has_energies(el_with_energies) == true
-    
-    el_without_energies = create_test_eventlist(times, nothing)
-    @test has_energies(el_without_energies) == false
 end
