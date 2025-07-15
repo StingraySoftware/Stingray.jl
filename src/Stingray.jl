@@ -59,6 +59,22 @@ export AbstractLightCurve,
        extract_metadata,
        create_lightcurve,
        rebin
+include("utils.jl")
+
+include("gti.jl")
+export load_gtis
+export get_total_gti_length
+export create_gti_mask
+export create_gti_from_condition
+export operations_on_gtis
+export get_btis
+export time_intervals_from_gtis
+export bin_intervals_from_gtis
+export apply_gtis
+export fill_bad_time_intervals!
+export create_filtered_lightcurve
+export check_gtis
+export split_by_gtis
 
 include("utils.jl")
 
