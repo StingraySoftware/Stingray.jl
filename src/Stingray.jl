@@ -6,6 +6,7 @@ using ProgressBars: tqdm as show_progress
 using DocStringExtensions
 using LinearAlgebra
 using Random
+using RecipesBase
 
 include("fourier.jl")
 export positive_fft_bins
@@ -70,5 +71,7 @@ export fill_bad_time_intervals!
 export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
+
+include("recipes.jl")
 
 end
