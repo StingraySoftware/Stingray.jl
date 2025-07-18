@@ -329,3 +329,20 @@ let
     @test plot(el, 1.0, show_gtis=true, tstart=2.0, tstop=4.0) isa Plots.Plot
     @test plot(el, 1.0, show_btis=true, tstart=2.0, tstop=4.0) isa Plots.Plot
 end
+# Basic rebinning functionality test
+let
+    times = collect(1.0:0.1:10.0)
+    counts = rand(1:10, length(times))
+    
+    # Create mock light curve
+    metadata = LightCurveMetadata(
+        "TEST", "TEST", "TEST", 0.0, (1.0, 10.0), 0.1,
+        [Dict{String,Any}()], Dict{String,Any}()
+    )
+    lc = LightCurve(times, 0.1, counts, nothing, nothing, 
+                   EventProperty{Float64}[], metadata, :poisson)
+    
+    @test plot(lc, 1.0) isa Plots.Plot
+    @test plot(lc, 0.5) isa Plots.Plot
+    @test plot(lc, 2.0) isa Plots.Plot
+end
