@@ -2,13 +2,18 @@
 function create_test_eventlist(times::Vector{Float64}, energies::Union{Vector{Float64}, Nothing}=nothing)
     mock_headers = Dict{String,Any}()
     mock_metadata = FITSMetadata(
-        "", 1, "keV",
-        Dict{String,Vector}(),
-        mock_headers
+        "",  # filepath
+        1,   # hdu
+        "keV",  # energy_units
+        Dict{String,Vector}(),  # extra_columns
+        mock_headers,  # headers
+        nothing,       # gti
+        nothing        # gti_source
     )
     
     return EventList(times, energies, mock_metadata)
 end
+
 # Helper function to create mock LightCurve for testing
 function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt::Float64=1.0)
     metadata = LightCurveMetadata(
@@ -24,10 +29,12 @@ function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt:
         metadata, :poisson
     )
 end
+
 # Helper function to create EventProperty
 function create_event_property(name::String, values::Vector{Float64}, unit::String="")
     return EventProperty{Float64}(Symbol(name), values, unit)
 end
+
 # Helper functions for common test data
 function get_basic_times()
     return [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
@@ -260,7 +267,6 @@ let
     @test start_bins == [0, 1, 2, 3, 6]
     @test stop_bins == [2, 3, 4, 5, 8]
 end
-
 # EventList GTI Tests - Basic functionality
 let
     times = get_basic_times()
@@ -455,12 +461,16 @@ let
     
     mock_headers = Dict{String,Any}()
     mock_metadata = FITSMetadata(
-        "", 1, "keV",
-        Dict{String,Vector}(
+        "",  # filepath
+        1,   # hdu
+        "keV",  # energy_units
+        Dict{String,Vector}(  # extra_columns
             "pi_channel" => [100, 200, 300, 400],
             "detector_id" => [1, 2, 1, 2]
         ),
-        mock_headers
+        mock_headers,  # headers
+        nothing,       # gti
+        nothing        # gti_source
     )
     
     el = EventList(times, energies, mock_metadata)
