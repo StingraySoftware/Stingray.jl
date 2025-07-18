@@ -1,3 +1,83 @@
+function create_segments(events::EventList, segment_duration::Real; bin_size::Real = 1.0)
+    # Get actual time range from the data
+    t_start = minimum(events.times)
+    t_stop = maximum(events.times)
+    total_time = t_stop - t_start
+    println("Data time range: $(t_start) to $(t_stop) ($(total_time) seconds total)")
+    
+    # Calculate number of segments
+    n_segments = ceil(Int, total_time / segment_duration)
+    println("Creating $(n_segments) segments of $(segment_duration) seconds each") 
+    
+    segments = Vector{LightCurve}() 
+    
+    for i in 1:n_segments
+        start_time = t_start + (i-1) * segment_duration
+        stop_time = min(t_start + i * segment_duration, t_stop)
+        
+        # Filter events in this segment using matrix operations
+        event_times = events.times
+        mask = (event_times .>= start_time) .& (event_times .<= stop_time)
+        segment_events = event_times[mask]
+        
+        events_in_segment = sum(mask)
+        println("Segment $i: $(events_in_segment) events from $(start_time) to $(stop_time)")
+        
+        # Create time bins for this segment
+        time_edges = collect(start_time:bin_size:stop_time)
+        if length(time_edges) < 2
+            time_edges = [start_time, stop_time]
+        end
+        
+        # Bin centers
+        time_centers = (time_edges[1:end-1] + time_edges[2:end]) / 2
+        n_bins = length(time_centers)
+        
+        # Initialize counts
+        counts = zeros(Int, n_bins)
+        
+        # Histogram events into bins using matrix operations
+        if events_in_segment > 0
+            # Use searchsortedlast for efficient binning
+            for event_time in segment_events
+                bin_idx = searchsortedlast(time_edges, event_time)
+                if bin_idx > 0 && bin_idx <= n_bins
+                    counts[bin_idx] += 1
+                end
+            end
+        end
+        
+        # Create light curve data matrix: [time, counts, errors]
+        # Calculate Poisson errors
+        count_errors = sqrt.(max.(counts, 1))  # Avoid sqrt(0)
+        
+        # Create the data matrix
+        lc_matrix = hcat(time_centers, counts, count_errors)
+        
+        # Create dummy metadata
+        dummy_metadata = LightCurveMetadata(
+            "Unknown", "Unknown", "Unknown", 0.0, 
+            (start_time, stop_time), bin_size,
+            Vector{Dict{String,Any}}(), Dict{String,Any}()
+        )
+        
+        # Create LightCurve object
+        lc = LightCurve(
+            lc_matrix[:, 1],  # time
+            bin_size,         # dt
+            Int.(lc_matrix[:, 2]),  # counts
+            lc_matrix[:, 3],  # count_error
+            nothing,          # exposure
+            Vector{EventProperty{Float64}}(),  # properties
+            dummy_metadata,   # metadata
+            :poisson         # err_method
+        )
+        
+        push!(segments, lc)
+    end
+    
+    return segments
+end
 """
     plot(el::EventList{T}, bin_size::Real=1.0; kwargs...)
 

@@ -78,5 +78,6 @@ export check_gtis
 export split_by_gtis
 
 include("recipes.jl")
+export create_segments
 
 end
