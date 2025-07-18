@@ -29,7 +29,8 @@ function contiguous_regions(condition::AbstractVector{Bool})
 end
 #UTIL function used in recpies
 """
-merge_overlapping_gtis(gtis::Matrix{Float64})::Matrix{Float64}
+    merge_overlapping_gtis(gtis::Matrix{Float64})::Matrix{Float64}
+   
 Merge overlapping Good Time Intervals (GTIs).
 This function takes a matrix of GTIs, where each row represents a start and stop time,
 and returns a new matrix with non-overlapping GTIs.
