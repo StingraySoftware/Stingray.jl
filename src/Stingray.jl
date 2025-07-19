@@ -60,6 +60,7 @@ export AbstractLightCurve,
        create_lightcurve,
        rebin
 include("utils.jl")
+export merge_overlapping_gtis
 
 include("gti.jl")
 export load_gtis
@@ -75,5 +76,8 @@ export fill_bad_time_intervals!
 export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
+export append_gtis ,gti_border_bins ,check_separate,join_equal_gti_boundaries
+export split_gtis_by_exposure ,split_gtis_at_indices ,merge_gtis,cross_gtis,cross_two_gtis,join_gtis,check_separate
+
 
 end
