@@ -1,8 +1,5 @@
-
-
 # Test data path (if using test data directory)
 # TEST_DATA_PATH = joinpath(@__DIR__, "_data", "testdata")
-
 # Helper function to generate mock data
 function mock_data(times, energies; energy_column = "ENERGY")
     test_dir = mktempdir()
@@ -112,11 +109,13 @@ let
     times_extra = [1.0, 2.0, 3.0, 4.0]
     energies_extra = [10.0, 20.0, 30.0, 40.0]
     dummy_meta = FITSMetadata{Dict{String,Any}}(
-        "",
-        1,
-        nothing,
-        Dict("INDEX" => [1, 2, 3, 4]),
-        Dict{String,Any}(),
+        "",                          # filepath
+        1,                          # hdu
+        nothing,                    # energy_units
+        Dict("INDEX" => [1, 2, 3, 4]), # extra_columns
+        Dict{String,Any}(),         # headers
+        nothing,                    # gti
+        nothing                     # gti_source
     )
     ev_extra = EventList(times_extra, energies_extra, dummy_meta)
 
@@ -155,11 +154,13 @@ let
     times_extra = [1.0, 2.0, 3.0, 4.0]
     energies_extra = [15.0, 25.0, 35.0, 45.0]
     dummy_meta = FITSMetadata{Dict{String,Any}}(
-        "",
-        1,
-        nothing,
-        Dict("DETX" => [0.1, 0.2, 0.3, 0.4]),
-        Dict{String,Any}(),
+        "",                            # filepath
+        1,                            # hdu
+        nothing,                      # energy_units
+        Dict("DETX" => [0.1, 0.2, 0.3, 0.4]), # extra_columns
+        Dict{String,Any}(),           # headers
+        nothing,                      # gti
+        nothing                       # gti_source
     )
     ev_extra = EventList(times_extra, energies_extra, dummy_meta)
 
@@ -203,11 +204,13 @@ let
     times_extra = [1.0, 2.0, 3.0, 4.0, 5.0]
     energies_extra = [10.0, 20.0, 30.0, 40.0, 50.0]
     dummy_meta = FITSMetadata{Dict{String,Any}}(
-        "",
-        1,
-        nothing,
-        Dict("FLAG" => [1, 0, 1, 0, 1]),
-        Dict{String,Any}(),
+        "",                           # filepath
+        1,                           # hdu
+        nothing,                     # energy_units
+        Dict("FLAG" => [1, 0, 1, 0, 1]), # extra_columns
+        Dict{String,Any}(),          # headers
+        nothing,                     # gti
+        nothing                      # gti_source
     )
     ev_extra = EventList(times_extra, energies_extra, dummy_meta)
 
@@ -427,8 +430,8 @@ let
     energies = Float64[10.0, 20.0, 30.0]
 
     table = Dict{String,Array}()
-    table["time"] = times  # lowercase
-    table["energy"] = energies  # lowercase
+    table["time"] = times
+    table["energy"] = energies
     write(f, table)
     close(f)
 
@@ -436,4 +439,274 @@ let
     @test data.times == times
     @test data.energies == energies
 
+end
+
+# Test GTI functionality
+let
+    # Test has_gti function
+    times = [1.0, 2.0, 3.0, 4.0, 5.0]
+    energies = [10.0, 20.0, 30.0, 40.0, 50.0]
+    
+    # EventList without GTI
+    ev_no_gti = EventList(times, energies)
+    @test !has_gti(ev_no_gti)
+    @test isnothing(gti(ev_no_gti))
+    
+    # EventList with GTI - create metadata with GTI data
+    gti_matrix = [1.0 3.0; 4.0 6.0]  # Two intervals: [1.0, 3.0] and [4.0, 6.0]
+    meta_with_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits",                    # filepath
+        2,                             # hdu
+        "ENERGY",                      # energy_units
+        Dict{String,Vector}(),         # extra_columns
+        Dict{String,Any}(),            # headers
+        gti_matrix,                    # gti
+        "GTI"                          # gti_source
+    )
+    ev_with_gti = EventList(times, energies, meta_with_gti)
+    
+    @test has_gti(ev_with_gti)
+    @test gti(ev_with_gti) == gti_matrix
+    
+end
+
+# Test gti_exposure function
+let
+    times = [1.0, 2.0, 3.0, 4.0, 5.0]
+    energies = [10.0, 20.0, 30.0, 40.0, 50.0]
+    
+    # Test exposure calculation with GTI
+    gti_matrix = [1.0 3.0; 4.0 6.0; 8.0 10.0]  # Intervals: 2s + 2s + 2s = 6s total
+    meta_with_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits",
+        2,
+        "ENERGY",
+        Dict{String,Vector}(),
+        Dict{String,Any}(),
+        gti_matrix,
+        "GTI"
+    )
+    ev_with_gti = EventList(times, energies, meta_with_gti)
+    
+    @test gti_exposure(ev_with_gti) == 6.0
+    
+    # Test exposure calculation without GTI (should use time span)
+    ev_no_gti = EventList(times, energies)
+    expected_span = maximum(times) - minimum(times)  # 5.0 - 1.0 = 4.0
+    @test gti_exposure(ev_no_gti) == expected_span
+    
+    # Test with empty times
+    ev_empty = EventList(Float64[], Float64[])
+    @test gti_exposure(ev_empty) == 0.0
+    
+    # Test single interval GTI
+    single_gti = reshape([2.0, 5.0], 1, 2)  # One interval: [2.0, 5.0] = 3s
+    meta_single_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
+        single_gti, "GTI"
+    )
+    ev_single_gti = EventList(times, energies, meta_single_gti)
+    @test gti_exposure(ev_single_gti) == 3.0
+    
+end
+
+# Test GTI display and info functions
+let
+    times = [1.0, 2.0, 3.0]
+    energies = [10.0, 20.0, 30.0]
+    
+    # Test gti_info with GTI present
+    gti_matrix = [1.0 2.5; 3.0 4.0]
+    meta_with_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
+        gti_matrix, "GTI"
+    )
+    ev_with_gti = EventList(times, energies, meta_with_gti)
+    
+    # gti_info should not throw errors
+    @test_nowarn gti_info(ev_with_gti)
+    
+    # Test gti_info without GTI (should warn)
+    ev_no_gti = EventList(times, energies)
+    # Capture the warning - this should warn about no GTI
+    @test_logs (:warn, "No GTI information available") gti_info(ev_no_gti)
+    
+end
+
+# Test FITSMetadata show method with GTI
+let
+    # Test display with GTI
+    gti_matrix = [1.0 3.0; 5.0 7.0]  # Two 2-second intervals
+    extra_cols = Dict("INDEX" => [1, 2, 3])
+    meta_with_gti = FITSMetadata{Dict{String,Any}}(
+        "/path/to/test.fits", 2, "ENERGY", extra_cols, Dict{String,Any}(),
+        gti_matrix, "GTI"
+    )
+    
+    # Test that show method includes GTI information
+    io = IOBuffer()
+    show(io, MIME("text/plain"), meta_with_gti)
+    output = String(take!(io))
+    
+    @test occursin("test.fits[2]", output)
+    @test occursin("1 extra column(s)", output)
+    @test occursin("GTI: 2 intervals", output)
+    @test occursin("total exposure: 4.0 s", output)
+    
+    # Test display without GTI
+    meta_no_gti = FITSMetadata{Dict{String,Any}}(
+        "/path/to/test.fits", 2, "ENERGY", extra_cols, Dict{String,Any}(),
+        nothing, nothing
+    )
+    
+    io2 = IOBuffer()
+    show(io2, MIME("text/plain"), meta_no_gti)
+    output2 = String(take!(io2))
+    
+    @test occursin("test.fits[2]", output2)
+    @test occursin("1 extra column(s)", output2)
+    @test !occursin("GTI:", output2)  # Should not mention GTI
+    
+end
+
+# Test Base.summary with GTI information
+let
+    times = [1.0, 2.0, 3.0, 4.0]
+    energies = [100.0, 200.0, 300.0, 400.0]
+    
+    # Test summary with GTI
+    gti_matrix = [1.0 2.0; 3.0 5.0]  # 1s + 2s = 3s total exposure
+    meta_with_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits", 2, "keV", Dict("FLAG" => [1, 0, 1, 0]), Dict{String,Any}(),
+        gti_matrix, "GTI"
+    )
+    ev_with_gti = EventList(times, energies, meta_with_gti)
+    
+    summary_str = summary(ev_with_gti)
+    @test occursin("4 events", summary_str)
+    @test occursin("over 3.0 time units", summary_str)
+    @test occursin("energies: 100.0 - 400.0", summary_str)
+    @test occursin("(keV)", summary_str)
+    @test occursin("GTI: 2 intervals (3.0 s exposure)", summary_str)
+    @test occursin("1 extra columns", summary_str)
+    
+    # Test summary without GTI
+    ev_no_gti = EventList(times, energies)
+    summary_no_gti = summary(ev_no_gti)
+    @test occursin("4 events", summary_no_gti)
+    @test !occursin("GTI:", summary_no_gti)
+    
+    # Test summary without energies but with GTI
+    meta_time_only_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits", 2, nothing, Dict{String,Vector}(), Dict{String,Any}(),
+        gti_matrix, "GTI"
+    )
+    ev_time_only_gti = EventList(times, nothing, meta_time_only_gti)
+    
+    summary_time_only = summary(ev_time_only_gti)
+    @test occursin("4 events", summary_time_only)
+    @test !occursin("energies:", summary_time_only)
+    @test occursin("GTI: 2 intervals", summary_time_only)
+    
+end
+
+# Test GTI with filtering operations
+let
+    times = [1.0, 1.5, 2.0, 3.5, 4.0, 4.5, 5.0]
+    energies = [10.0, 15.0, 20.0, 35.0, 40.0, 45.0, 50.0]
+    
+    # Create EventList with GTI and extra columns
+    gti_matrix = [1.0 2.5; 3.0 5.0]
+    extra_cols = Dict("INDEX" => collect(1:7))
+    meta_with_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits", 2, "ENERGY", extra_cols, Dict{String,Any}(),
+        gti_matrix, "GTI"
+    )
+    ev_with_gti = EventList(times, energies, meta_with_gti)
+    
+    # Test that GTI information persists after filtering
+    @test has_gti(ev_with_gti)
+    @test gti_exposure(ev_with_gti) == 3.5  # (2.5-1.0) + (5.0-3.0) = 1.5 + 2.0 = 3.5
+    
+    # Filter by time and check GTI is preserved
+    filter_time!(t -> t >= 2.0, ev_with_gti)
+    @test has_gti(ev_with_gti)
+    @test gti(ev_with_gti) == gti_matrix  # GTI matrix should be unchanged
+    @test gti_exposure(ev_with_gti) == 3.5  # GTI exposure should be unchanged
+    
+    # Filter by energy and check GTI is preserved
+    filter_energy!(e -> e <= 45.0, ev_with_gti)
+    @test has_gti(ev_with_gti)
+    @test gti(ev_with_gti) == gti_matrix
+    
+    # Test non-mutating filters preserve GTI
+    times2 = [1.0, 2.0, 3.0, 4.0]
+    energies2 = [10.0, 20.0, 30.0, 40.0]
+    ev_with_gti2 = EventList(times2, energies2, meta_with_gti)
+    
+    ev_filtered = filter_time(t -> t > 1.5, ev_with_gti2)
+    @test has_gti(ev_filtered)
+    @test gti(ev_filtered) == gti_matrix
+    
+    ev_filtered_energy = filter_energy(e -> e < 35.0, ev_with_gti2)
+    @test has_gti(ev_filtered_energy)
+    @test gti(ev_filtered_energy) == gti_matrix
+    
+end
+
+# Test edge cases for GTI
+let
+    times = [1.0, 2.0, 3.0]
+    energies = [10.0, 20.0, 30.0]
+    
+    # Test with empty GTI matrix
+    empty_gti = Matrix{Float64}(undef, 0, 2)
+    meta_empty_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
+        empty_gti, "GTI"
+    )
+    ev_empty_gti = EventList(times, energies, meta_empty_gti)
+    @test has_gti(ev_empty_gti)
+    @test gti_exposure(ev_empty_gti) == 0.0
+    
+    # Test with single point GTI intervals (start == stop)
+    point_gti = [2.0 2.0; 3.0 3.0]  # Zero-duration intervals
+    meta_point_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
+        point_gti, "GTI"
+    )
+    ev_point_gti = EventList(times, energies, meta_point_gti)
+    @test has_gti(ev_point_gti)
+    @test gti_exposure(ev_point_gti) == 0.0
+    
+    # Test with very large GTI values
+    large_gti = [1e6 2e6; 3e6 4e6]  # Large time values
+    meta_large_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
+        large_gti, "GTI"
+    )
+    ev_large_gti = EventList(times, energies, meta_large_gti)
+    @test has_gti(ev_large_gti)
+    @test gti_exposure(ev_large_gti) == 2e6  # (2e6-1e6) + (4e6-3e6) = 1e6 + 1e6 = 2e6
+    
+end
+
+# Test GTI source tracking
+let
+    times = [1.0, 2.0, 3.0]
+    energies = [10.0, 20.0, 30.0]
+    
+    gti_matrix = [1.0 2.5; 3.0 4.0]
+    meta_with_gti = FITSMetadata{Dict{String,Any}}(
+        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
+        gti_matrix, "GTI"
+    )
+    ev_with_gti = EventList(times, energies, meta_with_gti)
+    
+    # @debug won't show by default, so this should not produce stderr output
+    @test_nowarn gti_info(ev_with_gti)
+    
+    # Test without GTI (still warns)
+    ev_no_gti = EventList(times, energies)
+    @test_logs (:warn, "No GTI information available") gti_info(ev_no_gti)
 end
