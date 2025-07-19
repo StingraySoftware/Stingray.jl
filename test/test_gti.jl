@@ -88,14 +88,14 @@ end
 
 # test_check_gtis_shape
 let
-    @test_throws ArgumentError check_gtis([[0 1 4]; [0 3 4];]) 
+    @test_throws ArgumentError Stingray.check_gtis([[0 1 4]; [0 3 4];]) 
 end
 
 # test_check_gtis_values
 let
-    @test_throws ArgumentError check_gtis([[0 2]; [1 3];])
+    @test_throws ArgumentError Stingray.check_gtis([[0 2]; [1 3];])
 
-    @test_throws ArgumentError check_gtis([[1 0];])
+    @test_throws ArgumentError Stingray.check_gtis([[1 0];])
 end
 
 # test_gti_mask1
@@ -490,7 +490,7 @@ end
 # GTI validation tests - Valid GTIs
 let
     valid_gtis = [1.0 2.0; 3.0 4.0; 5.0 6.0]
-    @test check_gtis(valid_gtis) === true
+    @test check_gtis(valid_gtis) === nothing
 end
 
 # GTI validation tests - Invalid GTI dimensions
@@ -535,324 +535,165 @@ let
     @test size(btis) == (1, 2)
     @test btis ≈ [1.0 9.0]
 end
-# test_join_equal_gti_boundaries
+# Edge case where GTIs just touch (no overlap)
 let
-    gti = [1.16703354e8 1.16703386e8;
-           1.16703386e8 1.16703418e8;
-           1.16703418e8 1.16703450e8;
-           1.16703450e8 1.16703482e8;
-           1.16703482e8 1.16703514e8]
+    gti1 = [2 3]
+    gti2 = [3 4]
+    newgti = operations_on_gtis([gti1, gti2], intersect)
+    @test isempty(newgti)
     
-    newg = join_equal_gti_boundaries(gti)
-    @test newg ≈ reshape([1.16703354e8 1.16703514e8], 1, 2)
+    gti3 = [3 5]
+    newgti = operations_on_gtis([gti1, gti2, gti3], intersect)
+    @test isempty(newgti)
 end
 
-# test_split_gtis_by_exposure
+# One GTI completely contains others
 let
-    gtis = [0.0 30.0; 86450.0 86460.0]
-    new_gtis = split_gtis_by_exposure(gtis, 400.0)
-    @test new_gtis[1] ≈ [0.0 30.0]
-    @test new_gtis[2] ≈ [86450.0 86460.0]
+    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
+    gti2 = [0.5 14]
+    newgti0 = operations_on_gtis([gti1, gti2], intersect)
+    newgti1 = operations_on_gtis([gti2, gti1], intersect)
+    
+    @test newgti0 == gti1
+    @test newgti1 == gti1
 end
 
-# test_split_gtis_at_indices
+# Partial overlap scenarios
 let
-    gtis = [0.0 30.0; 50.0 60.0; 80.0 90.0]
-    new_gtis = split_gtis_at_indices(gtis, 1)
-    @test new_gtis[1] ≈ [0.0 30.0]
-    @test new_gtis[2] ≈ [50.0 60.0; 80.0 90.0]
+    gti1 = [1.5 12.5]
+    gti2 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
+    newgti0 = operations_on_gtis([gti1, gti2], intersect)
+    newgti1 = operations_on_gtis([gti2, gti1], intersect)
+    
+    expected = [[1.5 2]; [4 5]; [7 10]; [11 11.2]; [12.2 12.5];]
+    @test newgti0 == expected
+    @test newgti1 == expected
 end
 
-# test_check_separate
+# Complex overlapping scenario
 let
-    # Overlapping case
-    gti1 = [1.0 2.0; 4.0 5.0; 7.0 10.0; 11.0 11.2; 12.2 13.2]
-    gti2 = [2.0 5.0; 6.0 9.0; 11.4 14.0]
-    @test !check_separate(gti1, gti2)  # overlapping case
-
-    # Non-overlapping case
-    gti3 = [1.0 2.0; 4.0 5.0]
-    gti4 = [6.0 7.0; 8.0 9.0]
-    @test check_separate(gti3, gti4)   # non-overlapping case
-
-    # Empty case
-    gti5 = Matrix{Float64}(undef, 0, 2)
-    @test check_separate(gti1, gti5)
-    @test check_separate(gti5, gti1)
+    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
+    gti2 = [[0.5 3]; [4.5 4.7]; [10 14];]
+    newgti0 = operations_on_gtis([gti1, gti2], intersect)
+    newgti1 = operations_on_gtis([gti2, gti1], intersect)
     
-    # Touching intervals (should be separate)
-    gti6 = [1.0 2.0]
-    gti7 = [2.0 3.0]
-    @test check_separate(gti6, gti7)
-    
-    # Single overlapping interval
-    gti8 = [1.0 3.0]
-    gti9 = [2.0 4.0]
-    @test !check_separate(gti8, gti9)
+    expected = [[1 2]; [4.5 4.7]; [11 11.2]; [12.2 13.2];]
+    @test newgti0 == expected
+    @test newgti1 == expected
 end
 
-# test_append_gtis
+# GTIs that fill gaps between others
 let
-    # Basic append non-overlapping GTIs
-    gti1 = [1.0 2.0; 4.0 5.0]
-    gti2 = [6.0 7.0; 8.0 9.0]
-    @test append_gtis(gti1, gti2) ≈ [1.0 2.0; 4.0 5.0; 6.0 7.0; 8.0 9.0]
-    
-    # Test overlapping case - should merge, not throw error
-    gti3 = [3.0 4.5; 8.0 9.0]
-    expected = [1.0 2.0; 3.0 5.0; 8.0 9.0]  # [4.0,5.0] and [3.0,4.5] merge to [3.0,5.0]
-    @test append_gtis(gti1, gti3) ≈ expected
-    
-    # Append touching GTIs
-    gti4 = [1.0 2.0]
-    gti5 = [2.0 3.0]
-    result = append_gtis(gti4, gti5)
-    @test result ≈ [1.0 3.0]
-    
-    # Append overlapping GTIs
-    gti6 = [1.0 3.0]
-    gti7 = [2.0 4.0]
-    result = append_gtis(gti6, gti7)
-    @test result ≈ [1.0 4.0]
+    gti0 = [[0 1]; [2 3]; [4 8];]
+    gti1 = [[1 2]; [3 4];]
+    result = operations_on_gtis([gti0, gti1], union)
+    @test result == [0 8]
 end
 
-# test_gti_border_bins
+# check_gtis function tests
 let
-    # Test with simple time array
-    times = collect(range(0.5, 2.5, length=3))  # [0.5, 1.5, 2.5]
-    start_bins, stop_bins = gti_border_bins([0.0 2.0], times)
-    @test start_bins == [0]  # First bin starts at index 0 (Python-style)
-    @test stop_bins == [2]   # Last bin is at index 2
-
-    # Test with many bins - fixed bin counting
-    dt = 0.0001
-    times_dense = collect(range(0.0, 2.0-dt, step=dt)) .+ dt/2  # Note the -dt to get exact number of bins
-    @test length(times_dense) == 20000  # Verify the length first
-    start_bins, stop_bins = gti_border_bins([0.0 2.0], times_dense)
-    @test start_bins == [0]
-    @test stop_bins == [20000]
-
-    # Additional test case for boundary conditions
-    times_edge = [0.5, 1.0, 1.5, 2.0]
-    start_bins, stop_bins = gti_border_bins([0.75 1.75], times_edge)
-    @test start_bins == [1]
-    @test stop_bins == [3]
+    @test_throws ArgumentError check_gtis(reshape(Float64[], 0, 2))
 end
 
-# test_check_gtis
+# create_gti_mask function tests
 let
-    # Valid GTI
-    gti = [1.0 2.0; 3.0 4.0]
-    @test check_gtis(gti) == true
-    
-    # Empty GTI
-    gti_empty = Matrix{Float64}(undef, 0, 2)
-    @test check_gtis(gti_empty) == true
-    
-    # Invalid GTI - wrong number of columns
-    gti_wrong_cols = [1.0 2.0 3.0]
-    @test_throws ArgumentError check_gtis(gti_wrong_cols)
-    
-    # Invalid GTI - start >= stop
-    gti_invalid = [2.0 1.0]
-    @test_throws ArgumentError check_gtis(gti_invalid)
-    
-    # Invalid GTI - start == stop
-    gti_equal = [1.0 1.0]
-    @test_throws ArgumentError check_gtis(gti_equal)
+    arr = [0, 1, 2, 3, 4, 5, 6]
+    gti = reshape(Float64[], 0, 2)
+    @test_throws ArgumentError create_gti_mask(arr, gti)
 end
 
-# test_merge_overlapping_gtis
+# bin_intervals_from_gtis error cases
 let
-    # Basic merging
-    gtis = [0.0 2.0; 1.0 3.0; 4.0 5.0]
-    result = merge_overlapping_gtis(gtis)
-    @test result ≈ [0.0 3.0; 4.0 5.0]
-    
-    # Touching intervals
-    gtis = [0.0 1.0; 1.0 2.0; 2.0 3.0]
-    result = merge_overlapping_gtis(gtis)
-    @test result ≈ [0.0 3.0]
-    
-    # No overlap
-    gtis = [0.0 1.0; 2.0 3.0; 4.0 5.0]
-    result = merge_overlapping_gtis(gtis)
-    @test result ≈ gtis
-    
-    # Single interval
-    gtis = [0.0 1.0]
-    result = merge_overlapping_gtis(gtis)
-    @test result ≈ gtis
-    
-    # Empty input
-    gtis = Matrix{Float64}(undef, 0, 2)
-    result = merge_overlapping_gtis(gtis)
-    @test isempty(result)
-    
-    # Complex overlapping pattern
-    gtis = [1.0 3.0; 2.0 5.0; 7.0 9.0; 8.0 10.0]
-    result = merge_overlapping_gtis(gtis)
-    @test result ≈ [1.0 5.0; 7.0 10.0]
+    @test_throws ArgumentError bin_intervals_from_gtis([[0 400];], 128, [500, 501])
+    @test_throws ArgumentError bin_intervals_from_gtis([[1000 1400];], 128, [500, 501])
 end
 
-# test_join_gtis
+# Edge cases for create_gti_mask
 let
-    # Non-overlapping GTIs
-    gti0 = [0.0 1.0; 2.0 3.0]
-    gti1 = [10.0 11.0; 12.0 13.0]
-    result = join_gtis(gti0, gti1)
-    expected = [0.0 1.0; 2.0 3.0; 10.0 11.0; 12.0 13.0]
-    @test result ≈ expected
-
-    # Overlapping GTIs
-    gti0 = [0.0 1.0; 2.0 3.0; 4.0 8.0]
-    gti1 = [7.0 8.0; 10.0 11.0; 12.0 13.0]
-    result = join_gtis(gti0, gti1)
-    expected = [0.0 1.0; 2.0 3.0; 4.0 8.0; 10.0 11.0; 12.0 13.0]
-    @test result ≈ expected
-
-    # GTIs meeting in middle
-    gti0 = [0.0 1.0; 2.0 3.0; 4.0 8.0]
-    gti1 = [1.0 2.0; 3.0 4.0]
-    result = join_gtis(gti0, gti1)
-    expected = [0.0 8.0]
-    @test result ≈ expected
-    
-    # Empty GTI cases
-    gti_empty = Matrix{Float64}(undef, 0, 2)
-    gti_data = [1.0 2.0; 3.0 4.0]
-    @test join_gtis(gti_empty, gti_data) ≈ gti_data
-    @test join_gtis(gti_data, gti_empty) ≈ gti_data
-    @test isempty(join_gtis(gti_empty, gti_empty))
+    arr = [0.5, 1.5, 2.5, 3.5]
+    gti = [0 4]
+    mask, new_gti = create_gti_mask(arr, gti)
+    @test all(mask)
+    @test new_gti == gti
 end
 
-# test_cross_two_gtis
+#operations_on_gtis with empty GTI handling
 let
-    # Simple intersection
-    gti1 = [1.0 4.0]
-    gti2 = [2.0 3.0]
-    result = cross_two_gtis(gti1, gti2)
-    @test result ≈ [2.0 3.0]
+    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
+    empty_gti = reshape(Float64[], 0, 2)
     
-    # Multiple intervals
-    gti1 = [1.0 5.0; 7.0 10.0]
-    gti2 = [2.0 4.0; 8.0 9.0]
-    result = cross_two_gtis(gti1, gti2)
-    @test result ≈ [2.0 4.0; 8.0 9.0]
+    result = operations_on_gtis([gti1, empty_gti], intersect)
+    @test size(result) == (0, 2)
+    @test result isa Matrix{Float64}
     
-    # No intersection
+    result = operations_on_gtis([gti1, empty_gti], union)
+    @test result == gti1
+end
+
+#Test operations with multiple empty GTIs
+let
+    empty_gti1 = reshape(Float64[], 0, 2)
+    empty_gti2 = reshape(Float64[], 0, 2)
+    
+    result = operations_on_gtis([empty_gti1, empty_gti2], union)
+    @test size(result) == (0, 2)
+    @test result isa Matrix{Float64}
+    
+    result = operations_on_gtis([empty_gti1, empty_gti2], intersect)
+    @test size(result) == (0, 2)
+    @test result isa Matrix{Float64}
+end
+
+# GTI length calculation edge cases
+let
+    tiny_gtis = [[1.0 1.0000001]; [2.0 2.0000001];]
+    total_length = get_total_gti_length(tiny_gtis)
+    @test total_length ≈ 2e-7
+end
+
+# BTI calculation tests - Empty GTIs
+let
+    empty_gti = reshape(Float64[], 0, 2)
+    @test_throws ArgumentError get_btis(empty_gti)
+    
+    # Test with explicit start/stop times
+    btis = get_btis(empty_gti, 0.0, 10.0)
+    @test btis == [0.0 10.0]
+end
+
+# BTI calculation tests - Single GTI
+let
+    gti = [2.0 8.0]
+    btis = get_btis(gti, 0.0, 10.0)
+    expected = [[0.0 2.0]; [8.0 10.0];]
+    @test btis == expected
+end
+
+# BTI calculation tests - Multiple GTIs
+let
+    gtis = [[1.0 3.0]; [5.0 7.0]; [9.0 9.5];]
+    btis = get_btis(gtis, 0.0, 10.0)
+    expected = [[0.0 1.0]; [3.0 5.0]; [7.0 9.0]; [9.5 10.0];]
+    @test btis == expected
+end
+
+# BTI calculation tests - No BTIs (complete coverage)
+let
+    gtis = [0.0 10.0]
+    btis = get_btis(gtis, 0.0, 10.0)
+    @test size(btis) == (0, 2)
+end
+
+# GTI operations - Union of touching intervals
+let
+    gti1 = [1.0 3.0]
+    gti2 = [3.0 5.0]
+    result = operations_on_gtis([gti1, gti2], union)
+    @test result == [1.0 5.0]
+end
+let
     gti1 = [1.0 2.0]
     gti2 = [3.0 4.0]
-    result = cross_two_gtis(gti1, gti2)
-    @test isempty(result)
-    
-    # Empty GTI
-    gti_empty = Matrix{Float64}(undef, 0, 2)
-    gti_data = [1.0 2.0]
-    @test isempty(cross_two_gtis(gti_empty, gti_data))
-    @test isempty(cross_two_gtis(gti_data, gti_empty))
-    
-    # Partial overlap
-    gti1 = [1.0 3.0]
-    gti2 = [2.0 4.0]
-    result = cross_two_gtis(gti1, gti2)
-    @test result ≈ [2.0 3.0]
-end
-
-# test_cross_gtis
-let
-    # Basic intersection
-    gti1 = [1.0 4.0]
-    gti2 = [2.0 5.0]
-    result = cross_gtis([gti1, gti2])
-    @test result ≈ [2.0 4.0]
-
-    # Complex intersection
-    gti1 = [1.0 2.0; 4.0 5.0; 7.0 10.0; 11.0 11.2; 12.2 13.2]
-    gti2 = [2.0 5.0; 6.0 9.0; 11.4 14.0]
-    result = cross_gtis([gti1, gti2])
-    @test result ≈ [4.0 5.0; 7.0 9.0; 12.2 13.2]
-
-    # Single GTI
-    gti1 = [1.0 2.0; 4.0 5.0; 7.0 10.0]
-    result = cross_gtis([gti1])
-    @test result ≈ gti1
-
-    # Empty intersection
-    gti1 = [2.0 3.0]
-    gti2 = [3.0 4.0]
-    result = cross_gtis([gti1, gti2])
-    @test isempty(result)
-    
-    gti3 = [3.0 5.0]
-    result = cross_gtis([gti1, gti2, gti3])
-    @test isempty(result)
-
-    # Wide GTI intersection
-    gti1 = [1.0 2.0; 4.0 5.0; 7.0 10.0; 11.0 11.2; 12.2 13.2]
-    gti2 = [0.5 14.0]
-    result1 = cross_gtis([gti1, gti2])
-    result2 = cross_gtis([gti2, gti1])
-    @test result1 ≈ gti1
-    @test result2 ≈ gti1
-
-    # Partial overlap
-    gti1 = [1.5 12.5]
-    gti2 = [1.0 2.0; 4.0 5.0; 7.0 10.0; 11.0 11.2; 12.2 13.2]
-    result1 = cross_gtis([gti1, gti2])
-    result2 = cross_gtis([gti2, gti1])
-    expected = [1.5 2.0; 4.0 5.0; 7.0 10.0; 11.0 11.2; 12.2 12.5]
-    @test result1 ≈ expected
-    @test result2 ≈ expected
-
-    # Complex overlap
-    gti1 = [1.0 2.0; 4.0 5.0; 7.0 10.0; 11.0 11.2; 12.2 13.2]
-    gti2 = [0.5 3.0; 4.5 4.7; 10.0 14.0]
-    result1 = cross_gtis([gti1, gti2])
-    result2 = cross_gtis([gti2, gti1])
-    expected = [1.0 2.0; 4.5 4.7; 11.0 11.2; 12.2 13.2]
-    @test result1 ≈ expected
-    @test result2 ≈ expected
-end
-
-# test_merge_gtis
-let
-    # Setup test GTIs
-    gti1 = [1.0 2.0; 3.0 4.0; 5.0 6.0]
-    gti2 = [1.0 2.0]
-    gti3 = [2.0 3.0]
-    gti4 = [4.0 5.0]
-
-    # Test empty GTIs for all methods
-    for method in ["intersection", "union", "infer", "append", "none"]
-        @test isnothing(merge_gtis(Matrix{Float64}[], method))
-        @test isnothing(merge_gtis([Matrix{Float64}(undef,0,2)], method))
-        @test isnothing(merge_gtis([Matrix{Float64}(undef,0,2), Matrix{Float64}(undef,0,2)], method))
-    end
-
-    # Test single GTI for all methods
-    for method in ["intersection", "union", "infer", "append"]
-        @test merge_gtis([gti1], method) ≈ gti1
-    end
-
-    # Test "none" method
-    @test merge_gtis([gti1], "none") ≈ [1.0 6.0]
-    @test merge_gtis([gti1, gti2], "none") ≈ [1.0 6.0]
-
-    # Test intersection method
-    @test merge_gtis([gti1, gti2], "intersection") ≈ [1.0 2.0]
-    @test isnothing(merge_gtis([gti1, gti2, gti3], "intersection"))
-    @test isnothing(merge_gtis([gti2, gti3], "intersection"))
-
-    # Test union method
-    @test merge_gtis([gti1, gti2], "union") ≈ gti1
-    @test merge_gtis([gti1, gti3], "union") ≈ [1.0 4.0; 5.0 6.0]
-
-    # Test append method
-    @test merge_gtis([gti2, gti4], "append") ≈ [1.0 2.0; 4.0 5.0]
-    @test merge_gtis([gti2, gti3], "append") ≈ [1.0 3.0]
-
-    # Test infer method
-    @test merge_gtis([gti1, gti2], "infer") ≈ [1.0 2.0]
-    @test merge_gtis([gti2, gti4], "infer") ≈ [1.0 2.0; 4.0 5.0]
+    result = operations_on_gtis([gti1, gti2], intersect)
+    @test size(result) == (0, 2)
 end

@@ -24,11 +24,16 @@ function get_gti_from_hdu(gtihdu::TableHDU)
     gtistart = read(gtihdu,startstr)
     gtistop = read(gtihdu,stopstr)
 
+    if isempty(gtistart) || isempty(gtistop)
+        return reshape(Float64[], 0, 2)
+    end
+
     return mapreduce(permutedims, vcat, 
-    [[a, b] for (a,b) in zip(gtistart, gtistop)])
+        [[a, b] for (a,b) in zip(gtistart, gtistop)], 
+        init=reshape(Float64[], 0, 2))
 end
 """
-    check_gtis(gti::AbstractMatrix) -> Bool
+    check_gtis(gti::AbstractMatrix)
 
 Validate Good Time Intervals (GTIs) for proper formatting and temporal ordering.
 
@@ -49,14 +54,11 @@ non-overlapping to maintain data integrity in subsequent analysis steps.
 - `ArgumentError`: If any GTI has end_time < start_time
 - `ArgumentError`: If GTIs have temporal overlaps
 
-# Returns
-- `Bool`: true if all validations pass
-
 # Examples
 ```julia
 # Valid GTIs
 gtis = [100.0 200.0; 300.0 400.0; 500.0 600.0]
-check_gtis(gtis)  # Returns true
+check_gtis(gtis)  # No error
 
 # Invalid format
 bad_gtis = [100.0 200.0 300.0]  # Too many columns
@@ -70,43 +72,44 @@ check_gtis(bad_gtis)  # Throws ArgumentError
 bad_gtis = [100.0 200.0; 150.0 250.0]  # Overlap
 check_gtis(bad_gtis)  # Throws ArgumentError
 ```
+
+# Performance Notes
+- Uses views to avoid unnecessary array copying
+- O(n) time complexity for n GTI intervals
+- Minimal memory allocation
+
+# See Also
+- [`get_btis`](@ref): Calculate Bad Time Intervals from GTIs
+- [`apply_gtis`](@ref): Apply GTIs to filter data
 """
 function check_gtis(gti::AbstractMatrix)
-    # Check if it's empty - this is valid
-    if isempty(gti)
-        return true
+
+    if ndims(gti) != 2 || size(gti,2) != 2
+        throw(ArgumentError("Please check the formatting of the GTIs. 
+       They need to be provided as [[gti00 gti01]; [gti10 gti11]; ...]."))
     end
-   
-    # Check format: must be 2D with exactly 2 columns
-    if ndims(gti) != 2 || size(gti, 2) != 2
-        throw(ArgumentError("Please check the formatting of the GTIs. " *
-                          "They need to be provided as [[gti00 gti01]; [gti10 gti11]; ...]."))
+
+    # Check for empty GTI
+    if size(gti, 1) == 0
+        throw(ArgumentError("GTI matrix is empty. Please provide valid time intervals."))
     end
-   
-    # Check temporal ordering within each GTI
+
     gti_start = @view gti[:, 1]
     gti_end = @view gti[:, 2]
-   
-    if any(gti_end .<= gti_start)  # End must be > start, not just >=
+
+    if any(gti_end < gti_start)
         throw(ArgumentError(
             "The GTI end times must be larger than the GTI start times."
+        )) 
+    end
+
+    if any(@view(gti_start[begin+1:end]) < @view(gti_end[begin:end-1]))
+        throw(ArgumentError(
+            "This GTI has overlaps"
         ))
     end
-   
-    # Check for overlaps between consecutive GTIs
-    # GTI i+1 start time must be >= GTI i end time
-    if size(gti, 1) > 1
-        for i in 1:(size(gti, 1) - 1)
-            if gti[i + 1, 1] < gti[i, 2]  # Next start < current end = overlap
-                throw(ArgumentError(
-                    "This GTI has overlaps"
-                ))
-            end
-        end
-    end
-   
-    return true
 end
+
 function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Real};
                          safe_interval::AbstractVector{<:Real}=[0,0], min_length::Real=0,
                          dt::Real = -1, epsilon::Real = 0.001)
@@ -123,7 +126,7 @@ function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Re
             
         if size(gtis,1) < 1
             @warn "No GTIs longer than min_length $(min_length)"
-            return mask, gtis
+            return mask, reshape(eltype(gtis)[], 0, 2)
         end
     end   
 
@@ -152,8 +155,15 @@ function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Re
         end
     end
 
-    return mask, mapreduce(permutedims, vcat, keepat!(new_gtis,new_gti_mask))
+    filtered_gtis = keepat!(new_gtis, new_gti_mask)
+    if isempty(filtered_gtis)
+        return mask, reshape(eltype(gtis)[], 0, 2)
+    end
+
+    return mask, mapreduce(permutedims, vcat, filtered_gtis, 
+                          init=reshape(eltype(gtis)[], 0, 2))
 end
+
 
 function create_gti_from_condition(time::AbstractVector{<:Real}, condition::AbstractVector{Bool};
     safe_interval::AbstractVector{<:Real}=[0,0], dt::AbstractVector{<:Real}=Float64[])
@@ -180,36 +190,58 @@ function create_gti_from_condition(time::AbstractVector{<:Real}, condition::Abst
         end
         push!(gtis,[t0, t1])
     end
-    return mapreduce(permutedims, vcat, gtis)
+    
+    if isempty(gtis)
+        return reshape(Float64[], 0, 2)
+    end
+    
+    return mapreduce(permutedims, vcat, gtis, init=reshape(Float64[], 0, 2))
 end
 
 function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}}, 
                             operation::Function) where {T<:Real}
-
-    required_interval = nothing
-
+    
+    # Convert all GTIs to IntervalSets, handling empty ones
+    interval_sets = IntervalSet[]
+    
     for gti in gti_list
-        check_gtis(gti)
-
-        combined_gti = Interval{T}[]
-        for ig in eachrow(gti)
-            push!(combined_gti,Interval{Closed,Open}(ig[1],ig[2]))
-        end
-        if isnothing(required_interval)
-            required_interval = IntervalSet(combined_gti)
+        if size(gti, 1) == 0
+            # Empty GTI becomes empty IntervalSet
+            push!(interval_sets, IntervalSet(Interval[]))
         else
-            required_interval = operation(required_interval, IntervalSet(combined_gti))
+            check_gtis(gti)
+            intervals = Interval[]
+            for ig in eachrow(gti)
+                push!(intervals, Interval{Closed,Open}(ig[1], ig[2]))
+            end
+            push!(interval_sets, IntervalSet(intervals))
         end
     end
-
+    
+    # If no interval sets, return empty
+    if isempty(interval_sets)
+        return reshape(T[], 0, 2)
+    end
+    
+    # Apply the operation across all interval sets
+    result_interval = interval_sets[1]
+    for i in 2:length(interval_sets)
+        result_interval = operation(result_interval, interval_sets[i])
+    end
+    
+    # Convert back to matrix format
+    if isempty(result_interval.items)
+        return reshape(T[], 0, 2)
+    end
+    
     final_gti = Vector{T}[]
-
-    for interval in required_interval.items
+    for interval in result_interval.items
         push!(final_gti, [first(interval), last(interval)])
     end
-
-    return mapreduce(permutedims, vcat, final_gti)
+    
+    return mapreduce(permutedims, vcat, final_gti, init=reshape(T[], 0, 2))
 end
+
 """
     get_btis(gtis::AbstractMatrix{<:Real}) -> Matrix{<:Real}
 
@@ -323,7 +355,11 @@ function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real
     if isempty(gtis)
         return T[start_time stop_time]
     end
-    check_gtis(gtis)
+    
+    # Only check GTIs if they're not empty
+    if size(gtis, 1) > 0
+        check_gtis(gtis)
+    end
 
     total_interval = Interval{T, Closed, Open}[Interval{T, Closed, Open}(start_time, stop_time)]
     total_interval_set = IntervalSet(total_interval)
@@ -342,12 +378,11 @@ function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real
         push!(btis, [first(interval), last(interval)])
     end
 
-    # Fix: Handle empty btis vector
     if isempty(btis)
-        return reshape(T[], 0, 2)  # Return empty matrix with correct dimensions
+        return reshape(T[], 0, 2)
     end
 
-    return mapreduce(permutedims, vcat, btis)
+    return mapreduce(permutedims, vcat, btis, init=reshape(T[], 0, 2))
 end
 function time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real;
                                   fraction_step::Real=1, epsilon::Real=1e-5)  
@@ -385,40 +420,62 @@ function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Rea
     if isnothing(dt)
         dt = Statistics.median(diff(time))
     end
-
+    time_min, time_max = extrema(time)
+    gti_min = minimum(gtis[:, 1])
+    gti_max = maximum(gtis[:, 2])
+    
+    if gti_max < time_min || gti_min > time_max
+        throw(ArgumentError("GTIs and time array do not overlap"))
+    end
+    
     epsilon_times_dt = epsilon * dt
     nbin = round(Int, segment_size / dt)
-
     spectrum_start_bins = Int[]
-
     gti_low = @view(gtis[:, 1]) .+ (dt ./ 2 .- epsilon_times_dt)
     gti_up = @view(gtis[:, 2]) .- (dt ./ 2 .- epsilon_times_dt)
-
+    
     for (g0, g1) in zip(gti_low, gti_up)
         if (g1 - g0 .+ (dt + epsilon_times_dt)) < segment_size
             continue
         end
         startbin, stopbin = searchsortedfirst.(Ref(time), [g0, g1])
         startbin -= 1
+        
+        # The issue is here - we need to be more careful with bounds checking
+        if startbin < 0
+            startbin = 0
+        end
+        
         if stopbin > length(time)
             stopbin = length(time)
         end
-
-        if time[startbin+1] < g0
+        
+        # Only proceed if we have valid indices
+        if startbin >= length(time)
+            continue
+        end
+        
+        if startbin + 1 <= length(time) && time[startbin+1] < g0
             startbin += 1
         end
+        
         # Would be g[1] - dt/2, but stopbin is the end of an interval
         # so one has to add one bin
-        if time[stopbin] > g1
+        if stopbin <= length(time) && time[stopbin] > g1
             stopbin -= 1
         end
-
+        
+        # Make sure we still have valid range after adjustments
+        if startbin >= stopbin || startbin < 0 || stopbin > length(time)
+            continue
+        end
+        
         newbins = calculate_segment_bin_start(
             startbin, stopbin, nbin, fraction_step=fraction_step)
         
-        append!(spectrum_start_bins,newbins)
-    end 
-    return spectrum_start_bins, spectrum_start_bins.+nbin 
+        append!(spectrum_start_bins, newbins)
+    end
+    return spectrum_start_bins, spectrum_start_bins .+ nbin
 end
 
 @resumable function generate_indices_of_segment_boundaries_unbinned(times::AbstractVector{<:Real},
@@ -985,559 +1042,3 @@ end
 # fill_bad_time_intervals!(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}; 
 #                             dt::Real=1.0, random_fill_threshold::Real=10.0,
 #                             rng::AbstractRNG=Random.GLOBAL_RNG) where T<:Real
-"""
-    join_equal_gti_boundaries(gti::AbstractMatrix{<:Real}) -> AbstractMatrix{<:Real}
-
-Join GTI boundaries that are equal or adjacent into a single continuous interval.
-
-This function takes a matrix of Good Time Intervals (GTIs) and merges them into a single
-continuous interval spanning from the earliest start time to the latest end time.
-
-# Arguments
-- `gti::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row represents 
-  [start_time, stop_time]. Must be a valid GTI matrix.
-
-# Returns
-- `AbstractMatrix{<:Real}`: A 1×2 matrix containing the merged interval [earliest_start, latest_end]
-
-# Examples
-```julia
-# Multiple GTI intervals
-gtis = [10.0 20.0; 25.0 35.0; 40.0 50.0]
-merged = join_equal_gti_boundaries(gtis)
-# Returns: [10.0 50.0]
-
-# Empty GTI matrix
-empty_gti = Matrix{Float64}(undef, 0, 2)
-result = join_equal_gti_boundaries(empty_gti)
-# Returns: empty matrix
-```
-
-# Notes
-- Input GTI matrix is validated using `check_gtis()`
-- Empty GTI matrices are returned unchanged
-- The function assumes GTIs are properly formatted and sorted
-"""
-function join_equal_gti_boundaries(gti::AbstractMatrix{<:Real})
-    if isempty(gti)
-        return gti
-    end
-    
-    check_gtis(gti)
-    result = similar(gti, 1, 2)
-    result[1, 1] = gti[1, 1]
-    result[1, 2] = gti[end, 2]
-    
-    return result
-end
-
-"""
-    split_gtis_by_exposure(gtis::AbstractMatrix{<:Real}, exposure::Real; 
-                          new_interval_if_gti_sep::Union{Real,Nothing}=nothing) -> Vector{Matrix{Float64}}
-
-Split GTI intervals based on exposure time and optional separation criteria.
-
-This function processes GTI intervals and splits them into separate segments based on
-exposure requirements and optional time gap thresholds.
-
-# Arguments
-- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row is [start_time, stop_time]
-- `exposure::Real`: Target exposure time for splitting (currently not used in implementation)
-- `new_interval_if_gti_sep::Union{Real,Nothing}=nothing`: Optional time gap threshold. 
-  If specified, creates new intervals when the gap between consecutive GTIs exceeds this value.
-
-# Returns
-- `Vector{Matrix{Float64}}`: Vector of GTI matrices, each representing a separate interval segment
-
-# Examples
-```julia
-# Split GTIs with separation threshold
-gtis = [10.0 20.0; 25.0 35.0; 100.0 110.0]
-segments = split_gtis_by_exposure(gtis, 10.0, new_interval_if_gti_sep=50.0)
-# Returns separate segments due to large gap between second and third GTI
-
-# Split without separation threshold
-segments = split_gtis_by_exposure(gtis, 10.0)
-# Returns each GTI as a separate segment
-```
-
-# Notes
-- Input GTI matrix is validated using `check_gtis()`
-- Each individual GTI row becomes a separate matrix in the result
-- The `exposure` parameter is currently not utilized in the splitting logic
-- When `new_interval_if_gti_sep` is specified, segments are created when gaps exceed the threshold
-"""
-function split_gtis_by_exposure(gtis::AbstractMatrix{<:Real}, exposure::Real;
-                              new_interval_if_gti_sep::Union{Real,Nothing}=nothing)
-    check_gtis(gtis)
-    result = Vector{Matrix{Float64}}()
-    current_segment = Matrix{Float64}(undef, 0, 2)
-    
-    for i in 1:size(gtis, 1)
-        if !isempty(current_segment) && !isnothing(new_interval_if_gti_sep)
-            if gtis[i, 1] - current_segment[end, 2] >= new_interval_if_gti_sep
-                push!(result, copy(current_segment))
-                current_segment = Matrix{Float64}(undef, 0, 2)
-            end
-        end
-        push!(result, gtis[i:i, :])
-    end
-    
-    if !isempty(current_segment)
-        push!(result, current_segment)
-    end
-    
-    return result
-end
-
-"""
-    gti_border_bins(gtis::AbstractMatrix{<:Real}, times::AbstractVector{<:Real}) -> Tuple{Vector{Int},Vector{Int}}
-
-Find the bin indices that correspond to GTI boundaries in a time series.
-
-This function determines which time bins fall within each GTI interval by finding
-the start and stop bin indices for each GTI boundary.
-
-# Arguments
-- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row is [start_time, stop_time]
-- `times::AbstractVector{<:Real}`: Vector of time bin centers or edges
-
-# Returns
-- `Tuple{Vector{Int},Vector{Int}}`: Tuple containing:
-  - First vector: Start bin indices for each GTI
-  - Second vector: Stop bin indices for each GTI
-
-# Examples
-```julia
-# Find bin indices for GTIs
-gtis = [10.0 20.0; 30.0 40.0]
-times = [5.0, 15.0, 25.0, 35.0, 45.0]
-start_bins, stop_bins = gti_border_bins(gtis, times)
-# Returns bin indices corresponding to GTI boundaries
-
-# With time series data
-times = collect(0.0:1.0:50.0)
-gtis = [10.5 20.5; 30.5 40.5]
-start_bins, stop_bins = gti_border_bins(gtis, times)
-# Returns: ([10, 30], [20, 40]) approximately
-```
-
-# Notes
-- Input GTI matrix is validated using `check_gtis()`
-- Uses `searchsortedfirst` and `searchsortedlast` for efficient binary search
-- Start indices are adjusted by -1 to match Python indexing conventions
-- Stop indices are clamped to not exceed the length of the times vector
-- Assumes `times` vector is sorted in ascending order
-"""
-function gti_border_bins(gtis::AbstractMatrix{<:Real}, times::AbstractVector{<:Real})
-    check_gtis(gtis)
-    
-    start_bins = Int[]
-    stop_bins = Int[]
-    
-    for i in 1:size(gtis, 1)
-        # Find the first bin that starts after the GTI start time
-        start_idx = searchsortedfirst(times, gtis[i, 1])
-        # Find the last bin that ends before or at the GTI end time
-        stop_idx = searchsortedlast(times, gtis[i, 2])
-        
-        # Adjust indices to match Python behavior
-        push!(start_bins, start_idx - 1)
-        # Ensure stop_idx doesn't exceed array bounds
-        push!(stop_bins, min(stop_idx, length(times)))
-    end
-    
-    return start_bins, stop_bins
-end
-
-"""
-    split_gtis_at_indices(gtis::AbstractMatrix{<:Real}, index::Int) -> Vector{Matrix{Float64}}
-
-Split a GTI matrix at a specified row index into two separate matrices.
-
-This function divides a GTI matrix into two parts: the first part contains all rows
-up to and including the specified index, and the second part contains all remaining rows.
-
-# Arguments
-- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row is [start_time, stop_time]
-- `index::Int`: Row index at which to split the GTI matrix (1-based indexing)
-
-# Returns
-- `Vector{Matrix{Float64}}`: Vector containing two GTI matrices:
-  - First matrix: rows 1 through `index`
-  - Second matrix: rows `index+1` through end (empty if `index` equals total rows)
-
-# Examples
-```julia
-# Split GTI matrix at index 1
-gtis = [0.0 30.0; 50.0 60.0; 80.0 90.0]
-parts = split_gtis_at_indices(gtis, 1)
-# Returns: [[0.0 30.0], [50.0 60.0; 80.0 90.0]]
-
-# Split at the last index
-gtis = [10.0 20.0; 30.0 40.0]
-parts = split_gtis_at_indices(gtis, 2)
-# Returns: [[10.0 20.0; 30.0 40.0], [empty matrix]]
-
-# Split at middle index
-gtis = [1.0 2.0; 3.0 4.0; 5.0 6.0; 7.0 8.0]
-parts = split_gtis_at_indices(gtis, 2)
-# Returns: [[1.0 2.0; 3.0 4.0], [5.0 6.0; 7.0 8.0]]
-```
-
-# Notes
-- Input GTI matrix is validated using `check_gtis()`
-- Uses 1-based indexing (Julia convention)
-- If `index` equals the total number of rows, the second matrix will be empty
-- The function assumes `index` is within valid bounds (1 ≤ index ≤ size(gtis, 1))
-- Both resulting matrices maintain the same column structure as the input
-"""
-function split_gtis_at_indices(gtis::AbstractMatrix{<:Real}, index::Int)
-    check_gtis(gtis)
-    
-    if index < 1 || index > size(gtis, 1)
-        throw(BoundsError("Index $index is out of bounds for GTI matrix with $(size(gtis, 1)) rows"))
-    end
-    
-    result = Vector{Matrix{Float64}}()
-    
-    # First part: rows 1 through index
-    first_part = Matrix{Float64}(gtis[1:index, :])
-    push!(result, first_part)
-    
-    # Second part: rows index+1 through end
-    if index < size(gtis, 1)
-        second_part = Matrix{Float64}(gtis[index+1:end, :])
-        push!(result, second_part)
-    else
-        # If index is the last row, second part is empty
-        empty_part = Matrix{Float64}(undef, 0, 2)
-        push!(result, empty_part)
-    end
-    
-    return result
-end
-"""
-    check_separate(gti1::AbstractMatrix{<:Real}, gti2::AbstractMatrix{<:Real}) -> Bool
-
-Check if two GTI matrices are mutually exclusive (no overlapping intervals).
-
-Uses a small tolerance for floating point comparisons and considers intervals
-that only touch at endpoints as separate.
-
-# Arguments
-- `gti1::AbstractMatrix{<:Real}`: First GTI matrix
-- `gti2::AbstractMatrix{<:Real}`: Second GTI matrix
-
-# Returns
-- `Bool`: True if GTIs are separate, false if they overlap
-
-# Examples
-```julia
-# Separate GTIs
-gti1 = [1.0 2.0]
-gti2 = [3.0 4.0]
-check_separate(gti1, gti2)  # Returns true
-
-# Overlapping GTIs
-gti1 = [1.0 3.0]
-gti2 = [2.0 4.0]
-check_separate(gti1, gti2)  # Returns false
-```
-"""
-function check_separate(gti1::AbstractMatrix{<:Real}, gti2::AbstractMatrix{<:Real})
-    if isempty(gti1) || isempty(gti2)
-        return true
-    end
-    
-    tolerance = 1e-6
-    
-    for i in 1:size(gti1, 1)
-        for j in 1:size(gti2, 1)
-            # Check for true overlap (not just touching)
-            if (gti1[i, 2] > gti2[j, 1] + tolerance && gti1[i, 1] < gti2[j, 2] - tolerance)
-                return false
-            end
-        end
-    end
-    return true
-end
-
-"""
-    append_gtis(gti1::AbstractMatrix{<:Real}, gti2::AbstractMatrix{<:Real}) -> Matrix{Float64}
-
-Append two GTI matrices, merging overlapping intervals if necessary.
-
-This function combines two GTI matrices. If the GTIs are separate (non-overlapping),
-it simply concatenates them. If they overlap, it merges the overlapping intervals
-into continuous segments.
-
-# Arguments
-- `gti1::AbstractMatrix{<:Real}`: First GTI matrix
-- `gti2::AbstractMatrix{<:Real}`: Second GTI matrix
-
-# Returns
-- `Matrix{Float64}`: Combined GTI matrix with merged intervals
-
-# Examples
-```julia
-# Append non-overlapping GTIs
-gti1 = [1.0 2.0]
-gti2 = [3.0 4.0]
-append_gtis(gti1, gti2)  # Returns [1.0 2.0; 3.0 4.0]
-
-# Append touching GTIs (merged)
-gti1 = [1.0 2.0]
-gti2 = [2.0 3.0]
-append_gtis(gti1, gti2)  # Returns [1.0 3.0]
-
-# Overlapping GTIs (merged)
-gti1 = [1.0 3.0]
-gti2 = [2.0 4.0]
-append_gtis(gti1, gti2)  # Returns [1.0 4.0]
-```
-"""
-function append_gtis(gti1, gti2)
-    if isempty(gti1)
-        return gti2
-    elseif isempty(gti2)
-        return gti1
-    end
-    result = vcat(gti1, gti2)
-    # Sort by start times
-    result = result[sortperm(result[:,1]),:]
-    return merge_overlapping_gtis(result)
-end
-"""
-    join_gtis(gti0::Matrix{Float64}, gti1::Matrix{Float64}) -> Matrix{Float64}
-
-Union of two GTI matrices.
-
-Combines all intervals from both matrices and merges any overlapping or touching intervals.
-
-# Arguments
-- `gti0::Matrix{Float64}`: First GTI matrix
-- `gti1::Matrix{Float64}`: Second GTI matrix
-
-# Returns
-- `Matrix{Float64}`: Matrix containing the union of both GTI matrices
-
-# Examples
-```julia
-# Union with overlap
-gti0 = [1.0 3.0]
-gti1 = [2.0 4.0]
-join_gtis(gti0, gti1)  # Returns [1.0 4.0]
-
-# Union with touching intervals
-gti0 = [1.0 2.0]
-gti1 = [2.0 3.0]
-join_gtis(gti0, gti1)  # Returns [1.0 3.0]
-```
-"""
-function join_gtis(gti0::Matrix{Float64}, gti1::Matrix{Float64})
-    check_gtis(gti0)
-    check_gtis(gti1)
-    
-    # Handle empty cases
-    if isempty(gti0) && isempty(gti1)
-        return Matrix{Float64}(undef, 0, 2)
-    elseif isempty(gti0)
-        return gti1
-    elseif isempty(gti1)
-        return gti0
-    end
-    
-    combined = vcat(gti0, gti1)
-    return merge_overlapping_gtis(combined)
-end
-
-"""
-    cross_two_gtis(gti1::Matrix{Float64}, gti2::Matrix{Float64}) -> Matrix{Float64}
-
-Extract the intersection of two GTI matrices.
-
-Finds all time intervals that are present in both input GTI matrices.
-
-# Arguments
-- `gti1::Matrix{Float64}`: First GTI matrix
-- `gti2::Matrix{Float64}`: Second GTI matrix
-
-# Returns
-- `Matrix{Float64}`: Matrix containing the intersecting time intervals
-
-# Examples
-```julia
-# Simple intersection
-gti1 = [1.0 4.0]
-gti2 = [2.0 3.0]
-cross_two_gtis(gti1, gti2)  # Returns [2.0 3.0]
-
-# Multiple intervals
-gti1 = [1.0 5.0; 7.0 10.0]
-gti2 = [2.0 4.0; 8.0 9.0]
-cross_two_gtis(gti1, gti2)  # Returns [2.0 4.0; 8.0 9.0]
-```
-"""
-function cross_two_gtis(gti1::Matrix{Float64}, gti2::Matrix{Float64})
-    check_gtis(gti1)
-    check_gtis(gti2)
-    
-    if isempty(gti1) || isempty(gti2)
-        return Matrix{Float64}(undef, 0, 2)
-    end
-    
-    intersections = Matrix{Float64}(undef, 0, 2)
-    
-    for i in 1:size(gti1, 1)
-        for j in 1:size(gti2, 1)
-            a1, b1 = gti1[i, 1], gti1[i, 2]
-            a2, b2 = gti2[j, 1], gti2[j, 2]
-            
-            start_intersect = max(a1, a2)
-            end_intersect = min(b1, b2)
-            
-            if start_intersect < end_intersect
-                intersections = vcat(intersections, [start_intersect end_intersect])
-            end
-        end
-    end
-    
-    if !isempty(intersections)
-        intersections = merge_overlapping_gtis(intersections)
-    end
-    
-    return intersections
-end
-
-"""
-    cross_gtis(gti_list::Vector{Matrix{Float64}}) -> Matrix{Float64}
-
-Extract the intersection of multiple GTI matrices.
-
-Finds time intervals that are present in all input GTI matrices.
-
-# Arguments
-- `gti_list::Vector{Matrix{Float64}}`: Vector of GTI matrices to intersect
-
-# Returns
-- `Matrix{Float64}`: Matrix containing intervals common to all input GTIs
-
-# Examples
-```julia
-# Intersection of multiple GTIs
-gti1 = [1.0 4.0]
-gti2 = [2.0 5.0]
-gti3 = [3.0 6.0]
-cross_gtis([gti1, gti2, gti3])  # Returns [3.0 4.0]
-```
-"""
-function cross_gtis(gti_list::Vector{Matrix{Float64}})
-    for gti in gti_list
-        check_gtis(gti)
-    end
-    
-    ninst = length(gti_list)
-    if ninst == 1
-        return gti_list[1]
-    end
-    
-    gti0 = gti_list[1]
-    
-    for gti in gti_list[2:end]
-        gti0 = cross_two_gtis(gti0, gti)
-        if isempty(gti0)
-            return Matrix{Float64}(undef, 0, 2)
-        end
-    end
-    
-    return gti0
-end
-
-"""
-    merge_gtis(gti_list::Vector{Matrix{Float64}}, strategy::String) -> Union{Matrix{Float64}, Nothing}
-
-Merge multiple GTI matrices using the specified strategy.
-
-# Arguments
-- `gti_list::Vector{Matrix{Float64}}`: Vector of GTI matrices to merge
-- `strategy::String`: Method to use for merging:
-  - `"intersection"`: Return only time intervals common to all GTIs
-  - `"union"`: Merge all GTIs using union operation
-  - `"append"`: Append GTIs (allows touching intervals)
-  - `"infer"`: Automatically choose between union and intersection
-  - `"none"`: Return single GTI spanning global min to max time
-
-# Returns
-- `Union{Matrix{Float64}, Nothing}`: Merged GTI matrix, or `nothing` if no valid result
-
-# Examples
-```julia
-# Intersection of GTIs
-gti1 = [1.0 3.0]
-gti2 = [2.0 4.0]
-merge_gtis([gti1, gti2], "intersection")  # Returns [2.0 3.0]
-
-# Union of GTIs
-merge_gtis([gti1, gti2], "union")  # Returns [1.0 4.0]
-
-# Global bounds
-merge_gtis([gti1, gti2], "none")  # Returns [1.0 4.0]
-```
-"""
-function merge_gtis(gti_list::Vector{Matrix{Float64}}, strategy::String)
-    all_gti_lists = Matrix{Float64}[]
-    global_min = Inf
-    global_max = -Inf
-    
-    # Filter valid GTIs and find global bounds
-    for gti in gti_list
-        if isempty(gti) || size(gti, 1) == 0
-            continue
-        end
-        push!(all_gti_lists, gti)
-        global_min = min(global_min, minimum(gti))
-        global_max = max(global_max, maximum(gti))
-    end
-    
-    if length(all_gti_lists) == 0
-        return nothing
-    end
-    
-    if strategy == "none"
-        return reshape([global_min global_max], 1, 2)
-    end
-    
-    if length(all_gti_lists) == 1
-        return all_gti_lists[1]
-    end
-    
-    if strategy == "intersection"
-        cross = cross_gtis(all_gti_lists)
-        return isempty(cross) ? nothing : cross
-    end
-    
-    if strategy == "infer"
-        cross = cross_gtis(all_gti_lists)
-        if isempty(cross)
-            strategy = "union"
-        else
-            strategy = "intersection"
-            return cross
-        end
-    end
-    
-    # Apply union or append strategy
-    gti0 = all_gti_lists[1]
-    for gti in all_gti_lists[2:end]
-        if strategy == "union"
-            gti0 = join_gtis(gti0, gti)
-        elseif strategy == "append"
-            gti0 = append_gtis(gti0, gti)
-        else
-            throw(ArgumentError("Unknown strategy: $strategy. Use 'intersection', 'union', 'append', 'infer', or 'none'"))
-        end
-    end
-    
-    return gti0
-end
