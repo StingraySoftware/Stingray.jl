@@ -29,41 +29,69 @@ function contiguous_regions(condition::AbstractVector{Bool})
 end
 #UTIL function used in recpies
 """
-    merge_overlapping_gtis(gtis::Matrix{Float64})::Matrix{Float64}
-   
-Merge overlapping Good Time Intervals (GTIs).
-This function takes a matrix of GTIs, where each row represents a start and stop time,
-and returns a new matrix with non-overlapping GTIs.
-The input matrix `gtis` should have two columns, where the first column is the start time and the second column is the stop time.
-If the input matrix has one or zero rows, it is returned unchanged.
-The function sorts the GTIs by start time, then iterates through them, merging any overlapping intervals.
-The output is a matrix with the same two-column format, containing the merged GTIs.
+    merge_overlapping_gtis(gtis::Matrix{Float64}) -> Matrix{Float64}
+
+Merge overlapping or touching GTI intervals into continuous segments.
+
+Takes a matrix of GTI intervals and combines any that overlap or touch into single
+continuous intervals. The input GTIs are automatically sorted by start time.
+
+# Arguments
+- `gtis::Matrix{Float64}`: Matrix of GTI boundaries where each row is [start_time, stop_time]
+
+# Returns
+- `Matrix{Float64}`: Matrix with merged intervals, sorted by start time
+
+# Examples
+```julia
+# Basic merging
+gtis = [0.0 2.0; 1.0 3.0; 4.0 5.0]
+result = merge_overlapping_gtis(gtis)
+# Returns: [0.0 3.0; 4.0 5.0]
+
+# Touching intervals
+gtis = [0.0 1.0; 1.0 2.0; 2.0 3.0]
+result = merge_overlapping_gtis(gtis)
+# Returns: [0.0 3.0]
+```
 """
-function merge_overlapping_gtis(gtis::Matrix{Float64})::Matrix{Float64}
+function merge_overlapping_gtis(gtis::Matrix{Float64})
     if size(gtis, 1) <= 1
         return gtis
     end
-    sort_indices = sortperm(gtis[:, 1])
+    
+    # Sort by start time
+    sort_indices = sortperm(view(gtis, :, 1))
     sorted_gtis = gtis[sort_indices, :]
     
-    merged = Matrix{Float64}(undef, 0, 2)
+    # Pre-allocate merged array
+    merged = Matrix{Float64}(undef, size(gtis, 1), 2)
+    merged_count = 0
+    
     current_start = sorted_gtis[1, 1]
     current_stop = sorted_gtis[1, 2]
     
     for i in 2:size(sorted_gtis, 1)
         start_time = sorted_gtis[i, 1]
         stop_time = sorted_gtis[i, 2]
-        if start_time <= current_stop + 1e-6  # Small tolerance for floating point
-            # Merge intervals - extend the current stop time
+        
+        # Check if intervals overlap or touch (with small tolerance)
+        if start_time <= current_stop + 1e-6
             current_stop = max(current_stop, stop_time)
         else
-            merged = vcat(merged, [current_start current_stop])
+            # No overlap, add current interval to merged
+            merged_count += 1
+            merged[merged_count, 1] = current_start
+            merged[merged_count, 2] = current_stop
             current_start = start_time
             current_stop = stop_time
         end
     end
     
-    merged = vcat(merged, [current_start current_stop])
+    # Add the final interval
+    merged_count += 1
+    merged[merged_count, 1] = current_start
+    merged[merged_count, 2] = current_stop
     
-    return merged
+    return merged[1:merged_count, :]
 end
