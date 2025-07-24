@@ -698,12 +698,6 @@ function create_lightcurve(
     !(err_method in [:poisson, :gaussian]) && throw(ArgumentError(
         "Unsupported error method: $err_method. Use :poisson or :gaussian"
     ))
-    
-    # Check GTI availability
-    if !has_gti(eventlist)
-        @warn "No GTI information available in EventList"
-    end
-    
     binsize_t = convert(T, binsize)
     
     # Apply filters to get filtered times and energies
@@ -728,7 +722,7 @@ function create_lightcurve(
     dt, bin_centers = create_time_bins(start_time, stop_time, binsize_t)
     counts = bin_events(filtered_times, dt)
     
-    @info "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
+    @debug "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
     
     # Calculate exposure and properties
     exposure = fill(binsize_t, length(bin_centers))
@@ -751,7 +745,7 @@ function create_lightcurve(
     
     # Add debug info about GTI
     if has_gti(eventlist)
-        @info "GTI information preserved" n_intervals=size(eventlist.meta.gti, 1) time_range=extrema(eventlist.meta.gti)
+        @debug "GTI information preserved" n_intervals=size(eventlist.meta.gti, 1) time_range=extrema(eventlist.meta.gti)
     end
     
     return lc

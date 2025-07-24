@@ -290,7 +290,7 @@ gti_info(ev)
 
 # Notes
 - Issues a warning if no GTI information is available
-- Information is logged using the `@info` macro for structured output
+- Information is logged using the `@debug` macro for structured output
 """
 function gti_info(ev::EventList)
     if !has_gti(ev)
@@ -806,10 +806,9 @@ function readevents(
             gti_hdu_candidates, gti_hdu_indices, combine_gtis)
         
         if !isnothing(gti_data)
-            println("Found GTI data: $(size(gti_data, 1)) intervals")
-            println("GTI time range: $(minimum(gti_data)) to $(maximum(gti_data))")
+            @debug "Found GTI data" n_intervals=size(gti_data, 1) time_range=(minimum(gti_data), maximum(gti_data))
         else
-            println("No GTI data found")
+            @debug "No GTI data found"
         end
     end
 

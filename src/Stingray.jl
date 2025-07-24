@@ -77,7 +77,7 @@ export check_gtis
 export split_by_gtis
 
 include("powerspectrum.jl")
-export PowerSpectrum
+export Powerspectrum
 export AveragedPowerspectrum
 
 end
