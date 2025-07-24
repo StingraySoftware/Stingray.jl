@@ -16,3 +16,6 @@ end
 @testset "lightcurve" begin
     include("test_lightcurve.jl")
 end
+@testset "Powerspectrum" begin
+    include("test_powerspectrum.jl")
+end
