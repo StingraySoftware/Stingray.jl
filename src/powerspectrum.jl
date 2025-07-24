@@ -209,7 +209,7 @@ function AveragedPowerspectrum(lc::LightCurve{T}, segment_size::Real;
         throw(ArgumentError("No GTI information found in metadata"))
     end
     
-    @info "Processing light curve" total_bins=length(lc.counts) segment_size=segment_size bins_per_segment=n_bins_per_segment gti_shape=size(gtis)
+    # @debug "Processing light curve" total_bins=length(lc.counts) segment_size=segment_size bins_per_segment=n_bins_per_segment gti_shape=size(gtis)
     
     # Use the appropriate generator based on whether data is binned
     segment_generator = generate_indices_of_segment_boundaries_binned(
@@ -267,7 +267,7 @@ function AveragedPowerspectrum(lc::LightCurve{T}, segment_size::Real;
         @debug "Processed segment" start_time stop_time n_counts=segment_sum mean_rate=segment_sum/segment_size
     end
     
-    @info "Segment processing complete" segments_used=n_segments_used
+    # @debug "Segment processing complete" segments_used=n_segments_used
     
     if n_segments_used == 0
         throw(ArgumentError("No valid segments found"))
@@ -378,7 +378,7 @@ function AveragedPowerspectrum(events::EventList{Vector{T}, M}, segment_size::Re
     
     n_bins_per_segment = round(Int, segment_size / dt)
     
-    @info "Segment parameters" segment_size dt n_bins_per_segment expected_duration=n_bins_per_segment*dt
+    # @debug "Segment parameters" segment_size dt n_bins_per_segment expected_duration=n_bins_per_segment*dt
     
     # Get GTIs from metadata
     gtis = if has_gti(events)
@@ -389,7 +389,7 @@ function AveragedPowerspectrum(events::EventList{Vector{T}, M}, segment_size::Re
         reshape([time_span[1], time_span[2]], 1, 2)
     end
     
-    @info "Processing EventList" total_events=length(events) segment_size=segment_size dt=dt bins_per_segment=n_bins_per_segment gti_shape=size(gtis)
+    # @debug "Processing EventList" total_events=length(events) segment_size=segment_size dt=dt bins_per_segment=n_bins_per_segment gti_shape=size(gtis)
     
     # Use unbinned segment generator for events
     segment_generator = generate_indices_of_segment_boundaries_unbinned(
@@ -478,7 +478,7 @@ function AveragedPowerspectrum(events::EventList{Vector{T}, M}, segment_size::Re
         end
     end
     
-    @info "Segment processing complete" segments_used=n_segments_used
+    # @debug "Segment processing complete" segments_used=n_segments_used
     
     if n_segments_used == 0
         throw(ArgumentError("No valid segments found"))

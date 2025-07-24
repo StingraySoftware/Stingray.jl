@@ -37,7 +37,12 @@ export FITSMetadata,
     read_energy_column,
     readevents,
     summary,
-    filter_on!
+    filter_on!,
+    read_gti_from_fits,
+    gti_info,
+    gti_exposure,
+    gti,
+    has_gti
 
 include("lightcurve.jl")
 export AbstractLightCurve,
@@ -72,7 +77,7 @@ export check_gtis
 export split_by_gtis
 
 include("powerspectrum.jl")
-export PowerSpectrum
+export Powerspectrum
 export AveragedPowerspectrum
 
 end
