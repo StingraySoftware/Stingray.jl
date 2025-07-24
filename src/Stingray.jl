@@ -71,4 +71,8 @@ export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
 
+include("powerspectrum.jl")
+export PowerSpectrum
+export AveragedPowerspectrum
+
 end
