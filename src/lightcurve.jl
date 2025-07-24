@@ -605,15 +605,22 @@ function extract_metadata(eventlist::EventList, start_time, stop_time, binsize, 
         n_filtered_events  # Assume it's already a count
     end
     
+    # Create extra metadata with GTI information[storing purpose]
     extra_metadata = Dict{String,Any}(
         "filtered_nevents" => n_events,
         "total_nevents" => length(eventlist.times),
         "energy_filter" => energy_filter,
-        "binning_method" => "histogram"
+        "binning_method" => "histogram",
+        "gti" => eventlist.meta.gti  #GTI information[this 'eventlist.meta.gti' need to bw rembered since it is the one where u will all gti information:)]
     )
     
     if hasfield(typeof(eventlist.meta), :extra)
         merge!(extra_metadata, eventlist.meta.extra)
+    end
+    
+    # Add GTI source information if available
+    if !isnothing(eventlist.meta.gti_source)
+        extra_metadata["gti_source"] = eventlist.meta.gti_source
     end
     
     return LightCurveMetadata(
@@ -692,6 +699,11 @@ function create_lightcurve(
         "Unsupported error method: $err_method. Use :poisson or :gaussian"
     ))
     
+    # Check GTI availability
+    if !has_gti(eventlist)
+        @warn "No GTI information available in EventList"
+    end
+    
     binsize_t = convert(T, binsize)
     
     # Apply filters to get filtered times and energies
@@ -722,11 +734,11 @@ function create_lightcurve(
     exposure = fill(binsize_t, length(bin_centers))
     properties = calculate_event_properties(filtered_times, filtered_energies, dt, bin_centers)
     
-    # Extract metadata - use filtered time range if time filtering was applied
+    # Extract metadata with GTI information
     actual_start = !isnothing(tstart) ? T(tstart) : start_time
     actual_stop = !isnothing(tstop) ? T(tstop) : stop_time
     metadata = extract_metadata(eventlist, actual_start, actual_stop, binsize_t, 
-                               length(filtered_times), energy_filter)
+                              length(filtered_times), energy_filter)
     
     # Create light curve (errors will be calculated when needed)
     lc = LightCurve{T}(
@@ -736,6 +748,11 @@ function create_lightcurve(
     
     # Calculate initial errors
     calculate_errors!(lc)
+    
+    # Add debug info about GTI
+    if has_gti(eventlist)
+        @info "GTI information preserved" n_intervals=size(eventlist.meta.gti, 1) time_range=extrema(eventlist.meta.gti)
+    end
     
     return lc
 end
