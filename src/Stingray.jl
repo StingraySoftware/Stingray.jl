@@ -77,7 +77,7 @@ export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
 
-include("recipes.jl")
+include("plotting/plots_recipes_lightcurve.jl")
 export create_segments
 
 end

@@ -19,5 +19,5 @@ end
 end
 
 @testset "recipes" begin
-    include("test_recipes.jl")
+    include("test_plotting/test_plots_recipes_lightcurve.jl")
 end
