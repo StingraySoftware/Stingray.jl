@@ -2,13 +2,18 @@
 function create_test_eventlist(times::Vector{Float64}, energies::Union{Vector{Float64}, Nothing}=nothing)
     mock_headers = Dict{String,Any}()
     mock_metadata = FITSMetadata(
-        "", 1, "keV",
-        Dict{String,Vector}(),
-        mock_headers
+        "",  # filepath
+        1,   # hdu
+        "keV",  # energy_units
+        Dict{String,Vector}(),  # extra_columns
+        mock_headers,  # headers
+        nothing,       # gti
+        nothing        # gti_source
     )
     
     return EventList(times, energies, mock_metadata)
 end
+
 # Helper function to create mock LightCurve for testing
 function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt::Float64=1.0)
     metadata = LightCurveMetadata(
@@ -24,10 +29,12 @@ function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt:
         metadata, :poisson
     )
 end
+
 # Helper function to create EventProperty
 function create_event_property(name::String, values::Vector{Float64}, unit::String="")
     return EventProperty{Float64}(Symbol(name), values, unit)
 end
+
 # Helper functions for common test data
 function get_basic_times()
     return [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
@@ -260,7 +267,6 @@ let
     @test start_bins == [0, 1, 2, 3, 6]
     @test stop_bins == [2, 3, 4, 5, 8]
 end
-
 # EventList GTI Tests - Basic functionality
 let
     times = get_basic_times()
@@ -455,12 +461,16 @@ let
     
     mock_headers = Dict{String,Any}()
     mock_metadata = FITSMetadata(
-        "", 1, "keV",
-        Dict{String,Vector}(
+        "",  # filepath
+        1,   # hdu
+        "keV",  # energy_units
+        Dict{String,Vector}(  # extra_columns
             "pi_channel" => [100, 200, 300, 400],
             "detector_id" => [1, 2, 1, 2]
         ),
-        mock_headers
+        mock_headers,  # headers
+        nothing,       # gti
+        nothing        # gti_source
     )
     
     el = EventList(times, energies, mock_metadata)
@@ -524,4 +534,166 @@ let
     
     @test size(btis) == (1, 2)
     @test btis ≈ [1.0 9.0]
+end
+# Edge case where GTIs just touch (no overlap)
+let
+    gti1 = [2 3]
+    gti2 = [3 4]
+    newgti = operations_on_gtis([gti1, gti2], intersect)
+    @test isempty(newgti)
+    
+    gti3 = [3 5]
+    newgti = operations_on_gtis([gti1, gti2, gti3], intersect)
+    @test isempty(newgti)
+end
+
+# One GTI completely contains others
+let
+    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
+    gti2 = [0.5 14]
+    newgti0 = operations_on_gtis([gti1, gti2], intersect)
+    newgti1 = operations_on_gtis([gti2, gti1], intersect)
+    
+    @test newgti0 == gti1
+    @test newgti1 == gti1
+end
+
+# Partial overlap scenarios
+let
+    gti1 = [1.5 12.5]
+    gti2 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
+    newgti0 = operations_on_gtis([gti1, gti2], intersect)
+    newgti1 = operations_on_gtis([gti2, gti1], intersect)
+    
+    expected = [[1.5 2]; [4 5]; [7 10]; [11 11.2]; [12.2 12.5];]
+    @test newgti0 == expected
+    @test newgti1 == expected
+end
+
+# Complex overlapping scenario
+let
+    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
+    gti2 = [[0.5 3]; [4.5 4.7]; [10 14];]
+    newgti0 = operations_on_gtis([gti1, gti2], intersect)
+    newgti1 = operations_on_gtis([gti2, gti1], intersect)
+    
+    expected = [[1 2]; [4.5 4.7]; [11 11.2]; [12.2 13.2];]
+    @test newgti0 == expected
+    @test newgti1 == expected
+end
+
+# GTIs that fill gaps between others
+let
+    gti0 = [[0 1]; [2 3]; [4 8];]
+    gti1 = [[1 2]; [3 4];]
+    result = operations_on_gtis([gti0, gti1], union)
+    @test result == [0 8]
+end
+
+# check_gtis function tests
+let
+    @test_throws ArgumentError check_gtis(reshape(Float64[], 0, 2))
+end
+
+# create_gti_mask function tests
+let
+    arr = [0, 1, 2, 3, 4, 5, 6]
+    gti = reshape(Float64[], 0, 2)
+    @test_throws ArgumentError create_gti_mask(arr, gti)
+end
+
+# bin_intervals_from_gtis error cases
+let
+    @test_throws ArgumentError bin_intervals_from_gtis([[0 400];], 128, [500, 501])
+    @test_throws ArgumentError bin_intervals_from_gtis([[1000 1400];], 128, [500, 501])
+end
+
+# Edge cases for create_gti_mask
+let
+    arr = [0.5, 1.5, 2.5, 3.5]
+    gti = [0 4]
+    mask, new_gti = create_gti_mask(arr, gti)
+    @test all(mask)
+    @test new_gti == gti
+end
+
+#operations_on_gtis with empty GTI handling
+let
+    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
+    empty_gti = reshape(Float64[], 0, 2)
+    
+    result = operations_on_gtis([gti1, empty_gti], intersect)
+    @test size(result) == (0, 2)
+    @test result isa Matrix{Float64}
+    
+    result = operations_on_gtis([gti1, empty_gti], union)
+    @test result == gti1
+end
+
+#Test operations with multiple empty GTIs
+let
+    empty_gti1 = reshape(Float64[], 0, 2)
+    empty_gti2 = reshape(Float64[], 0, 2)
+    
+    result = operations_on_gtis([empty_gti1, empty_gti2], union)
+    @test size(result) == (0, 2)
+    @test result isa Matrix{Float64}
+    
+    result = operations_on_gtis([empty_gti1, empty_gti2], intersect)
+    @test size(result) == (0, 2)
+    @test result isa Matrix{Float64}
+end
+
+# GTI length calculation edge cases
+let
+    tiny_gtis = [[1.0 1.0000001]; [2.0 2.0000001];]
+    total_length = get_total_gti_length(tiny_gtis)
+    @test total_length ≈ 2e-7
+end
+
+# BTI calculation tests - Empty GTIs
+let
+    empty_gti = reshape(Float64[], 0, 2)
+    @test_throws ArgumentError get_btis(empty_gti)
+    
+    # Test with explicit start/stop times
+    btis = get_btis(empty_gti, 0.0, 10.0)
+    @test btis == [0.0 10.0]
+end
+
+# BTI calculation tests - Single GTI
+let
+    gti = [2.0 8.0]
+    btis = get_btis(gti, 0.0, 10.0)
+    expected = [[0.0 2.0]; [8.0 10.0];]
+    @test btis == expected
+end
+
+# BTI calculation tests - Multiple GTIs
+let
+    gtis = [[1.0 3.0]; [5.0 7.0]; [9.0 9.5];]
+    btis = get_btis(gtis, 0.0, 10.0)
+    expected = [[0.0 1.0]; [3.0 5.0]; [7.0 9.0]; [9.5 10.0];]
+    @test btis == expected
+end
+
+# BTI calculation tests - No BTIs (complete coverage)
+let
+    gtis = [0.0 10.0]
+    btis = get_btis(gtis, 0.0, 10.0)
+    @test size(btis) == (0, 2)
+end
+
+# GTI operations - Union of touching intervals
+let
+    gti1 = [1.0 3.0]
+    gti2 = [3.0 5.0]
+    result = operations_on_gtis([gti1, gti2], union)
+    @test result == [1.0 5.0]
+end
+let
+    gti1 = [1.0 2.0]
+    gti2 = [3.0 4.0]
+    result = operations_on_gtis([gti1, gti2], intersect)
+    @test size(result) == (0, 2)
 end
