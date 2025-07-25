@@ -107,12 +107,14 @@ function create_mock_eventlist(times, energies = nothing)
         "MJDREF" => 0.0,
     )
     
-    dummy_meta = FITSMetadata{Dict{String,Any}}(
-        "test.fits",
-        1,
-        "keV",
-        Dict{String,Vector}(),
-        headers,
+    dummy_meta = FITSMetadata(
+        "",  # filepath
+        1,   # hdu
+        "keV",  # energy_units
+        Dict{String,Vector}(),  # extra_columns
+        headers,  # headers
+        nothing,       # gti
+        nothing        # gti_source
     )
     
     return EventList{typeof(times),typeof(dummy_meta)}(
@@ -186,11 +188,13 @@ function create_mock_eventlist_meta(
     )
     
     meta = FITSMetadata(
-        "",
-        1,
-        nothing,
-        Dict{String,Vector}(),
-        test_headers,
+        "",  # filepath
+        1,   # hdu
+        "keV",  # energy_units
+        Dict{String,Vector}(),  # extra_columns
+        test_headers,  # headers
+        nothing,       # gti
+        nothing        # gti_source
     )
     
     return EventList(times, energies, meta)
