@@ -495,6 +495,77 @@ function apply_filters(
     
     return filtered_times, filtered_energies, start_t, stop_t
 end
+"""
+    apply_filters(times, energies, tstart, tstop, energy_filter)
+
+Basic event filtering without GTI consideration.
+
+# Arguments
+- `times::AbstractVector{T}`: Event arrival times
+- `energies::Union{Nothing,AbstractVector{T}}`: Event energies (optional)
+- `tstart::Union{Nothing,Real}`: Start time filter (inclusive)
+- `tstop::Union{Nothing,Real}`: Stop time filter (inclusive)
+- `energy_filter::Union{Nothing,Tuple{Real,Real}}`: Energy range (emin, emax)
+
+# Returns
+`Tuple{Vector, Union{Nothing,Vector}, Real, Real}`: 
+- Filtered times
+- Filtered energies (if provided)
+- Actual start time
+- Actual stop time
+
+# Examples
+```julia
+# Time filtering only
+filtered_times, _, start_t, stop_t = apply_filters(times, nothing, 1000.0, 2000.0, nothing)
+
+# Energy and time filtering
+filtered_times, filtered_energies, start_t, stop_t = apply_filters(
+    times, energies, 1000.0, 2000.0, (0.5, 10.0)
+)
+Notes
+- Energy filter is applied as: emin ≤ energy < emax
+- Time filter is applied as: tstart ≤ time ≤ tstop
+"""
+function apply_filters(
+    times::AbstractVector{T},
+    energies::Union{Nothing,AbstractVector{T}},
+    eventlist::EventList,
+    tstart::Union{Nothing,Real},
+    tstop::Union{Nothing,Real},
+    energy_filter::Union{Nothing,Tuple{Real,Real}},
+    binsize::Real
+) where T
+    mask = trues(length(times))
+    
+    # Apply energy filter
+    if !isnothing(energy_filter) && !isnothing(energies)
+        emin, emax = energy_filter
+        mask = mask .& (energies .>= emin) .& (energies .< emax)
+    end
+    
+    # Apply time filters
+    if !isnothing(tstart)
+        mask = mask .& (times .>= tstart)
+    end
+    if !isnothing(tstop)
+        mask = mask .& (times .<= tstop)
+    end
+    # If GTI is present, apply GTI mask
+    if has_gti(eventlist)
+        gti_mask, _ = create_gti_mask(times, eventlist.meta.gti, dt=binsize)
+        mask = mask .& gti_mask
+    end
+    
+    !any(mask) && throw(ArgumentError("No events remain after applying filters"))
+    
+    filtered_times = times[mask]
+    filtered_energies = isnothing(energies) ? nothing : energies[mask]
+    start_t = isnothing(tstart) ? minimum(filtered_times) : tstart
+    stop_t = isnothing(tstop) ? maximum(filtered_times) : tstop
+    
+    return filtered_times, filtered_energies, start_t, stop_t
+end
 
 """
     calculate_event_properties(times, energies, dt, bin_centers) -> Vector{EventProperty}
@@ -700,19 +771,18 @@ function create_lightcurve(
     ))
     binsize_t = convert(T, binsize)
     
-    # Apply filters to get filtered times and energies
+
     filtered_times, filtered_energies, start_t, stop_t = apply_filters(
         eventlist.times,
         eventlist.energies,
+        eventlist,
         tstart,
         tstop,
-        energy_filter
+        energy_filter,
+        binsize_t
     )
     
-    # Check if we have any events left after filtering
-    if isempty(filtered_times)
-        throw(ArgumentError("No events remain after filtering"))
-    end
+    isempty(filtered_times) && throw(ArgumentError("No events remain after filtering"))
     
     # Determine time range
     start_time = minimum(filtered_times)

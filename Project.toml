@@ -1,6 +1,6 @@
 name = "Stingray"
 uuid = "2045e982-6adb-4e09-8364-0d2cc8a3fe4f"
-authors = ["Aman Pandey"]
+authors = ["Aman Pandey","Kashish Shrivastav"]
 version = "0.1.0"
 
 [deps]

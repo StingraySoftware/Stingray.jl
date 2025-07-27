@@ -13,6 +13,7 @@ export poisson_level
 export normalize_abs
 export normalize_frac
 export normalize_leahy_from_variance
+export normalize_leahy_poisson
 export normalize_periodograms
 export bias_term
 export raw_coherence

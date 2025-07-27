@@ -192,28 +192,18 @@ function AveragedPowerspectrum(lc::LightCurve{T}, segment_size::Real;
 
     bin_size = lc.metadata.bin_size
     n_bins_per_segment = round(Int, segment_size / bin_size)
-    
-    # Input validation
-    if n_bins_per_segment <= 1
-        throw(ArgumentError("Segment size too small"))
-    end
-    
+
     # Get GTIs from metadata
     gtis = if hasfield(typeof(lc.metadata), :gti) && !isnothing(lc.metadata.gti)
         lc.metadata.gti
     elseif haskey(lc.metadata.extra, "gti")
         lc.metadata.extra["gti"]
-    elseif haskey(lc.metadata.extra, "GTI")
-        lc.metadata.extra["GTI"]
     else
         throw(ArgumentError("No GTI information found in metadata"))
     end
-    
-    # @debug "Processing light curve" total_bins=length(lc.counts) segment_size=segment_size bins_per_segment=n_bins_per_segment gti_shape=size(gtis)
-    
-    # Use the appropriate generator based on whether data is binned
-    segment_generator = generate_indices_of_segment_boundaries_binned(
-        lc.time, gtis, segment_size, dt=bin_size
+    # UNBINNED segmentation like events method
+    segment_generator = generate_indices_of_segment_boundaries_unbinned(
+        lc.time, gtis, segment_size
     )
     
     # Initialize arrays
@@ -226,22 +216,30 @@ function AveragedPowerspectrum(lc::LightCurve{T}, segment_size::Real;
     total_counts = 0
     n_segments_used = 0
     
-    # Process each segment using the generator
+    # Process each segment
     for (start_time, stop_time, start_idx, stop_idx) in segment_generator
-        # Verify segment length
-        segment_length = stop_idx - start_idx
-        if segment_length != n_bins_per_segment
-            @debug "Skipping segment: wrong length" segment_length n_bins_per_segment
+        
+        # Find corresponding light curve bins
+        bin_mask = (lc.time .>= start_time) .& (lc.time .< stop_time)
+        segment_counts = lc.counts[bin_mask]
+        
+        actual_length = length(segment_counts)
+        
+        if actual_length < n_bins_per_segment * 0.8
             continue
+        elseif actual_length > n_bins_per_segment
+            # Truncate if too long
+            segment_counts = segment_counts[1:n_bins_per_segment]
+        elseif actual_length < n_bins_per_segment
+            # Pad with zeros if too short (but still above threshold)
+            padded_counts = zeros(Int, n_bins_per_segment)
+            padded_counts[1:actual_length] .= segment_counts
+            segment_counts = padded_counts
         end
         
-        # Extract segment data
-        segment_counts = @view lc.counts[start_idx+1:stop_idx]
-        
-        # Skip if zero counts
         segment_sum = sum(segment_counts)
         if segment_sum == 0
-            @debug "Skipping segment: zero counts" start_time stop_time
+            @debug "Skipping segment: zero counts"
             continue
         end
         
@@ -249,7 +247,7 @@ function AveragedPowerspectrum(lc::LightCurve{T}, segment_size::Real;
         ft = fft(segment_counts)
         unnorm_power = abs2.(ft[pos_freq_idx])
         
-        # Normalize power using functions from Fourier.jl
+        # Normalize power
         power = normalize_periodograms(
             unnorm_power,
             bin_size,
@@ -267,7 +265,7 @@ function AveragedPowerspectrum(lc::LightCurve{T}, segment_size::Real;
         @debug "Processed segment" start_time stop_time n_counts=segment_sum mean_rate=segment_sum/segment_size
     end
     
-    # @debug "Segment processing complete" segments_used=n_segments_used
+    @debug "Segment processing complete" segments_used=n_segments_used
     
     if n_segments_used == 0
         throw(ArgumentError("No valid segments found"))
@@ -277,7 +275,7 @@ function AveragedPowerspectrum(lc::LightCurve{T}, segment_size::Real;
     avg_power = total_power ./ n_segments_used
     mean_rate = total_counts / (n_segments_used * segment_size)
     
-    # Calculate errors using functions from Fourier.jl
+    # Calculate errors
     power_err = if norm == "leahy"
         fill(2.0, length(avg_power))
     elseif norm in ["frac", "rms"]
@@ -322,18 +320,216 @@ events = readevents("data.fits")
 ps = Powerspectrum(events, norm="leahy", dt=0.1)
 ```
 """
-function Powerspectrum(events::EventList{Vector{T}, M}; norm::String="frac", dt::Real=1.0) where {T<:Real, M}
+function Powerspectrum(events::EventList{Vector{T}, M}, 
+                                dt::Real, 
+                                segment_size::Real; 
+                                norm::String="leahy") where {T<:Real, M}
+    
     # Input validation
     length(events) > 1 || throw(ArgumentError("EventList must have more than 1 event"))
     dt > 0 || throw(ArgumentError("Bin size must be positive"))
+    segment_size > dt || throw(ArgumentError("Segment size must be larger than bin size"))
     
-    # Create light curve from events using your existing function
-    lc = create_lightcurve(events, dt)
+    n_bins_per_segment = round(Int, segment_size / dt)
     
-    # Use existing LightCurve method
-    return Powerspectrum(lc; norm=norm)
+    # Get GTIs from events metadata
+    gtis = if has_gti(events)
+        events.meta.gti
+    else
+        # Create single GTI spanning the entire observation
+        time_span = extrema(events.times)
+        reshape([time_span[1], time_span[2]], 1, 2)
+    end
+    
+    @debug "Direct events processing" total_events=length(events) segment_size=segment_size dt=dt bins_per_segment=n_bins_per_segment
+    
+    # Use unbinned segment generator - this preserves exact event timing
+    segment_generator = generate_indices_of_segment_boundaries_unbinned(
+        events.times, gtis, segment_size
+    )
+    
+    # Initialize frequency arrays
+    freqs = fftfreq(n_bins_per_segment, 1/dt)
+    pos_freq_idx = positive_fft_bins(n_bins_per_segment; include_zero=false)
+    freqs = freqs[pos_freq_idx]
+    df = freqs[2] - freqs[1]
+    
+    # Initialize accumulators
+    total_power = zeros(T, length(pos_freq_idx))
+    total_counts = 0
+    n_segments_used = 0
+    
+    # Process each segment
+    for (start_time, stop_time, start_idx, stop_idx) in segment_generator
+        
+        # Extract events in this segment - preserve exact timing
+        segment_event_times = if start_idx <= stop_idx && start_idx > 0 && stop_idx <= length(events.times)
+            @view events.times[start_idx:stop_idx]
+        else
+            # Fallback to time-based filtering for edge cases
+            filter(t -> start_time <= t < stop_time, events.times)
+        end
+        
+        # Skip segments with too few events
+        if length(segment_event_times) < 2
+            @debug "Skipping segment: too few events" start_time stop_time n_events=length(segment_event_times)
+            continue
+        end
+        
+        # Create time grid for this segment
+        time_grid = range(start_time, stop=stop_time, length=n_bins_per_segment+1)
+        bin_centers = (time_grid[1:end-1] + time_grid[2:end]) / 2
+        
+        # Bin events directly without creating LightCurve object
+        # This preserves more control over the binning process
+        counts = zeros(Int, n_bins_per_segment)
+        
+        for event_time in segment_event_times
+            # Find which bin this event belongs to
+            bin_idx = searchsortedfirst(time_grid, event_time)
+            if 1 <= bin_idx <= n_bins_per_segment
+                counts[bin_idx] += 1
+            end
+        end
+        
+        segment_total_counts = sum(counts)
+        
+        # Skip if no counts in this segment
+        if segment_total_counts == 0
+            @debug "Skipping segment: zero counts after binning" start_time stop_time
+            continue
+        end
+        
+        # Calculate FFT directly on counts
+        ft = fft(counts)
+        unnorm_power = abs2.(ft[pos_freq_idx])
+        
+        # Normalize using your existing function
+        power = normalize_periodograms(
+            unnorm_power,
+            dt,
+            n_bins_per_segment;
+            mean_flux = mean(counts),
+            n_ph = segment_total_counts,
+            norm = norm,
+            power_type = "all"
+        )
+        
+        # Accumulate results
+        total_power .+= power
+        total_counts += segment_total_counts
+        n_segments_used += 1
+        
+        @debug "Processed segment directly" start_time stop_time n_events=length(segment_event_times) n_counts=segment_total_counts mean_rate=segment_total_counts/segment_size
+    end
+    
+    @debug "Direct processing complete" segments_used=n_segments_used total_counts=total_counts
+    
+    if n_segments_used == 0
+        throw(ArgumentError("No valid segments found"))
+    end
+    
+    # Calculate final averaged results
+    avg_power = total_power ./ n_segments_used
+    mean_rate = total_counts / (n_segments_used * segment_size)
+    
+    # Calculate errors based on normalization
+    power_err = if norm == "leahy"
+        fill(2.0, length(avg_power))
+    elseif norm in ["frac", "rms"]
+        avg_power ./ sqrt(n_segments_used)
+    else
+        sqrt.(avg_power ./ n_segments_used)
+    end
+    
+    # Create metadata preserving original event information
+    result_metadata = create_powerspectrum_metadata(events, dt, segment_size)
+    
+    return AveragedPowerspectrum{T}(
+        freqs,
+        avg_power,
+        power_err,
+        norm,
+        df,
+        segment_size,
+        total_counts,
+        n_segments_used,
+        mean_rate,
+        length(freqs),
+        result_metadata
+    )
 end
 
+"""
+    create_powerspectrum_metadata(events::EventList, dt::Real, segment_size::Real) -> LightCurveMetadata
+
+Create metadata for power spectrum analysis results from EventList.
+
+Extracts FITS header information and creates metadata structure documenting
+the power spectrum analysis parameters and data provenance.
+
+# Arguments
+- `events::EventList`: Source event data with FITS headers
+- `dt::Real`: Time bin size used in analysis (seconds)
+- `segment_size::Real`: Segment duration for averaging (seconds)
+
+# Returns
+`LightCurveMetadata`: Metadata with analysis parameters and GTI information
+
+# Examples
+```julia
+metadata = create_powerspectrum_metadata(events, 0.1, 1024.0)
+"""
+function create_powerspectrum_metadata(events::EventList, dt::Real, segment_size::Real)
+    headers = events.meta.headers
+    telescope = try
+        get(headers, "TELESCOP", "")
+    catch
+        haskey(headers, "TELESCOP") ? headers["TELESCOP"] : ""
+    end
+    
+    instrument = try
+        get(headers, "INSTRUME", "")
+    catch
+        haskey(headers, "INSTRUME") ? headers["INSTRUME"] : ""
+    end
+    
+    object_name = try
+        get(headers, "OBJECT", "")
+    catch
+        haskey(headers, "OBJECT") ? headers["OBJECT"] : ""
+    end
+    
+    mjdref = try
+        get(headers, "MJDREF", 0.0)
+    catch
+        haskey(headers, "MJDREF") ? headers["MJDREF"] : 0.0
+    end
+    
+    # Get GTIs
+    gtis = has_gti(events) ? events.meta.gti : reshape([minimum(events.times), maximum(events.times)], 1, 2)
+    
+    return LightCurveMetadata(
+        telescope,
+        instrument,
+        object_name,
+        mjdref,
+        (minimum(events.times), maximum(events.times)),
+        Float64(dt),
+        [Dict{String,Any}("TELESCOP" => telescope, "INSTRUME" => instrument, "OBJECT" => object_name, "MJDREF" => mjdref)],
+        Dict(
+            "analysis_method" => "direct_events_processing",
+            "original_file" => events.meta.filepath,
+            "original_hdu" => events.meta.hdu,
+            "energy_units" => events.meta.energy_units,
+            "n_original_events" => length(events),
+            "segment_size" => segment_size,
+            "time_resolution" => dt,
+            "gti" => gtis,
+            "original_fits_header" => headers
+        )
+    )
+end
 """
     AveragedPowerspectrum(events::EventList{Vector{T}, M}, segment_size::Real; 
                          norm::String="frac", dt::Real=1.0, 
@@ -378,7 +574,7 @@ function AveragedPowerspectrum(events::EventList{Vector{T}, M}, segment_size::Re
     
     n_bins_per_segment = round(Int, segment_size / dt)
     
-    # @debug "Segment parameters" segment_size dt n_bins_per_segment expected_duration=n_bins_per_segment*dt
+    @debug "Segment parameters" segment_size dt n_bins_per_segment expected_duration=n_bins_per_segment*dt
     
     # Get GTIs from metadata
     gtis = if has_gti(events)
@@ -389,9 +585,9 @@ function AveragedPowerspectrum(events::EventList{Vector{T}, M}, segment_size::Re
         reshape([time_span[1], time_span[2]], 1, 2)
     end
     
-    # @debug "Processing EventList" total_events=length(events) segment_size=segment_size dt=dt bins_per_segment=n_bins_per_segment gti_shape=size(gtis)
+    @debug "Processing EventList" total_events=length(events) segment_size=segment_size dt=dt bins_per_segment=n_bins_per_segment gti_shape=size(gtis)
     
-    # Use unbinned segment generator for events
+    # unbinned segment generator for events
     segment_generator = generate_indices_of_segment_boundaries_unbinned(
         events.times, gtis, segment_size
     )
@@ -478,7 +674,7 @@ function AveragedPowerspectrum(events::EventList{Vector{T}, M}, segment_size::Re
         end
     end
     
-    # @debug "Segment processing complete" segments_used=n_segments_used
+    @debug "Segment processing complete" segments_used=n_segments_used
     
     if n_segments_used == 0
         throw(ArgumentError("No valid segments found"))
