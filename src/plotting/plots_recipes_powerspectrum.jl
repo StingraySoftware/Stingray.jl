@@ -14,11 +14,12 @@ Recipe for plotting power spectra with comprehensive customization options.
 - `drawstyle=:steppost`: Plot drawing style
 - `subtract_noise=false`: Remove noise level from power
 - `error_alpha=0.3`: Transparency for error bars
+- `axis_limits=nothing`: Axis limits as [xmin, xmax] or [xmin, xmax, ymin, ymax]
 
 # Examples
 ```julia
 ps = AveragedPowerspectrum(events, 256.0, norm="frac")
-plot(ps, show_noise=true, freq_mult=true)
+plot(ps, show_noise=true, freq_mult=true, axis_limits=[0.01, 100, 1e-5, 1e-1])
 ```
 """
 @recipe function f(ps::AbstractPowerSpectrum{T};
@@ -31,7 +32,8 @@ plot(ps, show_noise=true, freq_mult=true)
                   segment_size=nothing,
                   drawstyle=:steppost,
                   subtract_noise=false,
-                  error_alpha=0.3) where T
+                  error_alpha=0.3,
+                  axis_limits=nothing) where T
     
     isempty(ps.freq) && error("PowerSpectrum is empty")
     
@@ -79,6 +81,35 @@ plot(ps, show_noise=true, freq_mult=true)
     if log_scale
         xscale --> :log10
         yscale --> :log10
+    end
+    
+    # Axis limits handling
+    if !isnothing(axis_limits)
+        if length(axis_limits) == 4
+            xmin, xmax, ymin, ymax = axis_limits
+            
+            if !isnothing(xmin) || !isnothing(xmax)
+                xlims --> (
+                    isnothing(xmin) ? minimum(freq_vec) : xmin,
+                    isnothing(xmax) ? maximum(freq_vec) : xmax
+                )
+            end
+            
+            if !isnothing(ymin) || !isnothing(ymax)
+                ylims --> (
+                    isnothing(ymin) ? minimum(power_vec) : ymin,
+                    isnothing(ymax) ? maximum(power_vec) : ymax
+                )
+            end
+        elseif length(axis_limits) == 2
+            xmin, xmax = axis_limits
+            xlims --> (
+                isnothing(xmin) ? minimum(freq_vec) : xmin,
+                isnothing(xmax) ? maximum(freq_vec) : xmax
+            )
+        else
+            @warn "axis_limits should be a vector of length 2 or 4: [xmin, xmax] or [xmin, xmax, ymin, ymax]"
+        end
     end
     
     if show_errors && !isnothing(ps.power_err)
@@ -132,11 +163,12 @@ Recipe for plotting power spectra directly from event lists.
 - `freq_mult=false`: Multiply power by frequency
 - `log_scale=true`: Use logarithmic axes
 - `drawstyle=:steppost`: Plot drawing style
+- `axis_limits=nothing`: Axis limits as [xmin, xmax] or [xmin, xmax, ymin, ymax]
 
 # Examples
 ```julia
 events = readevents("data.evt")
-plot(events, segment_size=256.0, norm="frac", show_noise=true)
+plot(events, segment_size=256.0, norm="frac", show_noise=true, axis_limits=[0.01, 100])
 ```
 """
 @recipe function f(events::EventList{Vector{T}, M};
@@ -147,7 +179,8 @@ plot(events, segment_size=256.0, norm="frac", show_noise=true)
                   show_errors=false,
                   freq_mult=false,
                   log_scale=true,
-                  drawstyle=:steppost) where {T<:Real, M}
+                  drawstyle=:steppost,
+                  axis_limits=nothing) where {T<:Real, M}
     
     isempty(events.times) && error("EventList is empty")
     
@@ -159,6 +192,7 @@ plot(events, segment_size=256.0, norm="frac", show_noise=true)
         freq_mult := freq_mult
         log_scale := log_scale
         drawstyle := drawstyle
+        axis_limits := axis_limits
         ps
     end
 end
@@ -176,11 +210,12 @@ Recipe for plotting power spectra from light curves.
 - `freq_mult=false`: Multiply power by frequency
 - `log_scale=true`: Use logarithmic axes
 - `drawstyle=:steppost`: Plot drawing style
+- `axis_limits=nothing`: Axis limits as [xmin, xmax] or [xmin, xmax, ymin, ymax]
 
 # Examples
 ```julia
 lc = create_lightcurve(events, 0.1)
-plot(lc, segment_size=128, norm="frac", show_noise=true)
+plot(lc, segment_size=128, norm="frac", show_noise=true, axis_limits=[0.1, 50, 1e-4, 1e-2])
 ```
 """
 @recipe function f(lc::LightCurve{T};
@@ -190,7 +225,8 @@ plot(lc, segment_size=128, norm="frac", show_noise=true)
                   show_errors=false,
                   freq_mult=false,
                   log_scale=true,
-                  drawstyle=:steppost) where T
+                  drawstyle=:steppost,
+                  axis_limits=nothing) where T
     
     isempty(lc.time) && error("LightCurve is empty")
     
@@ -224,6 +260,35 @@ plot(lc, segment_size=128, norm="frac", show_noise=true)
     if log_scale
         xscale --> :log10
         yscale --> :log10
+    end
+    
+    # Axis limits handling
+    if !isnothing(axis_limits)
+        if length(axis_limits) == 4
+            xmin, xmax, ymin, ymax = axis_limits
+            
+            if !isnothing(xmin) || !isnothing(xmax)
+                xlims --> (
+                    isnothing(xmin) ? minimum(ps.freq) : xmin,
+                    isnothing(xmax) ? maximum(ps.freq) : xmax
+                )
+            end
+            
+            if !isnothing(ymin) || !isnothing(ymax)
+                ylims --> (
+                    isnothing(ymin) ? minimum(power_vec) : ymin,
+                    isnothing(ymax) ? maximum(power_vec) : ymax
+                )
+            end
+        elseif length(axis_limits) == 2
+            xmin, xmax = axis_limits
+            xlims --> (
+                isnothing(xmin) ? minimum(ps.freq) : xmin,
+                isnothing(xmax) ? maximum(ps.freq) : xmax
+            )
+        else
+            @warn "axis_limits should be a vector of length 2 or 4: [xmin, xmax] or [xmin, xmax, ymin, ymax]"
+        end
     end
     
     if show_errors && !isnothing(ps.power_err)
@@ -290,12 +355,13 @@ Recipe for comparing multiple power spectra on the same plot.
 - `drawstyle=:steppost`: Plot drawing style
 - `alpha=1.0`: Line transparency
 - `linewidth=1.5`: Line thickness
+- `axis_limits=nothing`: Axis limits as [xmin, xmax] or [xmin, xmax, ymin, ymax]
 
 # Examples
 ```julia
 ps1 = AveragedPowerspectrum(events, 128.0, norm="frac")
 ps2 = AveragedPowerspectrum(events, 256.0, norm="frac")
-plot([ps1, ps2], labels=["128s", "256s"])
+plot([ps1, ps2], labels=["128s", "256s"], axis_limits=[0.01, 100, 1e-5, 1e-1])
 ```
 """
 @recipe function f(spectra::Vector{<:AbstractPowerSpectrum};
@@ -306,7 +372,8 @@ plot([ps1, ps2], labels=["128s", "256s"])
                   log_scale=true,
                   drawstyle=:steppost,
                   alpha=1.0,
-                  linewidth=1.5)
+                  linewidth=1.5,
+                  axis_limits=nothing)
     
     isempty(spectra) && error("Spectra vector is empty")
     
@@ -320,6 +387,39 @@ plot([ps1, ps2], labels=["128s", "256s"])
     if log_scale
         xscale --> :log10
         yscale --> :log10
+    end
+    
+    # Axis limits handling
+    if !isnothing(axis_limits)
+        # Get frequency and power ranges from all spectra
+        all_freqs = vcat([ps.freq for ps in spectra]...)
+        all_powers = vcat([freq_mult ? ps.power .* ps.freq : ps.power for ps in spectra]...)
+        
+        if length(axis_limits) == 4
+            xmin, xmax, ymin, ymax = axis_limits
+            
+            if !isnothing(xmin) || !isnothing(xmax)
+                xlims --> (
+                    isnothing(xmin) ? minimum(all_freqs) : xmin,
+                    isnothing(xmax) ? maximum(all_freqs) : xmax
+                )
+            end
+            
+            if !isnothing(ymin) || !isnothing(ymax)
+                ylims --> (
+                    isnothing(ymin) ? minimum(all_powers) : ymin,
+                    isnothing(ymax) ? maximum(all_powers) : ymax
+                )
+            end
+        elseif length(axis_limits) == 2
+            xmin, xmax = axis_limits
+            xlims --> (
+                isnothing(xmin) ? minimum(all_freqs) : xmin,
+                isnothing(xmax) ? maximum(all_freqs) : xmax
+            )
+        else
+            @warn "axis_limits should be a vector of length 2 or 4: [xmin, xmax] or [xmin, xmax, ymin, ymax]"
+        end
     end
     
     default_colors = [:blue, :red, :green, :orange, :purple, :brown, :pink, :gray, :cyan, :magenta]
@@ -352,6 +452,7 @@ Recipe for multi-band spectral-timing analysis.
 - `colors=nothing`: Custom colors for each band
 - `freq_mult=false`: Multiply power by frequency
 - `log_scale=true`: Use logarithmic axes
+- `axis_limits=nothing`: Axis limits as [xmin, xmax] or [xmin, xmax, ymin, ymax]
 
 # Examples
 ```julia
@@ -359,7 +460,7 @@ events_dict = Dict(
     "0.5-2 keV" => events_soft,
     "2-10 keV" => events_hard
 )
-plot(events_dict, segment_size=256.0, energy_labels=["Soft", "Hard"])
+plot(events_dict, segment_size=256.0, energy_labels=["Soft", "Hard"], axis_limits=[0.01, 100])
 ```
 """
 @recipe function f(events_dict::Dict{String, EventList};
@@ -368,7 +469,8 @@ plot(events_dict, segment_size=256.0, energy_labels=["Soft", "Hard"])
                   energy_labels=nothing,
                   colors=nothing,
                   freq_mult=false,
-                  log_scale=true)
+                  log_scale=true,
+                  axis_limits=nothing)
     
     title --> "Multi-Band Power Spectra"
     xlabel --> "Frequency (Hz)"
@@ -377,6 +479,46 @@ plot(events_dict, segment_size=256.0, energy_labels=["Soft", "Hard"])
     if log_scale
         xscale --> :log10
         yscale --> :log10
+    end
+    
+    # Axis limits handling
+    if !isnothing(axis_limits)
+        # Calculate all spectra first to get ranges
+        all_freqs = Float64[]
+        all_powers = Float64[]
+        
+        for (band_name, events) in events_dict
+            ps = AveragedPowerspectrum(events, segment_size; norm=norm)
+            power_vec = freq_mult ? ps.power .* ps.freq : ps.power
+            append!(all_freqs, ps.freq)
+            append!(all_powers, power_vec)
+        end
+        
+        if length(axis_limits) == 4
+            xmin, xmax, ymin, ymax = axis_limits
+            
+            if !isnothing(xmin) || !isnothing(xmax)
+                xlims --> (
+                    isnothing(xmin) ? minimum(all_freqs) : xmin,
+                    isnothing(xmax) ? maximum(all_freqs) : xmax
+                )
+            end
+            
+            if !isnothing(ymin) || !isnothing(ymax)
+                ylims --> (
+                    isnothing(ymin) ? minimum(all_powers) : ymin,
+                    isnothing(ymax) ? maximum(all_powers) : ymax
+                )
+            end
+        elseif length(axis_limits) == 2
+            xmin, xmax = axis_limits
+            xlims --> (
+                isnothing(xmin) ? minimum(all_freqs) : xmin,
+                isnothing(xmax) ? maximum(all_freqs) : xmax
+            )
+        else
+            @warn "axis_limits should be a vector of length 2 or 4: [xmin, xmax] or [xmin, xmax, ymin, ymax]"
+        end
     end
     
     default_colors = [:blue, :red, :green, :orange, :purple, :brown]
@@ -398,4 +540,78 @@ plot(events_dict, segment_size=256.0, energy_labels=["Soft", "Hard"])
             ps.freq, power_vec
         end
     end
+end
+"""
+    @recipe f(ps::AbstractPowerSpectrum, ::Val{:qpo}; kwargs...)
+
+Recipe for QPO-focused power spectrum analysis.
+"""
+@recipe function f(ps::AbstractPowerSpectrum, ::Val{:qpo}; 
+                   qpo_range = (0.1, 100),
+                   noise_level = nothing,
+                   freq_mult = true,
+                   significance_level = 3.0,  # sigma level for QPO detection
+                   mark_peaks = true)
+    
+    # Focus on QPO frequency range
+    freq_mask = (ps.freq .>= qpo_range[1]) .& (ps.freq .<= qpo_range[2])
+    qpo_freq = ps.freq[freq_mask]
+    qpo_power = ps.power[freq_mask]
+    
+    # Apply frequency multiplication for QPO detection
+    if freq_mult
+        qpo_power .*= qpo_freq
+    end
+    
+    xscale --> :log10
+    yscale --> :log10
+    xlabel --> "Frequency (Hz)"
+    ylabel --> freq_mult ? "Power × Frequency" : "Power"
+    title --> "QPO Search Plot"
+    linewidth --> 2
+    color --> :blue
+    seriestype --> :steppost
+    legend --> :topright
+    label --> "Power Spectrum"
+    
+    # Add noise level if provided
+    if !isnothing(noise_level)
+        noise_y = freq_mult ? noise_level * mean(qpo_freq) : noise_level
+        significance_y = noise_y * significance_level
+        
+        @series begin
+            seriestype := :hline
+            y := [noise_y]
+            color := :red
+            linestyle := :dash
+            linewidth := 2
+            label := "Noise Level"
+        end
+        
+        @series begin
+            seriestype := :hline
+            y := [significance_y]
+            color := :orange
+            linestyle := :dot
+            linewidth := 2
+            label := "$(significance_level)σ Significance"
+        end
+        
+        # Mark potential QPO peaks above significance level
+        if mark_peaks
+            peak_mask = qpo_power .> significance_y
+            if any(peak_mask)
+                @series begin
+                    seriestype := :scatter
+                    markersize := 6
+                    markercolor := :red
+                    markershape := :circle
+                    label := "Potential QPOs"
+                    qpo_freq[peak_mask], qpo_power[peak_mask]
+                end
+            end
+        end
+    end
+    
+    return qpo_freq, qpo_power
 end
