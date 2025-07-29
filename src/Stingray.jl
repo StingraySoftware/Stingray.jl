@@ -6,6 +6,7 @@ using ProgressBars: tqdm as show_progress
 using DocStringExtensions
 using LinearAlgebra
 using Random
+using RecipesBase
 
 include("fourier.jl")
 export positive_fft_bins
@@ -13,6 +14,7 @@ export poisson_level
 export normalize_abs
 export normalize_frac
 export normalize_leahy_from_variance
+export normalize_leahy_poisson
 export normalize_periodograms
 export bias_term
 export raw_coherence
@@ -75,5 +77,15 @@ export fill_bad_time_intervals!
 export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
+export get_norm_label
+export get_poisson_level
+export extract_gti
+
+include("powerspectrum.jl")
+export PowerSpectrum
+export AveragedPowerSpectrum
+
+include("plotting/plots_recipes_lightcurve.jl")
+
 
 end
