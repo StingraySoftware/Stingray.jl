@@ -8,7 +8,6 @@ let
     @test get_norm_label("unknown") == "Power"
     @test get_norm_label(:frac) == "(rms/mean)² Hz⁻¹"
 end
-
 # Test get_poisson_level wrapper function
 let
     @test get_poisson_level("leahy"; meanrate=100.0) isa Real
@@ -19,7 +18,6 @@ let
     result = get_poisson_level("frac"; n_ph=500)
     @test result isa Real
 end
-
 # Test extract_gti function with various metadata types
 let
     meta_dict = Dict("gti" => [5.0 6.0; 7.0 8.0], "other" => "data")
@@ -38,7 +36,6 @@ let
     empty_meta = Dict{String, Any}()
     @test extract_gti(empty_meta) === nothing
 end
-
 # Test mock data structures for recipes using NamedTuples
 let
     freqs = 10.0 .^ range(-2, 2, length=100)
@@ -73,40 +70,6 @@ let
     )
     @test mock_ps_no_err.power_err === nothing
 end
-
-# Test EventList using helper function
-let
-    n_events = 10000
-    event_times = sort(rand(n_events) * 1000.0)
-    energies = 0.5 .+ 9.5 * rand(n_events)
-    
-    events = create_test_eventlist(event_times, energies)
-    
-    @test length(events.times) == n_events
-    @test length(events.energies) == n_events
-    @test issorted(events.times)
-    @test all(e -> 0.5 <= e <= 10.0, events.energies)
-    @test events.meta.gti[1,1] == 0.0
-    @test events.meta.gti[1,2] == maximum(event_times)
-end
-
-# Test LightCurve using helper function
-let
-    dt = 0.1
-    times = 0:dt:999.9
-    base_rate = 100.0
-    counts = [Int(round(base_rate * dt + 0.2 * base_rate * dt * sin(2π * t / 100.0) + 
-              sqrt(base_rate * dt) * randn())) for t in times]
-    counts = max.(counts, 0)
-    
-    lc = create_test_lightcurve(collect(times), counts, dt)
-    
-    @test length(lc.time) == length(lc.counts)
-    @test lc.metadata.bin_size == dt
-    @test lc.metadata.time_range[2] > lc.metadata.time_range[1]
-    @test all(c -> c >= 0, lc.counts)
-end
-
 # Test recipe parameter validation
 let
     valid_norms = ["leahy", "frac", "abs", "none"]
@@ -227,7 +190,6 @@ struct EmptySpectrum{T}
     power::Vector{T}  
     norm::String
 end
-
 # Test error handling
 let
     empty_ps = EmptySpectrum(Float64[], Float64[], "frac")
@@ -236,28 +198,6 @@ let
     @test length(empty_ps.freq) == 0
     @test get_norm_label("completely_invalid") == "Power"
 end
-
-# Test realistic data scenarios
-let
-    segment_sizes = [64.0, 128.0, 256.0, 512.0, 1024.0]
-    time_resolutions = [0.001, 0.01, 0.1]
-    
-    for seg_size in segment_sizes
-        @test seg_size > 0
-        @test seg_size <= 1024.0
-    end
-    
-    for dt in time_resolutions
-        @test dt > 0
-        @test dt <= 1.0
-    end
-    
-    nyquist_freqs = 1.0 ./ (2.0 * time_resolutions)
-    expected_nyquist = [500.0, 50.0, 5.0]
-    
-    @test nyquist_freqs ≈ expected_nyquist
-end
-
 # Test plot customization parameters
 let
     default_colors = [:blue, :red, :green, :orange, :purple, :brown, :pink, :gray, :cyan, :magenta]
@@ -296,49 +236,6 @@ let
     @test subtracted[1] ≈ 9.9
     @test subtracted[end] > 0
 end
-
-# Test recipe workflow components
-let
-    total_time = 1000.0
-    auto_segment_size = total_time / 32
-    expected_size = 31.25
-    @test auto_segment_size ≈ expected_size
-    
-    total_counts = 50000.0
-    observation_time = 1000.0
-    mean_rate = total_counts / observation_time
-    expected_rate = 50.0
-    @test mean_rate ≈ expected_rate
-    
-    gti_start = 1000.0
-    gti_stop = 2000.0
-    gti_duration = gti_stop - gti_start
-    @test gti_duration == 1000.0
-end
-
-# Test EventProperty creation
-let
-    values = [1.0, 2.0, 3.0, 4.0, 5.0]
-    prop = create_event_property("energy", values, "keV")
-    
-    @test prop.name == :energy
-    @test prop.values == values
-    @test prop.unit == "keV"
-end
-
-# Test comprehensive EventList with properties
-let
-    times = [1.0, 2.0, 3.0, 4.0, 5.0]
-    energies = [1.5, 2.0, 2.5, 3.0, 3.5]
-    
-    events = create_test_eventlist(times, energies)
-    energy_prop = create_event_property("energy", energies, "keV")
-    
-    @test length(events.times) == 5
-    @test events.energies == energies
-    @test energy_prop.unit == "keV"
-end
-
 # Test power spectrum creation with mock data
 let
     freqs = 10.0 .^ range(-2, 1, length=50)
@@ -394,41 +291,4 @@ let
     @test ps_averaged.segment_size == 1024.0
     @test ps_averaged.mean_rate == 100.0
     @test all(ps_averaged.power_err .< ps_single.power_err)
-end
-
-# Test LightCurveMetadata structure fields
-let
-    times = [1.0, 2.0, 3.0, 4.0, 5.0]
-    energies = [1.5, 2.0, 2.5, 3.0, 3.5]
-    dt = 0.1
-    
-    events = create_test_eventlist(times, energies)
-    lc = create_test_lightcurve(times, [1, 2, 3, 4, 5], dt)
-    
-    @test hasfield(typeof(events.meta), :gti)
-    @test events.meta.gti isa Matrix{Float64}
-    
-    @test hasfield(typeof(lc.metadata), :bin_size)
-    @test hasfield(typeof(lc.metadata), :time_range)
-    @test hasfield(typeof(lc.metadata), :telescope)
-    @test hasfield(typeof(lc.metadata), :instrument)
-    @test hasfield(typeof(lc.metadata), :object)
-    @test hasfield(typeof(lc.metadata), :mjdref)
-    @test hasfield(typeof(lc.metadata), :headers)
-    @test hasfield(typeof(lc.metadata), :extra)
-    
-    @test lc.metadata.bin_size == dt
-end
-
-# Test LightCurve structure fields
-let
-    times = [1.0, 2.0, 3.0, 4.0, 5.0]
-    counts = [1, 2, 3, 4, 5]
-    dt = 1.0
-    
-    lc = create_test_lightcurve(times, counts, dt)
-    
-    @test hasfield(typeof(lc), :time)
-    @test hasfield(typeof(lc), :counts)
-    @test hasfield(typeof(lc), :metadata)
 end

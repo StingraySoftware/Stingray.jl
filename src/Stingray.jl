@@ -7,24 +7,6 @@ using DocStringExtensions
 using LinearAlgebra
 using Random
 using RecipesBase
-
-include("fourier.jl")
-export positive_fft_bins
-export poisson_level
-export normalize_abs
-export normalize_frac
-export normalize_leahy_from_variance
-export normalize_leahy_poisson
-export normalize_periodograms
-export bias_term
-export raw_coherence
-export estimate_intrinsic_coherence
-export error_on_averaged_cross_spectrum
-export get_average_ctrate
-export get_flux_iterable_from_segments
-export avg_pds_from_events
-export avg_cs_from_events
-
 include("events.jl")
 export FITSMetadata,
     EventList,
@@ -61,6 +43,27 @@ export AbstractLightCurve,
        extract_metadata,
        create_lightcurve,
        rebin
+
+include("fourier.jl")
+export positive_fft_bins
+export poisson_level
+export normalize_abs
+export normalize_frac
+export normalize_leahy_from_variance
+export normalize_leahy_poisson
+export normalize_periodograms
+export bias_term
+export raw_coherence
+export estimate_intrinsic_coherence
+export error_on_averaged_cross_spectrum
+export get_average_ctrate
+export get_flux_iterable_from_segments
+export avg_pds_from_events
+export avg_cs_from_events
+
+
+
+
 include("utils.jl")
 
 include("gti.jl")
@@ -85,7 +88,7 @@ include("powerspectrum.jl")
 export PowerSpectrum
 export AveragedPowerSpectrum
 
-include("plotting/plots_recipes_lightcurve.jl")
+include("plotting/plots_recipes_powerspectrum.jl")
 
 
 end
