@@ -19,7 +19,79 @@ function poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrat
         throw(ArgumentError("Unknown value for norm: $norm"))
     end
 end
+"""
+    get_norm_label(norm::Union{String,Symbol})
 
+Get the appropriate ylabel text for different power spectrum normalizations.
+
+# Arguments
+- `norm`: Normalization type ("leahy", "frac", "rms", "abs", "none")
+
+# Returns
+- String: Appropriate label for the y-axis
+
+# Examples
+```julia
+get_norm_label("frac")  # Returns "(rms/mean)² Hz⁻¹"
+get_norm_label("leahy") # Returns "Leahy Power"
+```
+"""
+function get_norm_label(norm::Union{String,Symbol})
+    norm_str = string(norm)
+    labels = Dict(
+        "leahy" => "Leahy Power",
+        "frac" => "(rms/mean)² Hz⁻¹", 
+        "rms" => "rms² Hz⁻¹",
+        "abs" => "Absolute Power",
+        "none" => "Raw Power"
+    )
+    return get(labels, norm_str, "Power")
+end
+
+"""
+    get_poisson_level(norm::String; meanrate=nothing, n_ph=nothing, backrate=0.0)
+
+Calculate the Poisson noise level for a given normalization.
+
+# Arguments
+- `norm`: Normalization type
+- `meanrate`: Mean count rate (optional)
+- `n_ph`: Number of photons (optional, used to estimate meanrate if meanrate is nothing)
+- `backrate`: Background rate (default: 0.0)
+
+# Returns
+- Float64: Poisson noise level for the given normalization
+"""
+function get_poisson_level(norm::String; meanrate::Union{Nothing,Real}=nothing, 
+                          n_ph::Union{Nothing,Real}=nothing, backrate::Real=0.0)
+    if isnothing(meanrate) && !isnothing(n_ph)
+        meanrate = n_ph
+    end
+    return poisson_level(norm; meanrate=meanrate, n_ph=n_ph, backrate=backrate)
+end
+
+"""
+    extract_gti(meta)
+
+Extract Good Time Intervals (GTI) from various metadata types.
+
+# Arguments
+- `meta`: Metadata object with potential GTI information
+
+# Returns
+- GTI data or nothing if not found
+"""
+function extract_gti(meta)
+    if hasfield(typeof(meta), :gti) && !isnothing(meta.gti)
+        return meta.gti
+    elseif isa(meta, Dict) && haskey(meta, "gti")
+        return meta["gti"]
+    elseif hasfield(typeof(meta), :extra) && haskey(meta.extra, "gti")
+        return meta.extra["gti"]
+    else
+        return nothing
+    end
+end
 function normalize_frac(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer, 
                         mean_flux::Real; background_flux::Real=0.0)
     if background_flux > 0
@@ -333,7 +405,7 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
     results[!,"freq"] = freq
     results[!,"power"] = cross
     results[!,"unnorm_power"] = unnorm_cross
-    results = (; results , n = n_bin, m = n_ave, dt, norm, df = 1 / (dt * n_bin), nphots = n_ph, setment_size = dt * n_bin,  mean = common_mean, variance = common_variance)
+    results = (; results , n = n_bin, m = n_ave, dt, norm, df = 1 / (dt * n_bin), nphots = n_ph, segment_size = dt * n_bin,  mean = common_mean, variance = common_variance)
     results = DataFrame(results.results)
     return results
 
@@ -674,17 +746,115 @@ function avg_cs_from_iterables(
 
 
     return results
-    
 end
 
-function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
+function avg_pds_from_eventlist(eventlist::EventList, segment_size::Real, dt::Real; 
+                                norm::String="frac", use_common_mean::Bool=true, 
+                                silent::Bool=false, fluxes=nothing, errors=nothing)
+    # Extract times and GTI from EventList
+    times = eventlist.times
+    gti = eventlist.meta.gti
+    
+    # If no GTI available, create one from the full time range
+    if isnothing(gti)
+        gti = reshape([minimum(times), maximum(times)], 1, 2)
+    end
+    
+    # Call the original function with extracted data
+    return avg_pds_from_events(times, gti, segment_size, dt; 
+                              norm=norm, use_common_mean=use_common_mean, 
+                              silent=silent, fluxes=fluxes, errors=errors)
+end
+
+function avg_cs_from_eventlists(eventlist1::EventList, eventlist2::EventList, 
+                                segment_size::Real, dt::Real; norm::String="frac", 
+                                use_common_mean::Bool=true, fullspec::Bool=false, 
+                                silent::Bool=false, power_type::String="all", 
+                                fluxes1=nothing, fluxes2=nothing, errors1=nothing, 
+                                errors2=nothing, return_auxil=false)
+    # Extract times and GTI from EventLists
+    times1 = eventlist1.times
+    times2 = eventlist2.times
+    
+    # Use GTI from first eventlist, or create from time range if not available
+    gti = eventlist1.meta.gti
+    if isnothing(gti)
+        min_time = min(minimum(times1), minimum(times2))
+        max_time = max(maximum(times1), maximum(times2))
+        gti = reshape([min_time, max_time], 1, 2)
+    end
+    
+    # Call the original function with extracted data
+    return avg_cs_from_events(times1, times2, gti, segment_size, dt; 
+                             norm=norm, use_common_mean=use_common_mean, 
+                             fullspec=fullspec, silent=silent, 
+                             power_type=power_type, fluxes1=fluxes1, 
+                             fluxes2=fluxes2, errors1=errors1, 
+                             errors2=errors2, return_auxil=return_auxil)
+end
+
+function avg_pds_from_lightcurve(lc::LightCurve, segment_size::Union{Real,Nothing}=nothing; 
+                                 norm::String="frac", use_common_mean::Bool=true, 
+                                 silent::Bool=false)
+    # Extract relevant data from LightCurve
+    times = lc.time
+    dt_lc = isa(lc.dt, Vector) ? lc.dt[1] : lc.dt  # Use first dt if vector
+    counts = lc.counts
+    
+    # Use segment_size or entire light curve
+    if isnothing(segment_size)
+        segment_size = (maximum(times) - minimum(times)) + dt_lc
+    end
+    
+    # Create flux iterable from light curve data
+    flux_iterable = [counts]  # Simple case: use entire light curve as one segment
+    
+    return avg_pds_from_iterable(flux_iterable, dt_lc; norm=norm, 
+                                use_common_mean=use_common_mean, silent=silent)
+end
+
+function avg_cs_from_lightcurves(lc1::LightCurve, lc2::LightCurve, 
+                                 segment_size::Union{Real,Nothing}=nothing; 
+                                 norm::String="frac", use_common_mean::Bool=true, 
+                                 fullspec::Bool=false, silent::Bool=false, 
+                                 power_type::String="all", return_auxil=false)
+    # Extract relevant data from LightCurves
+    dt1 = isa(lc1.dt, Vector) ? lc1.dt[1] : lc1.dt
+    dt2 = isa(lc2.dt, Vector) ? lc2.dt[1] : lc2.dt
+    
+    # Ensure both light curves have the same time resolution
+    @assert dt1 ≈ dt2 "Light curves must have the same time resolution"
+    
+    counts1 = lc1.counts
+    counts2 = lc2.counts
+    
+    # Ensure both light curves have the same length
+    min_length = min(length(counts1), length(counts2))
+    if length(counts1) != length(counts2)
+        @warn "Light curves have different lengths, truncating to shorter one"
+        counts1 = counts1[1:min_length]
+        counts2 = counts2[1:min_length]
+    end
+    
+    # Create flux iterables from light curve data
+    flux_iterable1 = [counts1]  # Simple case: use entire light curves as one segment
+    flux_iterable2 = [counts2]
+    
+    return avg_cs_from_iterables(flux_iterable1, flux_iterable2, dt1; 
+                                norm=norm, use_common_mean=use_common_mean, 
+                                fullspec=fullspec, silent=silent, 
+                                power_type=power_type, return_auxil=return_auxil)
+end
+
+# Original functions (kept for backward compatibility)
+function avg_pds_from_events(times::AbstractVector{<:Real}, gti::AbstractMatrix{<:Real}, 
                              segment_size::Real, dt::Real; norm::String="frac",
                              use_common_mean::Bool=true, silent::Bool=false, 
                              fluxes=nothing, errors=nothing)
     if isnothing(segment_size)
-        segment_size = max(gti) - min(gti)
+        segment_size = maximum(gti) - minimum(gti)
     end
-    n_bin = round(Int,segment_size / dt)
+    n_bin = round(Int, segment_size / dt)
     dt = segment_size / n_bin
 
     flux_iterable = get_flux_iterable_from_segments(times, gti, segment_size;
@@ -703,14 +873,14 @@ function avg_pds_from_events(times:: AbstractVector{<:Real}, gti::AbstractMatrix
     
 end
 
-function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVector{<:Real}, 
+function avg_cs_from_events(times1::AbstractVector{<:Real}, times2::AbstractVector{<:Real}, 
                             gti::AbstractMatrix{<:Real}, segment_size::Real, dt::Real; 
                             norm::String="frac", use_common_mean::Bool=true, 
                             fullspec::Bool=false, silent::Bool=false,
                             power_type::String="all", fluxes1=nothing, fluxes2=nothing,
                             errors1=nothing, errors2=nothing, return_auxil=false)
     if isnothing(segment_size) 
-        segment_size = max(gti) - min(gti)
+        segment_size = maximum(gti) - minimum(gti)
     end
     n_bin = round(Int, segment_size / dt)
     # adjust dt
@@ -723,8 +893,7 @@ function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVe
         times2, gti, segment_size; n_bin, fluxes=fluxes2, errors=errors2
     )
 
-    is_events = all(isnothing,(fluxes1, fluxes2, errors1,
-                                                errors2))
+    is_events = all(isnothing, (fluxes1, fluxes2, errors1, errors2))
 
     if (is_events
             && silent
