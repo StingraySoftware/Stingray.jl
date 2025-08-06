@@ -3,9 +3,12 @@ function positive_fft_bins(n_bin::Integer; include_zero::Bool = false)
     if include_zero
         minbin = 1
     end
-    return (minbin : (n_bin+1) ÷ 2)
+    if n_bin % 2 == 0
+        return minbin:(n_bin ÷ 2)
+    else
+        return minbin:((n_bin + 1) ÷ 2)
+    end
 end
-
 function poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrate::Real = 0.0)
     if norm == "abs"
         return 2.0 * meanrate
