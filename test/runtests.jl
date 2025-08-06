@@ -5,7 +5,11 @@ using Logging ,LinearAlgebra
 using CFITSIO
 using Random
 
-include("test_fourier.jl")
+@testset "Fourier" begin
+    include("test_fourier/test_fourier.jl")
+    include("test_fourier/test_coherence.jl")
+    include("test_fourier/test_norm.jl")
+end
 @testset "GTI" begin
     include("test_gti.jl")
 end

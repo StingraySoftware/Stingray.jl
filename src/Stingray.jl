@@ -7,21 +7,6 @@ using DocStringExtensions
 using LinearAlgebra
 using Random
 
-include("fourier.jl")
-export positive_fft_bins
-export poisson_level
-export normalize_abs
-export normalize_frac
-export normalize_leahy_from_variance
-export normalize_periodograms
-export bias_term
-export raw_coherence
-export estimate_intrinsic_coherence
-export error_on_averaged_cross_spectrum
-export get_average_ctrate
-export get_flux_iterable_from_segments
-export avg_pds_from_events
-export avg_cs_from_events
 
 include("events.jl")
 export FITSMetadata,
@@ -59,6 +44,24 @@ export AbstractLightCurve,
        extract_metadata,
        create_lightcurve,
        rebin
+
+include("fourier.jl")
+export positive_fft_bins
+export poisson_level
+export normalize_abs
+export normalize_frac
+export normalize_leahy_from_variance
+export normalize_periodograms
+export bias_term
+export raw_coherence
+export estimate_intrinsic_coherence
+export error_on_averaged_cross_spectrum
+export get_average_ctrate
+export get_flux_iterable_from_segments
+export avg_pds_from_events,avg_pds_from_iterable
+export avg_cs_from_events,avg_cs_from_iterables,avg_cs_from_iterables_quick
+export avg_pds_from_eventlist,avg_cs_from_eventlists,avg_pds_from_lightcurve,avg_cs_from_lightcurves
+
 include("utils.jl")
 
 include("gti.jl")
