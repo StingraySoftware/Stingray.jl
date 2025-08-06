@@ -8,6 +8,7 @@ using Random
 include("test_fourier.jl")
 @testset "GTI" begin
     include("test_gti.jl")
+    export create_event_property,create_test_lightcurve,create_test_eventlist
 end
 @testset "Eventlist" begin
     include("test_events.jl")
@@ -15,4 +16,7 @@ end
 
 @testset "lightcurve" begin
     include("test_lightcurve.jl")
+end
+@testset "Powerspectrum" begin
+    include("test_powerspectrum.jl")
 end

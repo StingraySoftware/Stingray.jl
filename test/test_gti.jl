@@ -1,31 +1,31 @@
-# Helper function to create mock EventList for testing
+# Helper function to create mock FITSMetadata
 function create_test_eventlist(times::Vector{Float64}, energies::Union{Vector{Float64}, Nothing}=nothing)
     mock_headers = Dict{String,Any}()
     mock_metadata = FITSMetadata(
-        "",  # filepath
-        1,   # hdu
-        "keV",  # energy_units
-        Dict{String,Vector}(),  # extra_columns
+        "",  # telescope
+        1,   # channel
+        nothing, # unit
+        Dict{String,Vector}(),  # column info
         mock_headers,  # headers
-        nothing,       # gti
-        nothing        # gti_source
+        [0.0 maximum(times)],  # GTI
+        nothing  # maskfile
     )
     
     return EventList(times, energies, mock_metadata)
 end
 
-# Helper function to create mock LightCurve for testing
+# Helper function to create mock LightCurve with GTI
 function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt::Float64=1.0)
     metadata = LightCurveMetadata(
         "", "", "", 0.0, 
         (minimum(times)-dt/2, maximum(times)+dt/2), 
         dt, 
         Vector{Dict{String,Any}}(),
-        Dict{String,Any}()
+        Dict{String,Any}("gti" => [minimum(times) maximum(times)])
     )
     
     return LightCurve(
-        times, dt, counts, nothing, nothing, EventProperty{Float64}[], 
+        times, dt, counts, nothing,nothing, EventProperty{Float64}[], 
         metadata, :poisson
     )
 end
