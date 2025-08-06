@@ -47,8 +47,8 @@ plot(ps, show_noise=true, freq_mult=true, axis_limits=[0.01, 100, 1e-5, 1e-1])
     else
         nothing
     end
-    
-    if subtract_noise && show_noise && !isnothing(effective_meanrate)
+    subtract_noise = (freq_mult || subtract_noise) && !isnothing(effective_meanrate)
+    if subtract_noise
         noise_level = poisson_level(ps.norm; meanrate=effective_meanrate)
         power_vec .-= noise_level
         if log_scale
