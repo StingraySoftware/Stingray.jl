@@ -25,7 +25,7 @@ function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt:
     )
     
     return LightCurve(
-        times, dt, counts, nothing, fill(dt, length(times)), EventProperty{Float64}[], 
+        times, dt, counts, nothing,nothing, EventProperty{Float64}[], 
         metadata, :poisson
     )
 end
