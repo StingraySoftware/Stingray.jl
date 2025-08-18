@@ -20,7 +20,6 @@ function mock_data(times, energies; energy_column = "ENERGY")
     end
     sample_file
 end
-
 # Test basic EventList creation and validation
 let
     # Test valid construction with simplified constructor
@@ -115,7 +114,13 @@ let
         Dict("INDEX" => [1, 2, 3, 4]), # extra_columns
         Dict{String,Any}(),         # headers
         nothing,                    # gti
-        nothing                     # gti_source
+        nothing,                    # gti_source
+        nothing,                    # mjd_ref
+        nothing,                    # time_zero
+        nothing,                    # time_unit
+        nothing,                    # time_sys
+        nothing,                    # time_pixr
+        nothing                     # time_del
     )
     ev_extra = EventList(times_extra, energies_extra, dummy_meta)
 
@@ -160,7 +165,13 @@ let
         Dict("DETX" => [0.1, 0.2, 0.3, 0.4]), # extra_columns
         Dict{String,Any}(),           # headers
         nothing,                      # gti
-        nothing                       # gti_source
+        nothing,                      # gti_source
+        nothing,                      # mjd_ref
+        nothing,                      # time_zero
+        nothing,                      # time_unit
+        nothing,                      # time_sys
+        nothing,                      # time_pixr
+        nothing                       # time_del
     )
     ev_extra = EventList(times_extra, energies_extra, dummy_meta)
 
@@ -204,13 +215,19 @@ let
     times_extra = [1.0, 2.0, 3.0, 4.0, 5.0]
     energies_extra = [10.0, 20.0, 30.0, 40.0, 50.0]
     dummy_meta = FITSMetadata{Dict{String,Any}}(
-        "",                           # filepath
-        1,                           # hdu
-        nothing,                     # energy_units
+        "",                            # filepath
+        1,                            # hdu
+        nothing,                      # energy_units
         Dict("FLAG" => [1, 0, 1, 0, 1]), # extra_columns
-        Dict{String,Any}(),          # headers
-        nothing,                     # gti
-        nothing                      # gti_source
+        Dict{String,Any}(),           # headers
+        nothing,                      # gti
+        nothing,                      # gti_source
+        nothing,                      # mjd_ref
+        nothing,                      # time_zero
+        nothing,                      # time_unit
+        nothing,                      # time_sys
+        nothing,                      # time_pixr
+        nothing                       # time_del
     )
     ev_extra = EventList(times_extra, energies_extra, dummy_meta)
 
@@ -461,7 +478,13 @@ let
         Dict{String,Vector}(),         # extra_columns
         Dict{String,Any}(),            # headers
         gti_matrix,                    # gti
-        "GTI"                          # gti_source
+        "GTI",                         # gti_source
+        nothing,                       # mjd_ref
+        nothing,                       # time_zero
+        nothing,                       # time_unit
+        nothing,                       # time_sys
+        nothing,                       # time_pixr
+        nothing                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
     
@@ -478,13 +501,19 @@ let
     # Test exposure calculation with GTI
     gti_matrix = [1.0 3.0; 4.0 6.0; 8.0 10.0]  # Intervals: 2s + 2s + 2s = 6s total
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits",
-        2,
-        "ENERGY",
-        Dict{String,Vector}(),
-        Dict{String,Any}(),
-        gti_matrix,
-        "GTI"
+        "test.fits",                    # filepath
+        2,                             # hdu
+        "ENERGY",                      # energy_units
+        Dict{String,Vector}(),         # extra_columns
+        Dict{String,Any}(),            # headers
+        gti_matrix,                    # gti
+        "GTI",                         # gti_source
+        nothing,                       # mjd_ref
+        nothing,                       # time_zero
+        nothing,                       # time_unit
+        nothing,                       # time_sys
+        nothing,                       # time_pixr
+        nothing                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
     
@@ -502,8 +531,19 @@ let
     # Test single interval GTI
     single_gti = reshape([2.0, 5.0], 1, 2)  # One interval: [2.0, 5.0] = 3s
     meta_single_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        single_gti, "GTI"
+        "test.fits",                   # filepath
+        2,                            # hdu
+        "ENERGY",                     # energy_units
+        Dict{String,Vector}(),        # extra_columns
+        Dict{String,Any}(),           # headers
+        single_gti,                   # gti
+        "GTI",                        # gti_source
+        nothing,                      # mjd_ref
+        nothing,                      # time_zero
+        nothing,                      # time_unit
+        nothing,                      # time_sys
+        nothing,                      # time_pixr
+        nothing                       # time_del
     )
     ev_single_gti = EventList(times, energies, meta_single_gti)
     @test gti_exposure(ev_single_gti) == 3.0
@@ -518,8 +558,19 @@ let
     # Test gti_info with GTI present
     gti_matrix = [1.0 2.5; 3.0 4.0]
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        gti_matrix, "GTI"
+        "test.fits",                    # filepath
+        2,                             # hdu
+        "ENERGY",                      # energy_units
+        Dict{String,Vector}(),         # extra_columns
+        Dict{String,Any}(),            # headers
+        gti_matrix,                    # gti
+        "GTI",                         # gti_source
+        nothing,                       # mjd_ref
+        nothing,                       # time_zero
+        nothing,                       # time_unit
+        nothing,                       # time_sys
+        nothing,                       # time_pixr
+        nothing                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
     
@@ -539,10 +590,21 @@ let
     gti_matrix = [1.0 3.0; 5.0 7.0]  # Two 2-second intervals
     extra_cols = Dict("INDEX" => [1, 2, 3])
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
-        "/path/to/test.fits", 2, "ENERGY", extra_cols, Dict{String,Any}(),
-        gti_matrix, "GTI"
+        "/path/to/test.fits",          # filepath
+        2,                             # hdu
+        "ENERGY",                      # energy_units
+        extra_cols,                    # extra_columns
+        Dict{String,Any}(),            # headers
+        gti_matrix,                    # gti
+        "GTI",                         # gti_source
+        nothing,                       # mjd_ref
+        nothing,                       # time_zero
+        nothing,                       # time_unit
+        nothing,                       # time_sys
+        nothing,                       # time_pixr
+        nothing                        # time_del
     )
-    
+        
     # Test that show method includes GTI information
     io = IOBuffer()
     show(io, MIME("text/plain"), meta_with_gti)
@@ -555,8 +617,19 @@ let
     
     # Test display without GTI
     meta_no_gti = FITSMetadata{Dict{String,Any}}(
-        "/path/to/test.fits", 2, "ENERGY", extra_cols, Dict{String,Any}(),
-        nothing, nothing
+        "/path/to/test.fits",          # filepath
+        2,                             # hdu
+        "ENERGY",                      # energy_units
+        extra_cols,                    # extra_columns
+        Dict{String,Any}(),            # headers
+        nothing,                       # gti
+        nothing,                       # gti_source
+        nothing,                       # mjd_ref
+        nothing,                       # time_zero
+        nothing,                       # time_unit
+        nothing,                       # time_sys
+        nothing,                       # time_pixr
+        nothing                        # time_del
     )
     
     io2 = IOBuffer()
@@ -568,7 +641,6 @@ let
     @test !occursin("GTI:", output2)  # Should not mention GTI
     
 end
-
 # Test Base.summary with GTI information
 let
     times = [1.0, 2.0, 3.0, 4.0]
@@ -577,8 +649,19 @@ let
     # Test summary with GTI
     gti_matrix = [1.0 2.0; 3.0 5.0]  # 1s + 2s = 3s total exposure
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits", 2, "keV", Dict("FLAG" => [1, 0, 1, 0]), Dict{String,Any}(),
-        gti_matrix, "GTI"
+        "test.fits",                    # filepath
+        2,                             # hdu
+        "ENERGY",                      # energy_units
+        Dict{String,Vector}(),         # extra_columns
+        Dict{String,Any}(),            # headers
+        gti_matrix,                    # gti
+        "GTI",                         # gti_source
+        nothing,                       # mjd_ref
+        nothing,                       # time_zero
+        nothing,                       # time_unit
+        nothing,                       # time_sys
+        nothing,                       # time_pixr
+        nothing                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
     
@@ -598,8 +681,19 @@ let
     
     # Test summary without energies but with GTI
     meta_time_only_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits", 2, nothing, Dict{String,Vector}(), Dict{String,Any}(),
-        gti_matrix, "GTI"
+        "test.fits",                   # filepath
+        2,                            # hdu
+        nothing,                      # energy_units
+        Dict{String,Vector}(),        # extra_columns
+        Dict{String,Any}(),           # headers
+        gti_matrix,                   # gti
+        "GTI",                        # gti_source
+        nothing,                      # mjd_ref
+        nothing,                      # time_zero
+        nothing,                      # time_unit
+        nothing,                      # time_sys
+        nothing,                      # time_pixr
+        nothing                       # time_del
     )
     ev_time_only_gti = EventList(times, nothing, meta_time_only_gti)
     
@@ -619,8 +713,19 @@ let
     gti_matrix = [1.0 2.5; 3.0 5.0]
     extra_cols = Dict("INDEX" => collect(1:7))
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits", 2, "ENERGY", extra_cols, Dict{String,Any}(),
-        gti_matrix, "GTI"
+        "test.fits",                    # filepath
+        2,                             # hdu
+        "ENERGY",                      # energy_units
+        extra_cols,                    # extra_columns
+        Dict{String,Any}(),            # headers
+        gti_matrix,                    # gti
+        "GTI",                         # gti_source
+        nothing,                       # mjd_ref
+        nothing,                       # time_zero
+        nothing,                       # time_unit
+        nothing,                       # time_sys
+        nothing,                       # time_pixr
+        nothing                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
     
@@ -662,8 +767,19 @@ let
     # Test with empty GTI matrix
     empty_gti = Matrix{Float64}(undef, 0, 2)
     meta_empty_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        empty_gti, "GTI"
+        "test.fits",                   # filepath
+        2,                            # hdu
+        "ENERGY",                     # energy_units
+        Dict{String,Vector}(),        # extra_columns
+        Dict{String,Any}(),           # headers
+        empty_gti,                    # gti
+        "GTI",                        # gti_source
+        nothing,                      # mjd_ref
+        nothing,                      # time_zero
+        nothing,                      # time_unit
+        nothing,                      # time_sys
+        nothing,                      # time_pixr
+        nothing                       # time_del
     )
     ev_empty_gti = EventList(times, energies, meta_empty_gti)
     @test has_gti(ev_empty_gti)
@@ -672,8 +788,19 @@ let
     # Test with single point GTI intervals (start == stop)
     point_gti = [2.0 2.0; 3.0 3.0]  # Zero-duration intervals
     meta_point_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        point_gti, "GTI"
+        "test.fits",                   # filepath
+        2,                            # hdu
+        "ENERGY",                     # energy_units
+        Dict{String,Vector}(),        # extra_columns
+        Dict{String,Any}(),           # headers
+        point_gti,                    # gti
+        "GTI",                        # gti_source
+        nothing,                      # mjd_ref
+        nothing,                      # time_zero
+        nothing,                      # time_unit
+        nothing,                      # time_sys
+        nothing,                      # time_pixr
+        nothing                       # time_del
     )
     ev_point_gti = EventList(times, energies, meta_point_gti)
     @test has_gti(ev_point_gti)
@@ -682,8 +809,19 @@ let
     # Test with very large GTI values
     large_gti = [1e6 2e6; 3e6 4e6]  # Large time values
     meta_large_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        large_gti, "GTI"
+        "test.fits",                   # filepath
+        2,                            # hdu
+        "ENERGY",                     # energy_units
+        Dict{String,Vector}(),        # extra_columns
+        Dict{String,Any}(),           # headers
+        large_gti,                    # gti
+        "GTI",                        # gti_source
+        nothing,                      # mjd_ref
+        nothing,                      # time_zero
+        nothing,                      # time_unit
+        nothing,                      # time_sys
+        nothing,                      # time_pixr
+        nothing                       # time_del
     )
     ev_large_gti = EventList(times, energies, meta_large_gti)
     @test has_gti(ev_large_gti)
@@ -698,8 +836,19 @@ let
     
     gti_matrix = [1.0 2.5; 3.0 4.0]
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
-        "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        gti_matrix, "GTI"
+        "test.fits",                    # filepath
+        2,                             # hdu
+        "ENERGY",                      # energy_units
+        Dict{String,Vector}(),         # extra_columns
+        Dict{String,Any}(),            # headers
+        gti_matrix,                    # gti
+        "GTI",                         # gti_source
+        nothing,                       # mjd_ref
+        nothing,                       # time_zero
+        nothing,                       # time_unit
+        nothing,                       # time_sys
+        nothing,                       # time_pixr
+        nothing                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
     
@@ -709,4 +858,48 @@ let
     # Test without GTI (still warns)
     ev_no_gti = EventList(times, energies)
     @test_logs (:warn, "No GTI information available") gti_info(ev_no_gti)
+end
+# Test timing keywords extraction with dummy data
+let
+    # Create mock FITS header with timing keywords
+    mock_header = Dict{String,Any}(
+        "MJDREFI" => 56658,
+        "MJDREFF" => 0.00077759259,
+        "TIMEZERO" => -1.0,
+        "TIMEUNIT" => "s",
+        "TIMESYS" => "TT",
+        "TIMEPIXR" => 0.0,
+        "TIMEDEL" => 4.0e-8
+    )
+    
+    # Test the extract_timing_keywords function directly
+    mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del = extract_timing_keywords(mock_header)
+    
+    # Test that MJDREF is correctly calculated from MJDREFI + MJDREFF
+    @test mjd_ref ≈ (mock_header["MJDREFI"] + mock_header["MJDREFF"])
+    
+    # Test that values are extracted correctly from header
+    @test time_zero == mock_header["TIMEZERO"]
+    @test time_sys == mock_header["TIMESYS"]
+    @test time_pixr == mock_header["TIMEPIXR"]
+    @test time_del == mock_header["TIMEDEL"]
+    
+    # Test time unit conversion from string "s" to 1.0
+    @test time_unit == 1.0
+    
+    # Test different time unit conversions
+    @test extract_timing_keywords(Dict("TIMEUNIT" => "s"))[3] == 1.0
+    @test extract_timing_keywords(Dict("TIMEUNIT" => "d"))[3] == 86400.0
+    @test extract_timing_keywords(Dict("TIMEUNIT" => "ms"))[3] == 0.001
+    @test extract_timing_keywords(Dict("TIMEUNIT" => "1.5"))[3] == 1.5
+    
+    # Test missing keywords return nothing
+    empty_header = Dict{String,Any}()
+    mjd_empty, time_zero_empty, time_unit_empty, time_sys_empty, time_pixr_empty, time_del_empty = extract_timing_keywords(empty_header)
+    @test isnothing(mjd_empty)
+    @test isnothing(time_zero_empty)
+    @test isnothing(time_unit_empty)
+    @test isnothing(time_sys_empty)
+    @test isnothing(time_pixr_empty)
+    @test isnothing(time_del_empty)
 end
