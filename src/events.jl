@@ -13,7 +13,7 @@ println(ev.meta.filepath)  # Shows the file path
 println(ev.meta.energy_units)  # Shows "PI", "ENERGY", or "PHA"
 ```
 """
-struct FITSMetadata{H}
+mutable struct FITSMetadata{H}
     "Path to the FITS file"
     filepath::String
     "HDU index that the metadata was read from"
