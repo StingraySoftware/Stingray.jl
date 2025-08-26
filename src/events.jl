@@ -876,14 +876,14 @@ Metadata container for FITS file information and timing parameters.
 **Example:**
 ```julia
 # Basic usage
-events = readevents("ni1200120104_0mpu7_cl.evt", load_gti=true, sort=true)
-println("Time range: $(extrema(times(events)))")  # MJD values
+evt = readevents("ni1200120104_0mpu7_cl.evt", load_gti=true, sort=true)
+println("Time range: \$(extrema(times(evt)))")  # MJD values
 
 # With GTI filtering
-filtered_events = readevents("events.fits", apply_gti_filter=true)
+filtered_evt = readevents("events.fits", apply_gti_filter=true)
 
 # Light curve with automatic bin-centering
-lightcurve = readevents("lightcurve.fits")
+lc = readevents("lightcurve.fits")
 ```
 
 ## Accessor Functions
@@ -922,13 +922,13 @@ Display GTI information summary.
 **Example:**
 ```julia
 # Filter events above 2 keV
-high_energy = filter_energy(e -> e > 2.0, events)
+high_energy = filter_energy(e -> e > 2.0, evt)
 
 # Filter time range (in-place)
-filter_time!(t -> t > 58192.1, events)
+filter_time!(t -> t > 58192.1, evt)
 
 # Chain filters
-result = filter_energy(e -> e < 10.0, filter_time(t -> t > 58192.0, events))
+result = filter_energy(e -> e < 10.0, filter_time(t -> t > 58192.0, evt))
 ```
 
 ## Utility Functions
@@ -951,7 +951,7 @@ Get column names from FITS HDU.
 ```julia
 # Check available columns
 cols = colnames("events.fits")
-println("Available columns: $cols")
+println("Available columns: \$cols")
 ```
 
 ## Timing Standards
@@ -980,9 +980,9 @@ GTIs define periods when the detector was operating properly:
 
 **Example:**
 ```julia
-if has_gti(events)
-    println("GTI exposure: $(gti_exposure(events)) seconds")
-    gti_info(events)
+if has_gti(evt)
+    println("GTI exposure: \$(gti_exposure(evt)) seconds")
+    gti_info(evt)
 end
 ```
 
@@ -1085,7 +1085,6 @@ function readevents(
     if !isnothing(mjd_ref)
         effective_timezero = isnothing(time_zero) ? 0.0 : time_zero
 
-        
         # Check if this is binned data (light curve) vs event data
         is_binned_data = !isnothing(time_del) && time_del > 0.0
         
@@ -1152,7 +1151,6 @@ function readevents(
                        mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
     return EventList(time, energy, meta)
 end
-
 # ============================================================================
 # Utility Functions
 # ============================================================================
