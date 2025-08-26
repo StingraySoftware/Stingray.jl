@@ -814,74 +814,201 @@ end
 """
     readevents(path; kwargs...)
 
-Read an [`EventList`](@ref) from a FITS file with optional GTI support. Will attempt to read an energy
-column if one exists.
+## Overview
 
-This is the primary function for loading X-ray event data from FITS files.
-It handles the complexities of different file formats and provides a consistent
-interface for accessing event data, including Good Time Intervals (GTIs).
+This module provides functionality for reading and manipulating X-ray event data from FITS files, with proper astronomical timing corrections and Good Time Interval (GTI) support. The primary focus is on timing accuracy following RXTE standards for X-ray astronomy.
 
-# Arguments
-- `path::AbstractString`: Path to the FITS file
+## Core Types
 
-# Keyword Arguments
-- `hdu::Int = 2`: HDU index to read from (typically 2 for event data)
-- `T::Type = Float64`: Type to cast the time and energy columns to
-- `sort::Bool = false`: Whether to sort by time if not already sorted
-- `extra_columns::Vector{String} = []`: Extra columns to read from the same HDU
-- `energy_alternatives::Vector{String} = ["ENERGY", "PI", "PHA"]`: Energy column alternatives to try
-- `load_gti::Bool = true`: Whether to attempt loading GTI information
-- `gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"]`: GTI HDU names to search for
-- `gti_hdu_indices::Vector{Int} = []`: GTI HDU indices to try if name search fails
-- `apply_gti_filter::Bool = false`: Whether to automatically filter events using GTI
+### `EventList{TimeType, MetaType}`
 
-# Returns
-`EventList{Vector{T}, FITSMetadata{FITSIO.FITSHeader}}`: EventList containing the event data and GTI metadata
+Container for X-ray event data with timing metadata.
 
-# Examples
+**Fields:**
+- `times::TimeType`: Vector of event times (typically in MJD(TT) after reading)
+- `energies::Union{Nothing, TimeType}`: Vector of event energies (keV, PI, or PHA units)
+- `meta::MetaType`: FITS metadata including timing keywords and GTI information
+
+### `FITSMetadata{H}`
+
+Metadata container for FITS file information and timing parameters.
+
+**Key Fields:**
+- `filepath::String`: Original FITS file path
+- `hdu::Int`: HDU index used for reading
+- `energy_units::Union{Nothing,String}`: Energy column name/units
+- `gti::Union{Nothing,Matrix{Float64}}`: GTI intervals (START, STOP columns)
+- `mjd_ref::Union{Nothing,Float64}`: MJD reference time (MJDREF or MJDREFI+MJDREFF)
+- `time_zero::Union{Nothing,Float64}`: Clock correction offset (TIMEZERO)
+- `time_unit::Union{Nothing,Float64}`: Time unit conversion factor
+- `time_sys::Union{Nothing,String}`: Time system (e.g., "TT", "UTC")
+- `time_pixr::Union{Nothing,Float64}`: Time pixel reference (TIMEPIXR)
+- `time_del::Union{Nothing,Float64}`: Time bin size (TIMEDEL)
+
+## Primary Functions
+
+### `readevents(path; kwargs...)`
+
+**Purpose:** Read X-ray event data from FITS files with automatic timing corrections.
+
+**Key Features:**
+- Converts raw mission times to MJD(TT) using FITS timing keywords
+- Handles both event lists and light curves (with bin-centering)
+- Supports GTI loading and filtering
+- Robust energy column detection
+
+**Arguments:**
+- `path::AbstractString`: FITS file path
+
+**Keyword Arguments:**
+- `hdu::Int = 2`: HDU index for event data
+- `T::Type = Float64`: Data type for arrays
+- `sort::Bool = false`: Sort events by time
+- `extra_columns::Vector{String} = []`: Additional columns to read
+- `energy_alternatives::Vector{String} = ["ENERGY", "PI", "PHA"]`: Energy column names
+- `load_gti::Bool = true`: Load GTI information
+- `apply_gti_filter::Bool = false`: Filter events using GTI
+
+**Timing Conversions:**
+- **Event data**: `MJD(TT) = (MJDREF+MJDREFF)+(TIME+TIMEZERO)/86400`
+- **Light curve data**: Includes bin-centering: `+(0.5-TIMEPIXR)*TIMEDEL`
+
+**Example:**
 ```julia
-# Basic usage with GTI loading
-ev = readevents("events.fits")
+# Basic usage
+events = readevents("ni1200120104_0mpu7_cl.evt", load_gti=true, sort=true)
+println("Time range: $(extrema(times(events)))")  # MJD values
 
-# With GTI filtering applied automatically
-ev = readevents("events.fits", apply_gti_filter=true)
+# With GTI filtering
+filtered_events = readevents("events.fits", apply_gti_filter=true)
 
-# Custom GTI HDU specification
-ev = readevents("events.fits", gti_hdu_candidates=["MYGTI"], gti_hdu_indices=[4])
+# Light curve with automatic bin-centering
+lightcurve = readevents("lightcurve.fits")
+```
 
-# With custom options
-ev = readevents("events.fits", hdu=3, sort=true, T=Float32, load_gti=false)
+## Accessor Functions
 
-# Reading extra columns with GTI
-ev = readevents("events.fits", extra_columns=["RAWX", "RAWY"], apply_gti_filter=true)
+### `times(ev::EventList)`
+Returns the time vector from an EventList.
 
-# Accessing the data and GTI
-println("Number of events: \$(length(ev))")
-println("Time range: \$(extrema(times(ev)))")
-if has_gti(ev)
-    println("GTI exposure: \$(gti_exposure(ev)) seconds")
-    gti_info(ev)
+### `energies(ev::EventList)`
+Returns the energy vector (or `nothing` if no energies).
+
+### `has_energies(ev::EventList) -> Bool`
+Check if energy data is present.
+
+### `has_gti(ev::EventList) -> Bool`
+Check if GTI data is available.
+
+### `gti(ev::EventList) -> Union{Nothing, Matrix{Float64}}`
+Get GTI matrix (2×N with START/STOP times).
+
+### `gti_exposure(ev::EventList) -> Float64`
+Calculate total exposure time from GTI or time span.
+
+### `gti_info(ev::EventList)`
+Display GTI information summary.
+
+## Filtering Functions
+
+### In-place Filtering
+- `filter_time!(predicate, ev)`: Filter by time condition
+- `filter_energy!(predicate, ev)`: Filter by energy condition
+
+### Non-mutating Filtering
+- `filter_time(predicate, ev)`: Return filtered copy by time
+- `filter_energy(predicate, ev)`: Return filtered copy by energy
+
+**Example:**
+```julia
+# Filter events above 2 keV
+high_energy = filter_energy(e -> e > 2.0, events)
+
+# Filter time range (in-place)
+filter_time!(t -> t > 58192.1, events)
+
+# Chain filters
+result = filter_energy(e -> e < 10.0, filter_time(t -> t > 58192.0, events))
+```
+
+## Utility Functions
+
+### `extract_timing_keywords(header)`
+Extract timing parameters from FITS header.
+
+**Returns:** `(mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)`
+
+### `read_energy_column(hdu; energy_alternatives, T)`
+Robust energy column reading with fallback options.
+
+### `read_gti_from_fits(fits_file; gti_hdu_candidates, gti_hdu_indices)`
+Read GTI data from FITS file using multiple search strategies.
+
+### `colnames(file; hdu=2)`
+Get column names from FITS HDU.
+
+**Example:**
+```julia
+# Check available columns
+cols = colnames("events.fits")
+println("Available columns: $cols")
+```
+
+## Timing Standards
+
+This implementation follows RXTE timing conventions:
+
+1. **Raw times** are mission elapsed time (MET) in seconds since epoch
+2. **TIMEZERO** provides clock corrections (typically sub-second)
+3. **MJDREF** gives the mission reference epoch in MJD
+4. **Final times** are in MJD(TT) - Modified Julian Date in Terrestrial Time
+
+### Time Systems
+- **TT (Terrestrial Time)**: Standard for X-ray timing analysis
+- **MJD**: Modified Julian Date (JD - 2400000.5)
+- **Event times**: Start of time bin (TIMEPIXR = 0.0)
+- **Light curve times**: Bin-centered for proper analysis
+
+## GTI (Good Time Interval) Support
+
+GTIs define periods when the detector was operating properly:
+
+- Automatically loaded from "GTI" or "STDGTI" HDUs
+- Support for multiple GTI sources with merging
+- Optional automatic event filtering
+- Exposure time calculations
+
+**Example:**
+```julia
+if has_gti(events)
+    println("GTI exposure: $(gti_exposure(events)) seconds")
+    gti_info(events)
 end
 ```
-# GTI Behavior
-- GTI data is automatically searched for in common HDU names ("GTI", "STDGTI")
-- If `apply_gti_filter=true`, events outside GTI intervals are automatically removed
-- GTI information is stored in the metadata for later use
-- Auto-detection searches for HDUs containing "START" and "STOP" columns
 
-# Error Handling
-- Throws `AssertionError` if time and energy vectors have different sizes
-- Throws `AssertionError` if times are not sorted and `sort=false`
-- GTI reading errors are logged as debug messages and don't fail the main read
-- FITS reading errors are propagated from the FITSIO.jl library
+## Error Handling
 
-# Implementation Notes
-- Uses type-stable FITS reading with explicit type conversions
-- Handles missing energy data gracefully
-- Supports efficient multi-column sorting when `sort=true`
-- Creates metadata with all relevant file information including GTI
-- Validates data consistency before returning
-- Uses case_sensitive=false parameter for backward compatibility
+- **Data validation**: Time/energy array size matching
+- **Sorting requirements**: Events must be time-ordered
+- **GTI errors**: Logged but don't fail the read operation
+- **Missing columns**: Graceful handling with warnings
+
+## Performance Notes
+
+- Type-stable operations for efficiency
+- In-place filtering to minimize memory allocation
+- Efficient sorting with `sortperm` when needed
+- Lazy GTI loading (only when requested)
+
+## Integration with Analysis Tools
+
+The timing corrections ensure compatibility with:
+- Stingray (Python X-ray timing package)
+- XRONOS timing analysis
+- Cross-spectrum and power spectrum analysis
+- Barycentric correction tools (like `barycorr`)
+
+Times are ready for direct use in timing analysis without additional corrections.
 """
 function readevents(
     path::AbstractString;
@@ -952,6 +1079,37 @@ function readevents(
         mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del = extract_timing_keywords(header)
 
         (time, energy, energy_column, header, extra_data, mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
+    end
+
+    # Calculate absolute MJD(TT) times if timing keywords are available
+    if !isnothing(mjd_ref)
+        effective_timezero = isnothing(time_zero) ? 0.0 : time_zero
+
+        
+        # Check if this is binned data (light curve) vs event data
+        is_binned_data = !isnothing(time_del) && time_del > 0.0
+        
+        if is_binned_data
+            # For light curve data - apply bin-centering correction
+            # MJD(TT) = (MJDREF+MJDREFF)+(TIME+TIMEZERO+FINECLOCK+(0.5-TIMEPIXR)*TIMEDEL)/86400
+            effective_timepixr = isnothing(time_pixr) ? 0.0 : time_pixr
+            bin_center_correction = (0.5 - effective_timepixr) * time_del
+            
+            corrected_time = time .+ effective_timezero .+ bin_center_correction
+            mjd_tt_times = mjd_ref .+ (corrected_time ./ 86400.0)
+            
+            @debug "Converted to MJD(TT) with bin-centering" mjd_ref=mjd_ref time_zero=effective_timezero timedel=time_del timepixr=effective_timepixr bin_correction=bin_center_correction
+        else
+            # For event data - standard conversion
+            # MJD(TT) = (MJDREF+MJDREFF)+(TIME+TIMEZERO+FINECLOCK)/86400
+            corrected_time = time .+ effective_timezero
+            mjd_tt_times = mjd_ref .+ (corrected_time ./ 86400.0)
+            
+            @debug "Converted to MJD(TT) for event data" mjd_ref=mjd_ref time_zero=effective_timezero
+        end
+        
+        time = convert(Vector{T}, mjd_tt_times)
+        @debug "Final time range" time_range=(minimum(time), maximum(time))
     end
 
     # Validate data consistency
