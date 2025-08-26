@@ -1,31 +1,36 @@
-# Helper function to create mock FITSMetadata
+# Helper function to create mock EventList for testing
 function create_test_eventlist(times::Vector{Float64}, energies::Union{Vector{Float64}, Nothing}=nothing)
     mock_headers = Dict{String,Any}()
     mock_metadata = FITSMetadata(
-        "",  # telescope
-        1,   # channel
-        nothing, # unit
-        Dict{String,Vector}(),  # column info
-        mock_headers,  # headers
-        [0.0 maximum(times)],  # GTI
-        nothing  # maskfile
+        "",  # filepath
+        1,   # hdu
+        "keV",  # energy_units
+        Dict{String,Vector}(),  # extra_columns
+        mock_headers, # headers
+        nothing,      # gti
+        nothing,      # gti_source
+        nothing,      # mjd_ref
+        nothing,      # time_zero
+        nothing,      # time_unit
+        nothing,      # time_sys
+        nothing,      # time_pixr
+        nothing       # time_del
     )
-    
     return EventList(times, energies, mock_metadata)
 end
 
-# Helper function to create mock LightCurve with GTI
+# Helper function to create mock LightCurve for testing
 function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt::Float64=1.0)
     metadata = LightCurveMetadata(
         "", "", "", 0.0, 
         (minimum(times)-dt/2, maximum(times)+dt/2), 
         dt, 
         Vector{Dict{String,Any}}(),
-        Dict{String,Any}("gti" => [minimum(times) maximum(times)])
+        Dict{String,Any}()
     )
     
     return LightCurve(
-        times, dt, counts, nothing,nothing, EventProperty{Float64}[], 
+        times, dt, counts, nothing, nothing, EventProperty{Float64}[], 
         metadata, :poisson
     )
 end
@@ -470,7 +475,13 @@ let
         ),
         mock_headers,  # headers
         nothing,       # gti
-        nothing        # gti_source
+        nothing,       # gti_source
+        nothing,       # mjd_ref
+        nothing,       # time_zero
+        nothing,       # time_unit
+        nothing,       # time_sys
+        nothing,       # time_pixr
+        nothing        # time_del
     )
     
     el = EventList(times, energies, mock_metadata)
