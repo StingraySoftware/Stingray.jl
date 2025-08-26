@@ -6,11 +6,16 @@ function create_test_eventlist(times::Vector{Float64}, energies::Union{Vector{Fl
         1,   # hdu
         "keV",  # energy_units
         Dict{String,Vector}(),  # extra_columns
-        mock_headers,  # headers
-        nothing,       # gti
-        nothing        # gti_source
+        mock_headers, # headers
+        nothing,      # gti
+        nothing,      # gti_source
+        nothing,      # mjd_ref
+        nothing,      # time_zero
+        nothing,      # time_unit
+        nothing,      # time_sys
+        nothing,      # time_pixr
+        nothing       # time_del
     )
-    
     return EventList(times, energies, mock_metadata)
 end
 
@@ -470,7 +475,13 @@ let
         ),
         mock_headers,  # headers
         nothing,       # gti
-        nothing        # gti_source
+        nothing,       # gti_source
+        nothing,       # mjd_ref
+        nothing,       # time_zero
+        nothing,       # time_unit
+        nothing,       # time_sys
+        nothing,       # time_pixr
+        nothing        # time_del
     )
     
     el = EventList(times, energies, mock_metadata)
