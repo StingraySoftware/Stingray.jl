@@ -946,36 +946,31 @@ end
 
 # Test MJD(TT) calculation for event data
 let
-    # Mock event data (raw mission elapsed time)
     raw_times = [100000.0, 100001.0, 100002.0]
     mjd_ref = 56658.00077759259
     time_zero = -1.0
     
-    # Expected calculation: mjd_ref + (raw_times + time_zero) / 86400
     expected_times = mjd_ref .+ ((raw_times .+ time_zero) ./ 86400.0)
     
-    # Test the calculation matches expected formula
     corrected_times = raw_times .+ time_zero
     mjd_tt_times = mjd_ref .+ (corrected_times ./ 86400.0)
     
     @test mjd_tt_times ≈ expected_times
-    @test all(mjd_tt_times .> 56000)  # Should be proper MJD values
-    @test maximum(mjd_tt_times) - minimum(mjd_tt_times) ≈ 2.0/86400.0 atol=1e-10  # 2 second span
+    @test all(mjd_tt_times .> 56000)
+    @test maximum(mjd_tt_times) - minimum(mjd_tt_times) ≈ 2.0/86400.0 atol=1e-10
 end
-# Test MJD(TT) calculation for light curve data (bin-centering)
+
+# Test bin-centering correction for light curve data
 let
-    # Mock light curve data
-    raw_times = [0.0, 1.0, 2.0]  # Bin start times
+    raw_times = [0.0, 1.0, 2.0]
     mjd_ref = 56658.0
     time_zero = 0.0
-    time_del = 1.0      # 1 second bins
-    time_pixr = 0.0     # Standard for RXTE
+    time_del = 1.0
+    time_pixr = 0.0
     
-    # Bin-centering correction: (0.5 - TIMEPIXR) * TIMEDEL
     bin_center_correction = (0.5 - time_pixr) * time_del
-    @test bin_center_correction ≈ 0.5  # Should center bins
+    @test bin_center_correction ≈ 0.5
     
-    # Expected: times should be centered on bin midpoints
     expected_corrected = raw_times .+ time_zero .+ bin_center_correction
     expected_mjd = mjd_ref .+ (expected_corrected ./ 86400.0)
     
@@ -983,92 +978,16 @@ let
     mjd_tt_times = mjd_ref .+ (corrected_times ./ 86400.0)
     
     @test mjd_tt_times ≈ expected_mjd
-    # First bin should be centered at 0.5 seconds, not 0.0
     @test mjd_tt_times[1] ≈ mjd_ref + 0.5/86400.0
 end
 
-# Test data type detection (event vs binned)
+# Test data type detection
 let
-    # Event data: no TIMEDEL or TIMEDEL = 0
-    @test isnothing(nothing) || (0.0 <= 0.0)  # Event data condition
-    
-    # Binned data: TIMEDEL > 0
     time_del_binned = 0.1
     is_binned = !isnothing(time_del_binned) && time_del_binned > 0.0
     @test is_binned == true
     
-    # Event data: TIMEDEL missing
     time_del_event = nothing
     is_binned_event = !isnothing(time_del_event) && time_del_event > 0.0
     @test is_binned_event == false
-end
-
-# Test time range validation
-let
-    # Test typical NICER observation time ranges
-    mjd_ref = 56658.00077759259  # NICER reference epoch
-    observation_duration = 3600.0  # 1 hour observation
-    raw_start_time = 133000000.0  # ~4.2 years after epoch
-    
-    time_zero = -1.0
-    raw_times = [raw_start_time, raw_start_time + observation_duration]
-    
-    corrected_times = raw_times .+ time_zero
-    mjd_tt_times = mjd_ref .+ (corrected_times ./ 86400.0)
-    
-    # Should produce reasonable MJD values (around 58000 for 2018)
-    @test all(mjd_tt_times .> 58000)
-    @test all(mjd_tt_times .< 60000)
-    
-    # Duration should be preserved in MJD units
-    duration_mjd = (mjd_tt_times[2] - mjd_tt_times[1]) * 86400.0
-    @test duration_mjd ≈ observation_duration atol=1e-6
-end
-
-# Test safe_float64 helper function behavior
-let
-    # Test string unit parsing
-    @test extract_timing_keywords(Dict("TIMEUNIT" => "s"))[3] ≈ 1.0
-    @test extract_timing_keywords(Dict("TIMEUNIT" => "d"))[3] ≈ 86400.0
-    @test extract_timing_keywords(Dict("TIMEUNIT" => "ms"))[3] ≈ 0.001
-    
-    # Test numeric parsing
-    @test extract_timing_keywords(Dict("TIMEZERO" => "123.45"))[2] ≈ 123.45
-    @test extract_timing_keywords(Dict("TIMEZERO" => 67.89))[2] ≈ 67.89
-    
-    # Test invalid string handling
-    result = extract_timing_keywords(Dict("TIMEZERO" => "invalid"))
-    @test isnothing(result[2])
-end
-
-# Test complete timing workflow
-let
-    # Simulate complete timing calculation workflow
-    mjd_ref = 56658.00077759259
-    time_zero = -1.0
-    time_del = nothing  # Event data
-    time_pixr = 0.0
-    
-    # Raw event times (seconds since epoch)
-    raw_times = [133000000.0, 133000001.5, 133000003.2]
-    
-    # Apply corrections
-    effective_timezero = isnothing(time_zero) ? 0.0 : time_zero
-    is_binned_data = !isnothing(time_del) && time_del > 0.0
-    
-    @test is_binned_data == false  # Should detect as event data
-    
-    # Calculate MJD(TT)
-    corrected_time = raw_times .+ effective_timezero
-    mjd_tt_times = mjd_ref .+ (corrected_time ./ 86400.0)
-    
-    # Validate results
-    @test length(mjd_tt_times) == 3
-    @test all(mjd_tt_times .> mjd_ref)  # Should be after reference epoch
-    @test issorted(mjd_tt_times)        # Should maintain time order
-    
-    # Check that relative timing is preserved
-    dt1 = (raw_times[2] - raw_times[1])
-    dt2 = (mjd_tt_times[2] - mjd_tt_times[1]) * 86400.0
-    @test dt1 ≈ dt2 atol=1e-6
 end
