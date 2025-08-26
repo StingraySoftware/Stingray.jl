@@ -358,16 +358,40 @@ println(length(centers))  # 100
 - Centers calculated as bin_start + 0.5 * bin_size
 """
 function create_time_bins(start_time::T, stop_time::T, binsize::T) where T
-    start_bin = floor(start_time / binsize) * binsize
-    time_span = stop_time - start_bin
-    num_bins = max(1, ceil(Int, time_span / binsize))
-    
-    if start_bin + num_bins * binsize <= stop_time
-        num_bins += 1
+    # Handle potential precision issues for large time values (seconds since epoch)
+    if abs(start_time) > 1e8  # Likely seconds since epoch
+        # Use relative time for binning to avoid precision loss
+        time_offset = floor(start_time)
+        rel_start = start_time - time_offset
+        rel_stop = stop_time - time_offset
+        
+        start_bin = floor(rel_start / binsize) * binsize
+        time_span = rel_stop - start_bin
+        num_bins = max(1, ceil(Int, time_span / binsize))
+        
+        if start_bin + num_bins * binsize <= rel_stop
+            num_bins += 1
+        end
+        
+        # Create relative edges and centers, then add offset back
+        rel_edges = [start_bin + i * binsize for i = 0:num_bins]
+        rel_centers = [start_bin + (i + 0.5) * binsize for i = 0:(num_bins-1)]
+        
+        edges = rel_edges .+ time_offset
+        centers = rel_centers .+ time_offset
+    else
+        # Standard binning for MJD or small time values
+        start_bin = floor(start_time / binsize) * binsize
+        time_span = stop_time - start_bin
+        num_bins = max(1, ceil(Int, time_span / binsize))
+        
+        if start_bin + num_bins * binsize <= stop_time
+            num_bins += 1
+        end
+        
+        edges = [start_bin + i * binsize for i = 0:num_bins]
+        centers = [start_bin + (i + 0.5) * binsize for i = 0:(num_bins-1)]
     end
-    
-    edges = [start_bin + i * binsize for i = 0:num_bins]
-    centers = [start_bin + (i + 0.5) * binsize for i = 0:(num_bins-1)]
     
     return edges, centers
 end
@@ -458,18 +482,18 @@ filtered_times, filtered_energies, start_t, stop_t = apply_filters(
 function apply_filters(
     times::AbstractVector{T},
     energies::Union{Nothing,AbstractVector{T}},
+    eventlist::EventList,
     tstart::Union{Nothing,Real},
     tstop::Union{Nothing,Real},
-    energy_filter::Union{Nothing,Tuple{Real,Real}}
+    energy_filter::Union{Nothing,Tuple{Real,Real}},
+    binsize::Real
 ) where T
-    # Start with all indices
     mask = trues(length(times))
     
-    # Apply energy filter first if provided and energies exist
+    # Apply energy filter
     if !isnothing(energy_filter) && !isnothing(energies)
         emin, emax = energy_filter
-        energy_mask = (energies .>= emin) .& (energies .< emax)
-        mask = mask .& energy_mask
+        mask = mask .& (energies .>= emin) .& (energies .< emax)
     end
     
     # Apply time filters
@@ -480,18 +504,37 @@ function apply_filters(
         mask = mask .& (times .<= tstop)
     end
     
-    # Check if any events remain
-    if !any(mask)
-        throw(ArgumentError("No events remain after applying filters"))
+    # If GTI is present, apply GTI mask with unit conversion
+    if has_gti(eventlist) && !isnothing(eventlist.meta.gti)
+        # Check if times are in seconds and need conversion to MJD
+        if !isnothing(eventlist.meta.mjd_ref) && maximum(times) > 100000 && minimum(times) > 0
+            # Both event times and GTI need to be in the same units for comparison
+            # Convert event times to MJD
+            times_mjd = eventlist.meta.mjd_ref .+ (times ./ 86400.0)
+            
+            # Convert GTI to MJD (GTI is also in seconds)
+            gti_mjd = eventlist.meta.mjd_ref .+ (eventlist.meta.gti ./ 86400.0)
+            
+            # Create GTI mask using MJD times
+            gti_mask, _ = create_gti_mask(times_mjd, gti_mjd, dt=binsize/86400.0)
+            mask = mask .& gti_mask
+            
+            @debug "GTI filtering in MJD" event_time_range=extrema(times_mjd) gti_time_range=extrema(gti_mjd) filtered_events=sum(mask)
+        else
+            # Times are already in appropriate units (MJD or relative)
+            gti_mask, _ = create_gti_mask(times, eventlist.meta.gti, dt=binsize)
+            mask = mask .& gti_mask
+            
+            @debug "GTI filtering in original units" event_time_range=extrema(times) gti_time_range=extrema(eventlist.meta.gti) filtered_events=sum(mask)
+        end
     end
     
-    # Apply the mask
+    !any(mask) && throw(ArgumentError("No events remain after applying filters"))
+    
     filtered_times = times[mask]
     filtered_energies = isnothing(energies) ? nothing : energies[mask]
-    
-    # Calculate time range
-    start_t = isnothing(tstart) ? minimum(times) : tstart
-    stop_t = isnothing(tstop) ? maximum(times) : tstop
+    start_t = isnothing(tstart) ? minimum(filtered_times) : tstart
+    stop_t = isnothing(tstop) ? maximum(filtered_times) : tstop
     
     return filtered_times, filtered_energies, start_t, stop_t
 end
@@ -541,8 +584,14 @@ function calculate_event_properties(
         energy_sums = zeros(T, length(bin_centers))
         energy_counts = zeros(Int, length(bin_centers))
         
+        # Handle potential precision issues for large time values
+        use_offset = abs(start_bin) > 1e8
+        time_offset = use_offset ? floor(start_bin) : zero(T)
+        adjusted_start_bin = use_offset ? (start_bin - time_offset) : start_bin
+        
         for (t, e) in zip(times, energies)
-            bin_idx = floor(Int, (t - start_bin) / binsize) + 1
+            adjusted_t = use_offset ? (t - time_offset) : t
+            bin_idx = floor(Int, (adjusted_t - adjusted_start_bin) / binsize) + 1
             if 1 <= bin_idx <= length(bin_centers)
                 energy_sums[bin_idx] += T(e)
                 energy_counts[bin_idx] += 1
@@ -605,15 +654,23 @@ function extract_metadata(eventlist::EventList, start_time, stop_time, binsize, 
         n_filtered_events  # Assume it's already a count
     end
     
+    # Create extra metadata with GTI information[storing purpose]
     extra_metadata = Dict{String,Any}(
         "filtered_nevents" => n_events,
         "total_nevents" => length(eventlist.times),
         "energy_filter" => energy_filter,
-        "binning_method" => "histogram"
+        "binning_method" => "histogram",
+        "gti" => eventlist.meta.gti,  #GTI information[this 'eventlist.meta.gti' need to bw rembered since it is the one where u will all gti information:)]
+        "time_units" => abs(start_time) > 1e8 ? "seconds" : "MJD"  # Track time units
     )
     
     if hasfield(typeof(eventlist.meta), :extra)
         merge!(extra_metadata, eventlist.meta.extra)
+    end
+    
+    # Add GTI source information if available
+    if !isnothing(eventlist.meta.gti_source)
+        extra_metadata["gti_source"] = eventlist.meta.gti_source
     end
     
     return LightCurveMetadata(
@@ -691,22 +748,19 @@ function create_lightcurve(
     !(err_method in [:poisson, :gaussian]) && throw(ArgumentError(
         "Unsupported error method: $err_method. Use :poisson or :gaussian"
     ))
-    
     binsize_t = convert(T, binsize)
-    
-    # Apply filters to get filtered times and energies
+
     filtered_times, filtered_energies, start_t, stop_t = apply_filters(
         eventlist.times,
         eventlist.energies,
+        eventlist,        # EventList parameter
         tstart,
         tstop,
-        energy_filter
+        energy_filter,
+        binsize_t         # binsize parameter
     )
     
-    # Check if we have any events left after filtering
-    if isempty(filtered_times)
-        throw(ArgumentError("No events remain after filtering"))
-    end
+    isempty(filtered_times) && throw(ArgumentError("No events remain after filtering"))
     
     # Determine time range
     start_time = minimum(filtered_times)
@@ -716,17 +770,17 @@ function create_lightcurve(
     dt, bin_centers = create_time_bins(start_time, stop_time, binsize_t)
     counts = bin_events(filtered_times, dt)
     
-    @info "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
+    @debug "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
     
     # Calculate exposure and properties
     exposure = fill(binsize_t, length(bin_centers))
     properties = calculate_event_properties(filtered_times, filtered_energies, dt, bin_centers)
     
-    # Extract metadata - use filtered time range if time filtering was applied
+    # Extract metadata with GTI information
     actual_start = !isnothing(tstart) ? T(tstart) : start_time
     actual_stop = !isnothing(tstop) ? T(tstop) : stop_time
     metadata = extract_metadata(eventlist, actual_start, actual_stop, binsize_t, 
-                               length(filtered_times), energy_filter)
+                              length(filtered_times), energy_filter)
     
     # Create light curve (errors will be calculated when needed)
     lc = LightCurve{T}(
@@ -736,6 +790,11 @@ function create_lightcurve(
     
     # Calculate initial errors
     calculate_errors!(lc)
+
+    # Debug info about GTI
+    if has_gti(eventlist)
+        @debug "GTI information preserved" n_intervals=size(eventlist.meta.gti, 1) time_range=extrema(eventlist.meta.gti)
+    end
     
     return lc
 end
@@ -788,13 +847,18 @@ function rebin(lc::LightCurve{T}, new_binsize::Real) where T
     # Create new bins
     new_edges, new_centers = create_time_bins(start_time, stop_time, new_binsize_t)
     
-    # Rebin counts
+    # Rebin counts with consistent time handling
     new_counts = zeros(Int, length(new_centers))
-    start_bin = new_edges[1]
+    
+    # Determine if we need offset for precision
+    use_offset = abs(start_time) > 1e8
+    time_offset = use_offset ? floor(start_time) : zero(T)
+    start_bin = use_offset ? (start_time - time_offset) : start_time
     
     for (i, time) in enumerate(lc.time)
         if lc.counts[i] > 0
-            bin_idx = floor(Int, (time - start_bin) / new_binsize_t) + 1
+            adjusted_time = use_offset ? (time - time_offset) : time
+            bin_idx = floor(Int, (adjusted_time - start_bin) / new_binsize_t) + 1
             if 1 <= bin_idx <= length(new_counts)
                 new_counts[bin_idx] += lc.counts[i]
             end
@@ -809,7 +873,8 @@ function rebin(lc::LightCurve{T}, new_binsize::Real) where T
         
         for (i, val) in enumerate(prop.values)
             if lc.counts[i] > 0
-                bin_idx = floor(Int, (lc.time[i] - start_bin) / new_binsize_t) + 1
+                adjusted_time = use_offset ? (lc.time[i] - time_offset) : lc.time[i]
+                bin_idx = floor(Int, (adjusted_time - start_bin) / new_binsize_t) + 1
                 if 1 <= bin_idx <= length(new_values)
                     new_values[bin_idx] += val * lc.counts[i]
                     counts[bin_idx] += lc.counts[i]

@@ -775,28 +775,31 @@ end
 # Test Comprehensive Filtering System
 let
     times = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5]
-    energies = [5.0, 15.0, 25.0, 35.0, 45.0, 55.0, 65.0]    
-    # Test time-only filtering
-    filtered_times, filtered_energies, start_t, stop_t = 
-        apply_filters(times, energies, 2.0, 5.0, nothing)
+    energies = [5.0, 15.0, 25.0, 35.0, 45.0, 55.0, 65.0]
+    eventlist = EventList(times, nothing)
+    binsize = 1.0
+    filtered_times, filtered_energies, start_t, stop_t =
+        apply_filters(times, energies, eventlist, 2.0, 5.0, nothing, binsize)
     @test all(2.0 .<= filtered_times .<= 5.0)
     @test length(filtered_times) == 3  # [2.5, 3.5, 4.5] (5.5 > 5.0)
     @test start_t == 2.0
     @test stop_t == 5.0
     # Test energy-only filtering  
     filtered_times_e, filtered_energies_e, _, _ =
-        apply_filters(times, energies, nothing, nothing, (20.0, 50.0))
+        apply_filters(times, energies, eventlist, nothing, nothing, (20.0, 50.0), binsize)
     @test all(20.0 .<= filtered_energies_e .< 50.0)
     @test 25.0 in filtered_energies_e && 35.0 in filtered_energies_e && 45.0 in filtered_energies_e
     @test 50.0 ∉ filtered_energies_e  # Exclusive upper bound
+    # Test combined filtering
     filtered_times_c, filtered_energies_c, _, _ =
-        apply_filters(times, energies, 2.0, 5.0, (20.0, 50.0))
+        apply_filters(times, energies, eventlist, 2.0, 5.0, (20.0, 50.0), binsize)
     @test all(2.0 .<= filtered_times_c .<= 5.0)
     @test all(20.0 .<= filtered_energies_c .< 50.0)
-    @test_throws ArgumentError apply_filters(times, energies, 10.0, 20.0, nothing)  # No events in time range
-    @test_throws ArgumentError apply_filters(times, energies, nothing, nothing, (100.0, 200.0))  # No events in energy range    
+    # Test error cases
+    @test_throws ArgumentError apply_filters(times, energies, eventlist, 10.0, 20.0, nothing, binsize)  # No events in time range
+    @test_throws ArgumentError apply_filters(times, energies, eventlist, nothing, nothing, (100.0, 200.0), binsize)  # No events in energy range
     # Test filtering without energies
-    filtered_no_energy, _, _, _ = apply_filters(times, nothing, 2.0, 5.0, (20.0, 50.0))
+    filtered_no_energy, _, _, _ = apply_filters(times, nothing, eventlist, 2.0, 5.0, (20.0, 50.0), binsize)
     @test all(2.0 .<= filtered_no_energy .<= 5.0)
 end
 
