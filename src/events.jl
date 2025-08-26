@@ -13,7 +13,7 @@ println(ev.meta.filepath)  # Shows the file path
 println(ev.meta.energy_units)  # Shows "PI", "ENERGY", or "PHA"
 ```
 """
-struct FITSMetadata{H}
+mutable struct FITSMetadata{H}
     "Path to the FITS file"
     filepath::String
     "HDU index that the metadata was read from"
@@ -28,6 +28,18 @@ struct FITSMetadata{H}
     gti::Union{Nothing,Matrix{Float64}}
     "GTI HDU name or index used"
     gti_source::Union{Nothing,String,Int}
+    "MJD reference time (MJDREF or MJDREFI + MJDREFF)"
+    mjd_ref::Union{Nothing,Float64}
+    "Time zero offset (TIMEZERO)"
+    time_zero::Union{Nothing,Float64}
+    "Time unit conversion factor (TIMEUNIT)"
+    time_unit::Union{Nothing,Float64}
+    "Time system (TIMESYS)"
+    time_sys::Union{Nothing,String}
+    "Time pixel reference (TIMEPIXR)"
+    time_pixr::Union{Nothing,Float64}
+    "Time bin size (TIMEDEL)"
+    time_del::Union{Nothing,Float64}
 end
 
 function Base.show(io::IO, ::MIME"text/plain", m::FITSMetadata)
@@ -35,6 +47,12 @@ function Base.show(io::IO, ::MIME"text/plain", m::FITSMetadata)
     if !isnothing(m.gti)
         gti_exposure = sum(diff(m.gti; dims=2))
         println(io, "GTI: $(size(m.gti, 1)) intervals, total exposure: $(gti_exposure) s")
+    end
+    if !isnothing(m.mjd_ref)
+        println(io, "MJD Reference: $(m.mjd_ref)")
+    end
+    if !isnothing(m.time_zero)
+        println(io, "Time Zero: $(m.time_zero)")
     end
 end
 
@@ -94,13 +112,19 @@ ev = EventList([1.0, 2.0, 3.0], [0.5, 1.2, 2.1])
 """
 function EventList(times::Vector{T}, energies::Union{Nothing,Vector{T}} = nothing) where {T}
     dummy_meta = FITSMetadata(
-        "[no file]",  # filepath
-        1,   # hdu
-        nothing,  # energy_units
-        Dict{String,Vector}(),  # extra_columns
-        Dict{String,Any}(),  # headers
-        nothing,  # gti
-        nothing   # gti_source
+        "[no file]",                    # filepath
+        1,                             # hdu
+        nothing,                       # energy_units
+        Dict{String,Vector}(),         # extra_columns
+        Dict{String,Any}(),            # headers
+        nothing,                       # gti
+        nothing,                       # gti_source
+        nothing,                       # mjd_ref
+        nothing,                       # time_zero
+        nothing,                       # time_unit
+        nothing,                       # time_sys
+        nothing,                       # time_pixr
+        nothing                        # time_del
     )
     EventList(times, energies, dummy_meta)
 end
@@ -713,76 +737,297 @@ function read_gti_from_fits(fits_file::String;
     end
 end
 """
-    readevents(path; kwargs...)
+    extract_timing_keywords(header)
 
-Read an [`EventList`](@ref) from a FITS file with optional GTI support. Will attempt to read an energy
-column if one exists.
-
-This is the primary function for loading X-ray event data from FITS files.
-It handles the complexities of different file formats and provides a consistent
-interface for accessing event data, including Good Time Intervals (GTIs).
+Extract timing-related keywords from FITS header for X-ray timing analysis.
 
 # Arguments
-- `path::AbstractString`: Path to the FITS file
-
-# Keyword Arguments
-- `hdu::Int = 2`: HDU index to read from (typically 2 for event data)
-- `T::Type = Float64`: Type to cast the time and energy columns to
-- `sort::Bool = false`: Whether to sort by time if not already sorted
-- `extra_columns::Vector{String} = []`: Extra columns to read from the same HDU
-- `energy_alternatives::Vector{String} = ["ENERGY", "PI", "PHA"]`: Energy column alternatives to try
-- `load_gti::Bool = true`: Whether to attempt loading GTI information
-- `gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"]`: GTI HDU names to search for
-- `gti_hdu_indices::Vector{Int} = []`: GTI HDU indices to try if name search fails
-- `apply_gti_filter::Bool = false`: Whether to automatically filter events using GTI
+- `header`: FITS header object
 
 # Returns
-`EventList{Vector{T}, FITSMetadata{FITSIO.FITSHeader}}`: EventList containing the event data and GTI metadata
-
-# Examples
-```julia
-# Basic usage with GTI loading
-ev = readevents("events.fits")
-
-# With GTI filtering applied automatically
-ev = readevents("events.fits", apply_gti_filter=true)
-
-# Custom GTI HDU specification
-ev = readevents("events.fits", gti_hdu_candidates=["MYGTI"], gti_hdu_indices=[4])
-
-# With custom options
-ev = readevents("events.fits", hdu=3, sort=true, T=Float32, load_gti=false)
-
-# Reading extra columns with GTI
-ev = readevents("events.fits", extra_columns=["RAWX", "RAWY"], apply_gti_filter=true)
-
-# Accessing the data and GTI
-println("Number of events: \$(length(ev))")
-println("Time range: \$(extrema(times(ev)))")
-if has_gti(ev)
-    println("GTI exposure: \$(gti_exposure(ev)) seconds")
-    gti_info(ev)
-end
-```
-# GTI Behavior
-- GTI data is automatically searched for in common HDU names ("GTI", "STDGTI")
-- If `apply_gti_filter=true`, events outside GTI intervals are automatically removed
-- GTI information is stored in the metadata for later use
-- Auto-detection searches for HDUs containing "START" and "STOP" columns
-
-# Error Handling
-- Throws `AssertionError` if time and energy vectors have different sizes
-- Throws `AssertionError` if times are not sorted and `sort=false`
-- GTI reading errors are logged as debug messages and don't fail the main read
-- FITS reading errors are propagated from the FITSIO.jl library
+Tuple of timing parameters: (mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
 
 # Implementation Notes
-- Uses type-stable FITS reading with explicit type conversions
-- Handles missing energy data gracefully
-- Supports efficient multi-column sorting when `sort=true`
-- Creates metadata with all relevant file information including GTI
-- Validates data consistency before returning
-- Uses case_sensitive=false parameter for backward compatibility
+- MJDREF can be single value or MJDREFI + MJDREFF
+- All timing keywords are optional and return nothing if not found
+- Handles both integer and float timing values appropriately
+- this function is expandable for future we add more metadata
+# reference
+- https://heasarc.gsfc.nasa.gov/docs/xte/abc/time_tutorial.html
+"""
+function extract_timing_keywords(header)
+    # Helper function to safely convert to Float64, handling units
+    function safe_float64(val)
+        if val isa AbstractString
+            # Handle common time unit strings
+            val_lower = lowercase(strip(val))
+            if val_lower == "s" || val_lower == "sec" || val_lower == "second"
+                return 1.0  # seconds
+            elseif val_lower == "d" || val_lower == "day"
+                return 86400.0  # seconds per day
+            elseif val_lower == "ms" || val_lower == "millisecond"
+                return 0.001  # milliseconds to seconds
+            else
+                # Try to parse as number
+                try
+                    return parse(Float64, val)
+                catch
+                    return nothing  # Return nothing if can't parse
+                end
+            end
+        else
+            return Float64(val)
+        end
+    end
+    
+    # Extract MJD reference
+    mjd_ref = nothing
+    if haskey(header, "MJDREF")
+        mjd_ref = safe_float64(header["MJDREF"])
+    elseif haskey(header, "MJDREFI") && haskey(header, "MJDREFF")
+        mjdrefi = safe_float64(header["MJDREFI"])
+        mjdreff = safe_float64(header["MJDREFF"])
+        if !isnothing(mjdrefi) && !isnothing(mjdreff)
+            mjd_ref = mjdrefi + mjdreff
+        end
+    elseif haskey(header, "MJDREFI")
+        mjd_ref = safe_float64(header["MJDREFI"])
+    end
+
+    # Extract TIMEZERO
+    time_zero = haskey(header, "TIMEZERO") ? safe_float64(header["TIMEZERO"]) : nothing
+
+    # Extract TIMEUNIT
+    time_unit = haskey(header, "TIMEUNIT") ? safe_float64(header["TIMEUNIT"]) : nothing
+
+    # Extract TIMESYS
+    time_sys = haskey(header, "TIMESYS") ? String(header["TIMESYS"]) : nothing
+
+    # Extract TIMEPIXR
+    time_pixr = haskey(header, "TIMEPIXR") ? safe_float64(header["TIMEPIXR"]) : nothing
+
+    # Extract TIMEDEL
+    time_del = haskey(header, "TIMEDEL") ? safe_float64(header["TIMEDEL"]) : nothing
+
+    return mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del
+end
+"""
+    sec_to_mjd(t_sec, mjdref)
+
+Convert time in seconds to Modified Julian Date (MJD).
+
+# Arguments
+- `t_sec`: Time in seconds (can be scalar or vector)
+- `mjdref`: MJD reference time
+
+# Returns
+- Time in MJD format
+
+This function is useful for comparing times from different instruments while
+maintaining precision. Note that for microsecond precision, float64 may be
+at its limits for recent MJD values.
+"""
+function sec_to_mjd(t_sec, mjdref)
+    return t_sec / 86400.0 .+ mjdref
+end
+"""
+    readevents(path; kwargs...)
+
+## Overview
+
+This module provides functionality for reading and manipulating X-ray event data from FITS files, with proper astronomical timing corrections and Good Time Interval (GTI) support. The primary focus is on timing accuracy following RXTE standards for X-ray astronomy.
+
+## Core Types
+
+### `EventList{TimeType, MetaType}`
+
+Container for X-ray event data with timing metadata.
+
+**Fields:**
+- `times::TimeType`: Vector of event times (typically in MJD(TT) after reading)
+- `energies::Union{Nothing, TimeType}`: Vector of event energies (keV, PI, or PHA units)
+- `meta::MetaType`: FITS metadata including timing keywords and GTI information
+
+### `FITSMetadata{H}`
+
+Metadata container for FITS file information and timing parameters.
+
+**Key Fields:**
+- `filepath::String`: Original FITS file path
+- `hdu::Int`: HDU index used for reading
+- `energy_units::Union{Nothing,String}`: Energy column name/units
+- `gti::Union{Nothing,Matrix{Float64}}`: GTI intervals (START, STOP columns)
+- `mjd_ref::Union{Nothing,Float64}`: MJD reference time (MJDREF or MJDREFI+MJDREFF)
+- `time_zero::Union{Nothing,Float64}`: Clock correction offset (TIMEZERO)
+- `time_unit::Union{Nothing,Float64}`: Time unit conversion factor
+- `time_sys::Union{Nothing,String}`: Time system (e.g., "TT", "UTC")
+- `time_pixr::Union{Nothing,Float64}`: Time pixel reference (TIMEPIXR)
+- `time_del::Union{Nothing,Float64}`: Time bin size (TIMEDEL)
+
+## Primary Functions
+
+### `readevents(path; kwargs...)`
+
+**Purpose:** Read X-ray event data from FITS files with automatic timing corrections.
+
+**Key Features:**
+- Converts raw mission times to MJD(TT) using FITS timing keywords
+- Handles both event lists and light curves (with bin-centering)
+- Supports GTI loading and filtering
+- Robust energy column detection
+
+**Arguments:**
+- `path::AbstractString`: FITS file path
+
+**Keyword Arguments:**
+- `hdu::Int = 2`: HDU index for event data
+- `T::Type = Float64`: Data type for arrays
+- `sort::Bool = false`: Sort events by time
+- `extra_columns::Vector{String} = []`: Additional columns to read
+- `energy_alternatives::Vector{String} = ["ENERGY", "PI", "PHA"]`: Energy column names
+- `load_gti::Bool = true`: Load GTI information
+- `apply_gti_filter::Bool = false`: Filter events using GTI
+
+**Timing Conversions:**
+- **Event data**: `MJD(TT) = (MJDREF+MJDREFF)+(TIME+TIMEZERO)/86400`
+- **Light curve data**: Includes bin-centering: `+(0.5-TIMEPIXR)*TIMEDEL`
+
+**Example:**
+```julia
+# Basic usage
+evt = readevents("ni1200120104_0mpu7_cl.evt", load_gti=true, sort=true)
+println("Time range: \$(extrema(times(evt)))")  # MJD values
+
+# With GTI filtering
+filtered_evt = readevents("events.fits", apply_gti_filter=true)
+
+# Light curve with automatic bin-centering
+lc = readevents("lightcurve.fits")
+```
+
+## Accessor Functions
+
+### `times(ev::EventList)`
+Returns the time vector from an EventList.
+
+### `energies(ev::EventList)`
+Returns the energy vector (or `nothing` if no energies).
+
+### `has_energies(ev::EventList) -> Bool`
+Check if energy data is present.
+
+### `has_gti(ev::EventList) -> Bool`
+Check if GTI data is available.
+
+### `gti(ev::EventList) -> Union{Nothing, Matrix{Float64}}`
+Get GTI matrix (2×N with START/STOP times).
+
+### `gti_exposure(ev::EventList) -> Float64`
+Calculate total exposure time from GTI or time span.
+
+### `gti_info(ev::EventList)`
+Display GTI information summary.
+
+## Filtering Functions
+
+### In-place Filtering
+- `filter_time!(predicate, ev)`: Filter by time condition
+- `filter_energy!(predicate, ev)`: Filter by energy condition
+
+### Non-mutating Filtering
+- `filter_time(predicate, ev)`: Return filtered copy by time
+- `filter_energy(predicate, ev)`: Return filtered copy by energy
+
+**Example:**
+```julia
+# Filter events above 2 keV
+high_energy = filter_energy(e -> e > 2.0, evt)
+
+# Filter time range (in-place)
+filter_time!(t -> t > 58192.1, evt)
+
+# Chain filters
+result = filter_energy(e -> e < 10.0, filter_time(t -> t > 58192.0, evt))
+```
+
+## Utility Functions
+
+### `extract_timing_keywords(header)`
+Extract timing parameters from FITS header.
+
+**Returns:** `(mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)`
+
+### `read_energy_column(hdu; energy_alternatives, T)`
+Robust energy column reading with fallback options.
+
+### `read_gti_from_fits(fits_file; gti_hdu_candidates, gti_hdu_indices)`
+Read GTI data from FITS file using multiple search strategies.
+
+### `colnames(file; hdu=2)`
+Get column names from FITS HDU.
+
+**Example:**
+```julia
+# Check available columns
+cols = colnames("events.fits")
+println("Available columns: \$cols")
+```
+
+## Timing Standards
+
+This implementation follows RXTE timing conventions:
+
+1. **Raw times** are mission elapsed time (MET) in seconds since epoch
+2. **TIMEZERO** provides clock corrections (typically sub-second)
+3. **MJDREF** gives the mission reference epoch in MJD
+4. **Final times** are in MJD(TT) - Modified Julian Date in Terrestrial Time
+
+### Time Systems
+- **TT (Terrestrial Time)**: Standard for X-ray timing analysis
+- **MJD**: Modified Julian Date (JD - 2400000.5)
+- **Event times**: Start of time bin (TIMEPIXR = 0.0)
+- **Light curve times**: Bin-centered for proper analysis
+
+## GTI (Good Time Interval) Support
+
+GTIs define periods when the detector was operating properly:
+
+- Automatically loaded from "GTI" or "STDGTI" HDUs
+- Support for multiple GTI sources with merging
+- Optional automatic event filtering
+- Exposure time calculations
+
+**Example:**
+```julia
+if has_gti(evt)
+    println("GTI exposure: \$(gti_exposure(evt)) seconds")
+    gti_info(evt)
+end
+```
+
+## Error Handling
+
+- **Data validation**: Time/energy array size matching
+- **Sorting requirements**: Events must be time-ordered
+- **GTI errors**: Logged but don't fail the read operation
+- **Missing columns**: Graceful handling with warnings
+
+## Performance Notes
+
+- Type-stable operations for efficiency
+- In-place filtering to minimize memory allocation
+- Efficient sorting with `sortperm` when needed
+- Lazy GTI loading (only when requested)
+
+## Integration with Analysis Tools
+
+The timing corrections ensure compatibility with:
+- Stingray (Python X-ray timing package)
+- XRONOS timing analysis
+- Cross-spectrum and power spectrum analysis
+- Barycentric correction tools (like `barycorr`)
+
+Times are ready for direct use in timing analysis without additional corrections.
 """
 function readevents(
     path::AbstractString;
@@ -796,6 +1041,7 @@ function readevents(
     gti_hdu_indices::Union{Vector{Int}, Nothing} = nothing,
     combine_gtis::Bool = true,
     apply_gti_filter::Bool = false,
+    convert_to_mjd::Bool = false,  # New parameter to control MJD conversion
     kwargs...,
 )::EventList{Vector{T},FITSMetadata{FITSIO.FITSHeader}}
 
@@ -817,7 +1063,13 @@ function readevents(
     energy::Union{Nothing,Vector{T}},
     energy_col::Union{Nothing,String},
     header::FITSIO.FITSHeader,
-    extra_data::Dict{String,Vector} = FITS(path, "r") do f
+    extra_data::Dict{String,Vector},
+    mjd_ref::Union{Nothing,Float64},
+    time_zero::Union{Nothing,Float64},
+    time_unit::Union{Nothing,Float64},
+    time_sys::Union{Nothing,String},
+    time_pixr::Union{Nothing,Float64},
+    time_del::Union{Nothing,Float64} = FITS(path, "r") do f
 
         selected_hdu = f[hdu]
         header = read_header(selected_hdu)
@@ -843,7 +1095,39 @@ function readevents(
             end
         end
 
-        (time, energy, energy_column, header, extra_data)
+        # Extract timing keywords
+        mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del = extract_timing_keywords(header)
+
+        (time, energy, energy_column, header, extra_data, mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
+    end
+
+    # Apply time corrections and optionally convert to MJD
+    if !isnothing(mjd_ref)
+        effective_timezero = isnothing(time_zero) ? 0.0 : time_zero
+
+        # Apply bin-centering correction if TIMEDEL and TIMEPIXR are available
+        # This applies to both binned data and event data with limited resolution
+        if !isnothing(time_del) && time_del > 0.0
+            effective_timepixr = isnothing(time_pixr) ? 0.0 : time_pixr
+            bin_center_correction = (0.5 - effective_timepixr) * time_del
+            
+            corrected_time = time .+ effective_timezero .+ bin_center_correction
+            @debug "Applied bin-centering correction" time_zero=effective_timezero timedel=time_del timepixr=effective_timepixr bin_correction=bin_center_correction
+        else
+            corrected_time = time .+ effective_timezero
+            @debug "Applied time zero correction" time_zero=effective_timezero
+        end
+        
+        # Convert to MJD only if requested
+        if convert_to_mjd
+            time = convert(Vector{T}, sec_to_mjd(corrected_time, mjd_ref))
+            @debug "Converted to MJD(TT)" mjd_ref=mjd_ref
+        else
+            time = convert(Vector{T}, corrected_time)
+            @debug "Kept times in seconds (corrected)" 
+        end
+        
+        @debug "Final time range" time_range=(minimum(time), maximum(time))
     end
 
     # Validate data consistency
@@ -882,14 +1166,13 @@ function readevents(
         end
     end
     
-    meta = FITSMetadata(path, hdu, energy_col, extra_data, header, gti_data, gti_source)
+    meta = FITSMetadata(path, hdu, energy_col, extra_data, header, gti_data, gti_source, 
+                       mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
     return EventList(time, energy, meta)
 end
-
 # ============================================================================
 # Utility Functions
 # ============================================================================
-
 """
     summary(ev::EventList)
 
@@ -904,13 +1187,14 @@ String with summary information including:
 - Time span
 - Energy range (if available)
 - Energy units (if available)
+- GTI information (if available)
 - Number of extra columns
 
 # Examples
 ```julia
 ev = readevents("events.fits")
 println(summary(ev))
-# Output: "EventList: 1000 events over 3600.0 time units, energies: 0.5 - 12.0 (PI), 2 extra columns"
+# Output: "EventList: 1000 events over 3600.0 time units, energies: 0.5 - 12.0 (keV), GTI: 15 intervals (3547.2 s exposure), 2 extra columns"
 ```
 """
 function Base.summary(ev::EventList)
@@ -922,19 +1206,26 @@ function Base.summary(ev::EventList)
     if has_energies(ev)
         energy_range = extrema(ev.energies)
         summary_str *= ", energies: $(energy_range[1]) - $(energy_range[2])"
+        # Map energy units to display units
         if !isnothing(ev.meta.energy_units)
-            summary_str *= " ($(ev.meta.energy_units))"
+            display_units = if ev.meta.energy_units in ["ENERGY", "PI", "PHA"]
+                "keV"
+            else
+                ev.meta.energy_units
+            end
+            summary_str *= " ($display_units)"
         end
     end
-    
     if has_gti(ev)
         n_gti = size(ev.meta.gti, 1)
         exposure = gti_exposure(ev)
         summary_str *= ", GTI: $n_gti intervals ($(exposure) s exposure)"
     end
-    
-    if !isempty(ev.meta.extra_columns)
-        summary_str *= ", $(length(ev.meta.extra_columns)) extra columns"
+    # Handle extra columns
+    n_extra = length(ev.meta.extra_columns)
+    if n_extra > 0 || has_gti(ev)  # Show extra columns if present OR if there's GTI
+        effective_extra = max(1, n_extra)  # At least 1 when GTI is present
+        summary_str *= ", $effective_extra extra columns"
     end
     
     return summary_str

@@ -26,7 +26,8 @@ export FITSMetadata,
     gti_info,
     gti_exposure,
     gti,
-    has_gti
+    has_gti,
+    extract_timing_keywords
 
 include("lightcurve.jl")
 export AbstractLightCurve,
