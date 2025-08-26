@@ -224,7 +224,7 @@ let
     data = setup_fourier_test_data()
     eventlist = EventList(data.times, nothing, FITSMetadata(
         "[test]", 1, nothing, Dict{String,Vector}(), 
-        Dict{String,Any}(), data.gti, nothing
+        Dict{String,Any}(), data.gti, nothing,nothing,nothing,nothing,nothing,nothing,nothing
     ))
     
     result_eventlist = avg_pds_from_eventlist(eventlist, FOURIER_SEGMENT_SIZE, data.dt, silent=true)
@@ -239,7 +239,7 @@ let
     data = setup_fourier_test_data()
     eventlist = EventList(data.times, nothing, FITSMetadata(
         "[test]", 1, nothing, Dict{String,Vector}(), 
-        Dict{String,Any}(), data.gti, nothing
+        Dict{String,Any}(), data.gti, nothing,nothing,nothing,nothing,nothing,nothing,nothing
     ))
     
     for norm in ["frac", "abs", "none", "leahy"]
@@ -256,7 +256,7 @@ let
     data = setup_fourier_test_data()
     eventlist = EventList(data.times, nothing, FITSMetadata(
         "[test]", 1, nothing, Dict{String,Vector}(), 
-        Dict{String,Any}(), data.gti, nothing
+        Dict{String,Any}(), data.gti, nothing,nothing,nothing,nothing,nothing,nothing,nothing
     ))
     
     for use_common_mean in [true, false]
@@ -273,11 +273,11 @@ let
     data = setup_fourier_test_data(two_datasets=true)
     eventlist1 = EventList(data.times, nothing, FITSMetadata(
         "[test]", 1, nothing, Dict{String,Vector}(), 
-        Dict{String,Any}(), data.gti, nothing
+        Dict{String,Any}(), data.gti, nothing,nothing,nothing,nothing,nothing,nothing,nothing
     ))
     eventlist2 = EventList(data.times2, nothing, FITSMetadata(
         "[test]", 1, nothing, Dict{String,Vector}(), 
-        Dict{String,Any}(), data.gti, nothing
+        Dict{String,Any}(), data.gti, nothing,nothing,nothing,nothing,nothing,nothing,nothing
     ))
     
     result_eventlists = avg_cs_from_eventlists(eventlist1, eventlist2, FOURIER_SEGMENT_SIZE, data.dt, silent=true)
@@ -292,11 +292,11 @@ let
     data = setup_fourier_test_data(two_datasets=true)
     eventlist1 = EventList(data.times, nothing, FITSMetadata(
         "[test]", 1, nothing, Dict{String,Vector}(), 
-        Dict{String,Any}(), data.gti, nothing
+        Dict{String,Any}(), data.gti, nothing,nothing,nothing,nothing,nothing,nothing,nothing
     ))
     eventlist2 = EventList(data.times2, nothing, FITSMetadata(
         "[test]", 1, nothing, Dict{String,Vector}(), 
-        Dict{String,Any}(), data.gti, nothing
+        Dict{String,Any}(), data.gti, nothing,nothing,nothing,nothing,nothing,nothing,nothing
     ))
     
     for norm in ["frac", "abs", "none", "leahy"]
@@ -460,10 +460,23 @@ end
 # Test EventList with no GTI (should create default GTI)
 let
     data = setup_fourier_test_data()
-    eventlist_no_gti = EventList(data.times, nothing, FITSMetadata(
-        "[test]", 1, nothing, Dict{String,Vector}(), 
-        Dict{String,Any}(), nothing, nothing
-    ))
+    eventlist_no_gti = EventList(
+        data.times,
+        nothing,
+        FITSMetadata(
+            "[test]", 1, nothing, Dict{String,Vector}(),
+            Dict{String,Any}(),  # headers
+            nothing,  # gti
+            nothing,  # gti_source
+            nothing,  # mjd_ref
+            nothing,  # time_zero
+            nothing,  # time_unit
+            nothing,  # time_sys
+            nothing,  # time_pixr
+            nothing   # time_del
+        )
+    )
+
     
     expected_gti = Float64[minimum(data.times) maximum(data.times)]
     
