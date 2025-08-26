@@ -812,6 +812,25 @@ function extract_timing_keywords(header)
     return mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del
 end
 """
+    sec_to_mjd(t_sec, mjdref)
+
+Convert time in seconds to Modified Julian Date (MJD).
+
+# Arguments
+- `t_sec`: Time in seconds (can be scalar or vector)
+- `mjdref`: MJD reference time
+
+# Returns
+- Time in MJD format
+
+This function is useful for comparing times from different instruments while
+maintaining precision. Note that for microsecond precision, float64 may be
+at its limits for recent MJD values.
+"""
+function sec_to_mjd(t_sec, mjdref)
+    return t_sec / 86400.0 .+ mjdref
+end
+"""
     readevents(path; kwargs...)
 
 ## Overview
@@ -1022,6 +1041,7 @@ function readevents(
     gti_hdu_indices::Union{Vector{Int}, Nothing} = nothing,
     combine_gtis::Bool = true,
     apply_gti_filter::Bool = false,
+    convert_to_mjd::Bool = false,  # New parameter to control MJD conversion
     kwargs...,
 )::EventList{Vector{T},FITSMetadata{FITSIO.FITSHeader}}
 
@@ -1081,33 +1101,32 @@ function readevents(
         (time, energy, energy_column, header, extra_data, mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
     end
 
-    # Calculate absolute MJD(TT) times if timing keywords are available
+    # Apply time corrections and optionally convert to MJD
     if !isnothing(mjd_ref)
         effective_timezero = isnothing(time_zero) ? 0.0 : time_zero
 
-        # Check if this is binned data (light curve) vs event data
-        is_binned_data = !isnothing(time_del) && time_del > 0.0
-        
-        if is_binned_data
-            # For light curve data - apply bin-centering correction
-            # MJD(TT) = (MJDREF+MJDREFF)+(TIME+TIMEZERO+FINECLOCK+(0.5-TIMEPIXR)*TIMEDEL)/86400
+        # Apply bin-centering correction if TIMEDEL and TIMEPIXR are available
+        # This applies to both binned data and event data with limited resolution
+        if !isnothing(time_del) && time_del > 0.0
             effective_timepixr = isnothing(time_pixr) ? 0.0 : time_pixr
             bin_center_correction = (0.5 - effective_timepixr) * time_del
             
             corrected_time = time .+ effective_timezero .+ bin_center_correction
-            mjd_tt_times = mjd_ref .+ (corrected_time ./ 86400.0)
-            
-            @debug "Converted to MJD(TT) with bin-centering" mjd_ref=mjd_ref time_zero=effective_timezero timedel=time_del timepixr=effective_timepixr bin_correction=bin_center_correction
+            @debug "Applied bin-centering correction" time_zero=effective_timezero timedel=time_del timepixr=effective_timepixr bin_correction=bin_center_correction
         else
-            # For event data - standard conversion
-            # MJD(TT) = (MJDREF+MJDREFF)+(TIME+TIMEZERO+FINECLOCK)/86400
             corrected_time = time .+ effective_timezero
-            mjd_tt_times = mjd_ref .+ (corrected_time ./ 86400.0)
-            
-            @debug "Converted to MJD(TT) for event data" mjd_ref=mjd_ref time_zero=effective_timezero
+            @debug "Applied time zero correction" time_zero=effective_timezero
         end
         
-        time = convert(Vector{T}, mjd_tt_times)
+        # Convert to MJD only if requested
+        if convert_to_mjd
+            time = convert(Vector{T}, sec_to_mjd(corrected_time, mjd_ref))
+            @debug "Converted to MJD(TT)" mjd_ref=mjd_ref
+        else
+            time = convert(Vector{T}, corrected_time)
+            @debug "Kept times in seconds (corrected)" 
+        end
+        
         @debug "Final time range" time_range=(minimum(time), maximum(time))
     end
 
