@@ -78,9 +78,11 @@ check_gtis(bad_gtis)  # Throws ArgumentError
 - [`apply_gtis`](@ref): Apply GTIs to filter data
 """
 function check_gtis(gti::AbstractMatrix)
-
+    if size(gti, 1) == 0
+        throw(ArgumentError("GTI matrix cannot be empty"))
+    end
     if ndims(gti) != 2 || size(gti,2) != 2
-        throw(ArgumentError("Please check the formatting of the GTIs. 
+        throw(ArgumentError("Please check the formatting of the GTIs.
        They need to be provided as [[gti00 gti01]; [gti10 gti11]; ...]."))
     end
 
@@ -90,7 +92,7 @@ function check_gtis(gti::AbstractMatrix)
     if any(gti_end < gti_start)
         throw(ArgumentError(
             "The GTI end times must be larger than the GTI start times."
-        )) 
+        ))
     end
 
     if any(@view(gti_start[begin+1:end]) < @view(gti_end[begin:end-1]))
@@ -182,7 +184,10 @@ function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}},
     required_interval = nothing
 
     for gti in gti_list
-        check_gtis(gti)
+        # Skip check_gtis for empty matrices - they should be allowed in operations
+        if size(gti, 1) > 0
+            check_gtis(gti)
+        end
 
         combined_gti = Interval{T}[]
         for ig in eachrow(gti)
@@ -199,6 +204,10 @@ function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}},
 
     for interval in required_interval.items
         push!(final_gti, [first(interval), last(interval)])
+    end
+
+    if isempty(final_gti)
+        return reshape(T[], 0, 2)
     end
 
     return mapreduce(permutedims, vcat, final_gti)
@@ -362,13 +371,20 @@ end
 
 function calculate_segment_bin_start(startbin::Integer, stopbin::Integer,
                                      nbin::Integer; fraction_step::Real=1)
-    st = floor.(range(startbin, stopbin, step=Int(nbin * fraction_step)))
-    if st[end] == stopbin
-        pop!(st)
+    if startbin >= stopbin
+        return Int[]
     end
-    if st[end] + nbin > stopbin
-        pop!(st)
+    
+    step_size = Int(nbin * fraction_step)
+    if step_size <= 0
+        step_size = 1
     end
+    
+    st = collect(range(startbin, stop=stopbin-nbin, step=step_size))
+    
+    # Remove bins that would extend beyond stopbin
+    filter!(x -> x + nbin <= stopbin, st)
+    
     return st
 end
 
@@ -379,6 +395,16 @@ function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Rea
         dt = Statistics.median(diff(time))
     end
 
+    if isempty(time)
+        throw(ArgumentError("Time array cannot be empty"))
+    end
+    
+    # Check if GTIs overlap with time range
+    time_start, time_end = extrema(time)
+    if all(gtis[:, 2] .< time_start) || all(gtis[:, 1] .> time_end)
+        throw(ArgumentError("GTI intervals do not overlap with time array"))
+    end
+    
     epsilon_times_dt = epsilon * dt
     nbin = round(Int, segment_size / dt)
 
@@ -393,25 +419,33 @@ function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Rea
         end
         startbin, stopbin = searchsortedfirst.(Ref(time), [g0, g1])
         startbin -= 1
+        
+        # Validate bounds before accessing arrays
+        if startbin < 0 || startbin >= length(time)
+            throw(ArgumentError("GTI start time outside time array bounds"))
+        end
+        if stopbin < 1 || stopbin > length(time) + 1
+            throw(ArgumentError("GTI stop time outside time array bounds"))
+        end
+        
         if stopbin > length(time)
             stopbin = length(time)
         end
 
-        if time[startbin+1] < g0
+        if startbin + 1 <= length(time) && time[startbin+1] < g0
             startbin += 1
         end
-        # Would be g[1] - dt/2, but stopbin is the end of an interval
-        # so one has to add one bin
-        if time[stopbin] > g1
+        
+        if stopbin <= length(time) && time[stopbin] > g1
             stopbin -= 1
         end
 
         newbins = calculate_segment_bin_start(
             startbin, stopbin, nbin, fraction_step=fraction_step)
         
-        append!(spectrum_start_bins,newbins)
+        append!(spectrum_start_bins, newbins)
     end 
-    return spectrum_start_bins, spectrum_start_bins.+nbin 
+    return spectrum_start_bins, spectrum_start_bins .+ nbin 
 end
 
 @resumable function generate_indices_of_segment_boundaries_unbinned(times::AbstractVector{<:Real},
