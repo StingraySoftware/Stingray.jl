@@ -7,7 +7,7 @@ function create_test_eventlist(times::Vector{Float64}, energies::Union{Vector{Fl
         "keV",  # energy_units
         Dict{String,Vector}(),  # extra_columns
         mock_headers, # headers
-        nothing,      # gti
+        reshape([0.0, maximum(times)], 1, 2),      # gti
         nothing,      # gti_source
         nothing,      # mjd_ref
         nothing,      # time_zero
@@ -26,7 +26,7 @@ function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt:
         (minimum(times)-dt/2, maximum(times)+dt/2), 
         dt, 
         Vector{Dict{String,Any}}(),
-        Dict{String,Any}()
+        Dict{String,Any}("gti" => reshape([minimum(times) - dt/2, maximum(times) + dt/2], 1, 2))
     )
     
     return LightCurve(
