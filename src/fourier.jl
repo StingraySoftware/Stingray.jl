@@ -22,7 +22,79 @@ function poisson_level(norm::String; meanrate = nothing, n_ph = nothing, backrat
         throw(ArgumentError("Unknown value for norm: $norm"))
     end
 end
+"""
+    get_norm_label(norm::Union{String,Symbol})
 
+Get the appropriate ylabel text for different power spectrum normalizations.
+
+# Arguments
+- `norm`: Normalization type ("leahy", "frac", "rms", "abs", "none")
+
+# Returns
+- String: Appropriate label for the y-axis
+
+# Examples
+```julia
+get_norm_label("frac")  # Returns "(rms/mean)² Hz⁻¹"
+get_norm_label("leahy") # Returns "Leahy Power"
+```
+"""
+function get_norm_label(norm::Union{String,Symbol})
+    norm_str = string(norm)
+    labels = Dict(
+        "leahy" => "Leahy Power",
+        "frac" => "(rms/mean)² Hz⁻¹", 
+        "rms" => "rms² Hz⁻¹",
+        "abs" => "Absolute Power",
+        "none" => "Raw Power"
+    )
+    return get(labels, norm_str, "Power")
+end
+
+"""
+    get_poisson_level(norm::String; meanrate=nothing, n_ph=nothing, backrate=0.0)
+
+Calculate the Poisson noise level for a given normalization.
+
+# Arguments
+- `norm`: Normalization type
+- `meanrate`: Mean count rate (optional)
+- `n_ph`: Number of photons (optional, used to estimate meanrate if meanrate is nothing)
+- `backrate`: Background rate (default: 0.0)
+
+# Returns
+- Float64: Poisson noise level for the given normalization
+"""
+function get_poisson_level(norm::String; meanrate::Union{Nothing,Real}=nothing, 
+                          n_ph::Union{Nothing,Real}=nothing, backrate::Real=0.0)
+    if isnothing(meanrate) && !isnothing(n_ph)
+        meanrate = n_ph
+    end
+    return poisson_level(norm; meanrate=meanrate, n_ph=n_ph, backrate=backrate)
+end
+
+"""
+    extract_gti(meta)
+
+Extract Good Time Intervals (GTI) from various metadata types.
+
+# Arguments
+- `meta`: Metadata object with potential GTI information
+
+# Returns
+- GTI data or nothing if not found
+"""
+function extract_gti(meta)
+    if hasfield(typeof(meta), :gti) && !isnothing(meta.gti)
+        return meta.gti
+    elseif isa(meta, Dict) && haskey(meta, "gti")
+        return meta["gti"]
+    elseif hasfield(typeof(meta), :extra) && haskey(meta.extra, "gti")
+        return meta.extra["gti"]
+    else
+        return nothing
+    end
+end
 function normalize_frac(unnorm_power::AbstractVector{<:Number}, dt::Real, n_bin::Integer, 
                         mean_flux::Real; background_flux::Real=0.0)
     if background_flux > 0
