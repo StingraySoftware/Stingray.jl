@@ -95,3 +95,49 @@ function merge_overlapping_gtis(gtis::Matrix{Float64})
     
     return merged[1:merged_count, :]
 end
+
+
+function validate_time_alignment(header1::FITSIO.FITSHeader, header2::FITSIO.FITSHeader)
+    mjd_ref1, time_zero1, time_unit1, time_sys1, time_pixr1, time_del1 = extract_timing_keywords(header1)
+    mjd_ref2, time_zero2, time_unit2, time_sys2, time_pixr2, time_del2 = extract_timing_keywords(header2)
+    
+    if isnothing(mjd_ref1) || isnothing(mjd_ref2)
+        @warn "Missing MJDREF in one or both event lists - time alignment cannot be verified"
+        return
+    end
+    
+    mjd_tolerance = 1e-9  # ~0.1 milliseconds in days
+    if abs(mjd_ref1 - mjd_ref2) > mjd_tolerance
+        throw(ArgumentError("Event lists have different MJDREF values: $(mjd_ref1) vs $(mjd_ref2). Cross spectrum requires same time reference."))
+    end
+    
+    if !isnothing(time_zero1) && !isnothing(time_zero2)
+        if abs(time_zero1 - time_zero2) > 1e-6
+            @warn "Different TIMEZERO values: $(time_zero1) vs $(time_zero2) - this may affect timing alignment"
+        end
+    end
+    
+    if !isnothing(time_unit1) && !isnothing(time_unit2)
+        if abs(time_unit1 - time_unit2) > 1e-9
+            throw(ArgumentError("Event lists have different TIMEUNIT values: $(time_unit1) vs $(time_unit2)"))
+        end
+    end
+    
+    if !isnothing(time_sys1) && !isnothing(time_sys2)
+        if time_sys1 != time_sys2
+            @warn "Different TIMESYS values: '$(time_sys1)' vs '$(time_sys2)' - verify time system compatibility"
+        end
+    end
+    
+    if !isnothing(time_pixr1) && !isnothing(time_pixr2)
+        if abs(time_pixr1 - time_pixr2) > 1e-9
+            @warn "Different TIMEPIXR values: $(time_pixr1) vs $(time_pixr2) - this affects time bin assignment"
+        end
+    end
+    
+    if !isnothing(time_del1) && !isnothing(time_del2)
+        if abs(time_del1 - time_del2) > 1e-9
+            @warn "Different TIMEDEL values: $(time_del1) vs $(time_del2) - this affects timing resolution"
+        end
+    end
+end
