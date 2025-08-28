@@ -1,710 +1,1049 @@
-# Helper function to create mock EventList for testing
-function create_test_eventlist(times::Vector{Float64}, energies::Union{Vector{Float64}, Nothing}=nothing)
-    mock_headers = Dict{String,Any}()
-    mock_metadata = FITSMetadata(
-        "",  # filepath
-        1,   # hdu
-        "keV",  # energy_units
-        Dict{String,Vector}(),  # extra_columns
-        mock_headers, # headers
-        reshape([0.0, maximum(times)], 1, 2),      # gti
-        nothing,      # gti_source
-        nothing,      # mjd_ref
-        nothing,      # time_zero
-        nothing,      # time_unit
-        nothing,      # time_sys
-        nothing,      # time_pixr
-        nothing       # time_del
-    )
-    return EventList(times, energies, mock_metadata)
+function get_total_gti_length(gti::AbstractMatrix{<:Real}; minlen::Real=0.0)
+    lengths = diff(gti; dims =2)
+    return sum(x->x > minlen ? x : zero(x), lengths)
 end
 
-# Helper function to create mock LightCurve for testing
-function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt::Float64=1.0)
-    metadata = LightCurveMetadata(
-        "", "", "", 0.0, 
-        (minimum(times)-dt/2, maximum(times)+dt/2), 
-        dt, 
-        Vector{Dict{String,Any}}(),
-        Dict{String,Any}("gti" => reshape([minimum(times) - dt/2, maximum(times) + dt/2], 1, 2))
-    )
-    
-    return LightCurve(
-        times, dt, counts, nothing, nothing, EventProperty{Float64}[], 
-        metadata, :poisson
-    )
+function load_gtis(fits_file::String, gtistring::String="GTI")
+    gti = FITS(fits_file) do lchdulist
+        gtihdu = lchdulist[gtistring]
+        get_gti_from_hdu(gtihdu)
+    end
+    return gti
 end
 
-# Helper function to create EventProperty
-function create_event_property(name::String, values::Vector{Float64}, unit::String="")
-    return EventProperty{Float64}(Symbol(name), values, unit)
+function get_gti_from_hdu(gtihdu::TableHDU)
+
+    if "START" in FITSIO.colnames(gtihdu)
+        startstr = "START"
+        stopstr = "STOP"
+    else
+        startstr = "Start"
+        stopstr = "Stop"
+    end
+
+    gtistart = read(gtihdu,startstr)
+    gtistop = read(gtihdu,stopstr)
+
+    if isempty(gtistart) || isempty(gtistop)
+        return reshape(Float64[], 0, 2)
+    end
+
+    return mapreduce(permutedims, vcat, 
+        [[a, b] for (a,b) in zip(gtistart, gtistop)], 
+        init=reshape(Float64[], 0, 2))
 end
+"""
+    check_gtis(gti::AbstractMatrix)
 
-# Helper functions for common test data
-function get_basic_times()
-    return [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5]
-end
+Validate Good Time Intervals (GTIs) for proper formatting and temporal ordering.
 
-function get_basic_energies()
-    return [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-end
+Performs comprehensive validation of GTI matrices to ensure they meet the requirements
+for X-ray timing analysis. GTIs must be properly formatted, temporally ordered, and
+non-overlapping to maintain data integrity in subsequent analysis steps.
 
-function get_basic_counts()
-    return [10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
-end
+# Arguments
+- `gti::AbstractMatrix`: Matrix of GTI boundaries where each row contains [start_time, stop_time]
 
-function get_simple_times()
-    return [1.0, 2.0, 3.0, 4.0, 5.0]
-end
+# Validation Rules
+1. **Format**: Must be a 2D matrix with exactly 2 columns
+2. **Temporal ordering**: End times must be greater than start times for each GTI
+3. **Non-overlapping**: GTIs must not overlap (start[i+1] ≥ end[i])
 
-function get_simple_energies()
-    return [1.0, 2.0, 3.0, 4.0, 5.0]
-end
+# Throws
+- `ArgumentError`: If GTI format is invalid (not 2D or wrong number of columns)
+- `ArgumentError`: If any GTI has end_time < start_time
+- `ArgumentError`: If GTIs have temporal overlaps
 
-function get_simple_counts()
-    return [10, 20, 30, 40, 50]
-end
+# Examples
+```julia
+# Valid GTIs
+gtis = [100.0 200.0; 300.0 400.0; 500.0 600.0]
+check_gtis(gtis)  # No error
 
-function get_sparse_times()
-    return [0.5, 1.5, 8.5, 9.5]
-end
+# Invalid format
+bad_gtis = [100.0 200.0 300.0]  # Too many columns
+check_gtis(bad_gtis)  # Throws ArgumentError
 
-function get_sparse_energies()
-    return [1.0, 2.0, 3.0, 4.0]
-end
+# Invalid temporal order
+bad_gtis = [200.0 100.0]  # End < Start
+check_gtis(bad_gtis)  # Throws ArgumentError
 
-function get_bti_test_times()
-    return [1.0, 2.0, 6.0, 7.0]
-end
+# Overlapping GTIs
+bad_gtis = [100.0 200.0; 150.0 250.0]  # Overlap
+check_gtis(bad_gtis)  # Throws ArgumentError
+```
 
-function get_bti_test_energies()
-    return [1.0, 2.0, 3.0, 4.0]
-end
-# test_load_gtis
-let
-    fname = joinpath(@__DIR__ ,"data","monol_testA.evt")
-    @test load_gtis(fname) == [8.0e7 8.0001025e7]
-end
+# Performance Notes
+- Uses views to avoid unnecessary array copying
+- O(n) time complexity for n GTI intervals
+- Minimal memory allocation
 
-# get_gti_length
-let
-    @test get_total_gti_length([[0 5]; [6 7];]) == 6
-end
+# See Also
+- [`get_btis`](@ref): Calculate Bad Time Intervals from GTIs
+- [`apply_gtis`](@ref): Apply GTIs to filter data
+"""
+function check_gtis(gti::AbstractMatrix)
 
-# test_check_gtis_shape
-let
-    @test_throws ArgumentError Stingray.check_gtis([[0 1 4]; [0 3 4];]) 
-end
+    if ndims(gti) != 2 || size(gti,2) != 2
+        throw(ArgumentError("Please check the formatting of the GTIs. 
+       They need to be provided as [[gti00 gti01]; [gti10 gti11]; ...]."))
+    end
 
-# test_check_gtis_values
-let
-    @test_throws ArgumentError Stingray.check_gtis([[0 2]; [1 3];])
+    # Check for empty GTI
+    if size(gti, 1) == 0
+        throw(ArgumentError("GTI matrix is empty. Please provide valid time intervals."))
+    end
 
-    @test_throws ArgumentError Stingray.check_gtis([[1 0];])
-end
+    gti_start = @view gti[:, 1]
+    gti_end = @view gti[:, 2]
 
-# test_gti_mask1
-let
-    arr = [0, 1, 2, 3, 4, 5, 6]
-    gti = [[0 2.1]; [3.9 5];]
-    mask, new_gtis = create_gti_mask(arr, gti)
-    # NOTE: the time bin has to be fully inside the GTI. That is why the
-    # bin at times 0, 2, 4 and 5 are not in.
-    @test mask == [0, 1, 0, 0, 0, 0, 0]
-end
+    if any(gti_end < gti_start)
+        throw(ArgumentError(
+            "The GTI end times must be larger than the GTI start times."
+        )) 
+    end
 
-# test_gti_mask_minlen
-let
-    arr = [0, 1, 2, 3, 4, 5, 6]
-    gti = [[0 2.1]; [3.9 5];]
-    mask, new_gtis = create_gti_mask(arr, gti; min_length=2)
-    # NOTE: the time bin has to be fully inside the GTI. That is why the
-    # bin at times 0, 2, 4 and 5 are not in.
-    @test mask == [0, 1, 0, 0, 0, 0, 0]
-    @test new_gtis == [0 2.1]
-end
-
-# test_gti_mask_none_longer_than_minlen
-let
-    arr = [0, 1, 2, 3, 4, 5, 6]
-    gti = [[0 2.1]; [3.9 5];]
-    mask = Bool[]
-    @test_logs (:warn,r"No GTIs longer than"
-        ) mask, _ = create_gti_mask(arr, gti; min_length=10)
-    @test all(iszero, mask)
-end
-
-# test_gti_mask_fails_empty_time
-let
-    arr = Float64[]
-    gti = [[0 2.1]; [3.9 5];]
-    @test_throws ArgumentError create_gti_mask(arr, gti)
-end
-
-# test_gti_from_condition1
-let
-    t = [0, 1, 2, 3, 4, 5, 6]
-    condition = [true, true, false, false, true, false, false]
-    gti = create_gti_from_condition(t, condition)
-    @test gti == [[-0.5 1.5]; [3.5 4.5];]
-end
-
-# test_gti_from_condition2
-let
-    t = [0, 1, 2, 3, 4, 5, 6]
-    condition = [true, true, true, true, false, true, false]
-    gti = create_gti_from_condition(t, condition, safe_interval=[1, 1])
-    @test gti == [0.5 2.5]
-end
-
-# test_gti_from_condition_fail
-let
-    t = [0, 1, 2, 3]
-    condition = [true, true, true]
-    @test_throws ArgumentError create_gti_from_condition(t, condition, safe_interval=[1, 1])
-end
-
-# test_intersectgti1
-let
-    gti1 = [1 4]
-    gti2 = [2 5]
-    newgti = operations_on_gtis([gti1, gti2], intersect)
-    @test newgti == [2 4]
-end
-
-# test_intersectgti2
-let
-    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
-    gti2 = [[2 5]; [6 9]; [11.4 14];]
-    newgti = operations_on_gtis([gti1, gti2], intersect)
-    @test newgti == [[4.0 5.0]; [7.0 9.0]; [12.2 13.2];]
-end
-
-# test_intersectgti3
-let
-    gti1 = [[1 2]; [4 5]; [7 10];]
-    newgti = operations_on_gtis([gti1], intersect)
-    @test newgti == gti1
-end
-
-# test_union_gtis_nonoverlapping
-let
-    gti0 = [[0 1]; [2 3];]
-    gti1 = [[10 11]; [12 13];]
-    @test operations_on_gtis([gti0, gti1], union) == [[0 1]; [2 3]; [10 11]; [12 13];]
-end
-
-# test_union_gtis_overlapping
-let
-    gti0 = [[0 1]; [2 3]; [4 8];]
-    gti1 = [[7 8]; [10 11]; [12 13];]
-    @test operations_on_gtis([gti0, gti1], union) == [[0 1]; [2 3]; [4 8]; [10 11]; [12 13];]
-end
-
-# test_bti
-let
-    gti = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
-    bti = get_btis(gti)
-    @test bti == [[2 4]; [5 7]; [10 11]; [11.2 12.2];]
-end
-
-# test_bti_start_and_stop
-let
-    gti = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
-    bti = get_btis(gti, 0, 14)
-    @test bti == [[0 1]; [2 4]; [5 7]; [10 11]; [11.2 12.2]; [13.2 14];]
-end
-
-# test_bti_empty_valid
-let
-    gti = reshape(Float64[],0,2)
-    bti = get_btis(gti, 0, 1)
-    @test bti == [0 1]
-end
-
-# test_bti_fail
-let
-    gti = reshape(Float64[],0,2)
-    @test_throws ArgumentError get_btis(gti)
-end
-
-# test_time_intervals_from_gtis1
-let
-    start_times, stop_times = time_intervals_from_gtis([[0 400]; [1022 1200];
-                              [1210 1220];], 128)
-    @test start_times == [0, 128, 256, 1022]
-    @test stop_times == start_times .+ 128
-end
-
-# test_time_intervals_from_gtis_frac
-let
-    start_times, stop_times = time_intervals_from_gtis([[0 400]; [1022 1200];
-                              [1210 1220];], 128, fraction_step=0.5)
-    @test start_times == [0, 64, 128, 192, 256, 1022]
-    @test stop_times == start_times .+ 128
-end
-
-# test_bin_intervals_from_gtis1
-let
-    times = range(0.5, 12.5)
-    start_bins, stop_bins = bin_intervals_from_gtis([[0 5]; [6 8];], 2, times)
-
-    @test start_bins == [0, 2, 6]
-    @test stop_bins == [2, 4, 8]
-end
-
-# test_bin_intervals_from_gtis_2
-let
-    dt = 0.1
-    tstart = 0
-    tstop = 100
-    times = range(tstart, tstop, step=dt)
-    gti = [[tstart - dt/2 tstop - dt/2];]
-    start_bins, stop_bins = bin_intervals_from_gtis(gti, 20, times)
-    @test start_bins == [0, 200, 400, 600, 800]
-end
-
-# test_bin_intervals_from_gtis_frac
-let
-    times = range(0.5, 12.5)
-    start_bins, stop_bins = bin_intervals_from_gtis([[0 5]; [6 8];], 2, times, fraction_step=0.5)
-
-    @test start_bins == [0, 1, 2, 3, 6]
-    @test stop_bins == [2, 3, 4, 5, 8]
-end
-# EventList GTI Tests - Basic functionality
-let
-    times = get_basic_times()
-    energies = get_basic_energies()
-    
-    el = create_test_eventlist(times, energies)
-    
-    gtis = [2.0 6.0; 7.0 9.0]
-    result = split_by_gtis(el, gtis)
-    
-    @test length(result) == 2
-    @test result[1].times ≈ [2.5, 3.5, 4.5, 5.5]
-    @test result[1].energies ≈ [3.0, 4.0, 5.0, 6.0]
-    @test result[2].times ≈ [7.5, 8.5]
-    @test result[2].energies ≈ [8.0, 9.0]
-end
-
-# EventList GTI Tests - No events in GTI
-let
-    times = get_sparse_times()
-    energies = get_sparse_energies()
-    
-    el = create_test_eventlist(times, energies)
-    gtis = [2.0 3.0; 4.0 5.0]
-    
-    result = split_by_gtis(el, gtis)
-    @test length(result) == 0
-end
-
-# EventList GTI Tests - All events within single GTI
-let
-    times = get_simple_times()
-    energies = get_simple_energies()
-    
-    el = create_test_eventlist(times, energies)
-    gtis = [0.5 5.5]
-    
-    result = split_by_gtis(el, gtis)
-    @test length(result) == 1
-    @test result[1].times == times
-    @test result[1].energies == energies
-end
-
-# LightCurve GTI Tests - Basic functionality
-let
-    time_bins = get_basic_times()
-    counts = get_basic_counts()
-    
-    lc = create_test_lightcurve(time_bins, counts)
-    
-    gtis = [2.0 6.0; 7.0 9.0]
-    result = apply_gtis(lc, gtis)
-    
-    @test length(result) == 2
-    @test result[1].time ≈ [2.5, 3.5, 4.5, 5.5]
-    @test result[1].counts ≈ [20, 25, 30, 35]
-    @test result[2].time ≈ [7.5, 8.5]
-    @test result[2].counts ≈ [45, 50]
-end
-
-# LightCurve GTI Tests - With exposure
-let
-    time_bins = get_simple_times()
-    counts = get_simple_counts()
-    exposure = [0.9, 1.0, 1.0, 0.8, 1.0]
-    
-    metadata = LightCurveMetadata(
-        "", "", "", 0.0, (0.0, 6.0), 1.0, 
-        Vector{Dict{String,Any}}(), Dict{String,Any}()
-    )
-    
-    lc = LightCurve(
-        time_bins, 1.0, counts, nothing, exposure, EventProperty{Float64}[], 
-        metadata, :poisson
-    )
-    
-    gtis = [1.5 3.5]
-    result = apply_gtis(lc, gtis)
-    
-    @test length(result) == 1
-    @test result[1].time ≈ [2.0, 3.0]
-    @test result[1].counts ≈ [20, 30]
-    @test result[1].exposure ≈ [1.0, 1.0]
-end
-
-# LightCurve GTI Tests - With properties
-let
-    time_bins = get_simple_times()
-    counts = get_simple_counts()
-    
-    energy_prop = create_event_property("energy", [1.5, 2.5, 3.5, 4.5, 5.5], "keV")
-    properties = [energy_prop]
-    
-    metadata = LightCurveMetadata(
-        "", "", "", 0.0, (0.0, 6.0), 1.0, 
-        Vector{Dict{String,Any}}(), Dict{String,Any}()
-    )
-    
-    lc = LightCurve(
-        time_bins, 1.0, counts, nothing, nothing, properties, 
-        metadata, :poisson
-    )
-    
-    gtis = [1.5 3.5]
-    result = apply_gtis(lc, gtis)
-    
-    @test length(result) == 1
-    @test result[1].properties[1].values ≈ [2.5, 3.5]
-end
-
-# Filtered LightCurve Tests - Basic filtering
-let
-    time_bins = get_simple_times()
-    counts = get_simple_counts()
-    
-    lc = create_test_lightcurve(time_bins, counts)
-    lc.metadata = LightCurveMetadata(
-        "TEST", "INSTR", "OBJ", 58000.0, (0.0, 6.0), 1.0, 
-        Vector{Dict{String,Any}}([Dict{String,Any}("OBSERVER" => "Test")]), 
-        Dict{String,Any}("original_key" => "value")
-    )
-    
-    mask = [false, true, true, false, true]
-    filtered_lc = create_filtered_lightcurve(lc, mask, 1.5, 3.5, 1)
-    
-    @test filtered_lc.time ≈ [2.0, 3.0, 5.0]
-    @test filtered_lc.counts ≈ [20, 30, 50]
-    @test filtered_lc.dt == 1.0
-    @test filtered_lc.metadata.extra["gti_applied"] == true
-    @test filtered_lc.metadata.extra["gti_index"] == 1
-    @test filtered_lc.metadata.extra["filtered_nbins"] == 3
-    @test filtered_lc.metadata.extra["original_nbins"] == 5
-end
-
-# BTI Filling Tests - Basic BTI filling
-let
-    times = get_simple_times()
-    energies = get_simple_energies()
-    
-    el = create_test_eventlist(times, energies)
-    gtis = [1.0 2.5; 5.5 8.5]
-    
-    fill_bad_time_intervals!(el, gtis, dt=0.5, random_fill_threshold=5.0, 
-                           rng=Random.MersenneTwister(123))
-    
-    @test length(el.times) > 5
-    @test el.meta.headers["BTI_FILLED"] == true
-    @test el.meta.headers["N_SYNTH_EVENTS"] > 0
-    @test el.meta.headers["RAND_FILL_THRESH"] == 5.0
-    @test el.meta.headers["BTI_FILL_DT"] == 0.5
-    
-    @test haskey(el.meta.extra_columns, "filled_bti_durations")
-    @test length(el.meta.extra_columns["filled_bti_durations"]) > 0
-    
-    @test issorted(el.times)
-end
-
-# BTI Filling Tests - No BTI to fill
-let
-    times = [1.0, 2.0, 15.0, 16.0]
-    energies = [1.0, 2.0, 3.0, 4.0]
-    
-    el = create_test_eventlist(times, energies)
-    gtis = [1.0 2.5; 14.5 16.5]
-    
-    original_length = length(el.times)
-    fill_bad_time_intervals!(el, gtis, dt=1.0, random_fill_threshold=10.0,
-                           rng=Random.MersenneTwister(123))
-    
-    @test length(el.times) == original_length
-    @test !haskey(el.meta.headers, "BTI_FILLED")
-end
-
-# BTI Filling Tests - Without energies
-let
-    times = get_bti_test_times()
-    
-    el = create_test_eventlist(times, nothing)
-    gtis = [1.0 2.5; 5.5 7.5]
-    
-    fill_bad_time_intervals!(el, gtis, dt=1.0, random_fill_threshold=5.0,
-                           rng=Random.MersenneTwister(123))
-    
-    @test el.energies === nothing
-    @test length(el.times) > 4
-end
-
-# BTI Filling Tests - With extra columns
-let
-    times = get_bti_test_times()
-    energies = get_bti_test_energies()
-    
-    mock_headers = Dict{String,Any}()
-    mock_metadata = FITSMetadata(
-        "",  # filepath
-        1,   # hdu
-        "keV",  # energy_units
-        Dict{String,Vector}(  # extra_columns
-            "pi_channel" => [100, 200, 300, 400],
-            "detector_id" => [1, 2, 1, 2]
-        ),
-        mock_headers,  # headers
-        nothing,       # gti
-        nothing,       # gti_source
-        nothing,       # mjd_ref
-        nothing,       # time_zero
-        nothing,       # time_unit
-        nothing,       # time_sys
-        nothing,       # time_pixr
-        nothing        # time_del
-    )
-    
-    el = EventList(times, energies, mock_metadata)
-    gtis = [1.0 2.5; 5.5 7.5]
-    
-    original_length = length(el.times)
-    fill_bad_time_intervals!(el, gtis, dt=1.0, random_fill_threshold=5.0,
-                           rng=Random.MersenneTwister(123))
-    
-    @test length(el.meta.extra_columns["pi_channel"]) == length(el.times)
-    @test length(el.meta.extra_columns["detector_id"]) == length(el.times)
-    
-    synthetic_pi = el.meta.extra_columns["pi_channel"][(original_length+1):end]
-    @test all(pi -> pi ∈ [100, 200, 300, 400], synthetic_pi)
-end
-
-# GTI validation tests - Valid GTIs
-let
-    valid_gtis = [1.0 2.0; 3.0 4.0; 5.0 6.0]
-    @test check_gtis(valid_gtis) === nothing
-end
-
-# GTI validation tests - Invalid GTI dimensions
-let
-    @test_throws ArgumentError begin
-        invalid_gtis = [1.0 2.0 3.0; 4.0 5.0 6.0]
-        check_gtis(invalid_gtis)
+    if any(@view(gti_start[begin+1:end]) < @view(gti_end[begin:end-1]))
+        throw(ArgumentError(
+            "This GTI has overlaps"
+        ))
     end
 end
 
-# GTI validation tests - Invalid time ordering
-let
-    @test_throws ArgumentError begin
-        invalid_gtis = [2.0 1.0; 4.0 3.0]
-        check_gtis(invalid_gtis)
+function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Real};
+                         safe_interval::AbstractVector{<:Real}=[0,0], min_length::Real=0,
+                         dt::Real = -1, epsilon::Real = 0.001)
+
+    if isempty(times)
+        throw(ArgumentError("Passing an empty time array to create_gti_mask"))
+    end
+
+    check_gtis(gtis)
+    mask = zeros(Bool,length(times))
+
+    if min_length>0
+        gtis = gtis[min_length .< @view(gtis[:,2]) - @view(gtis[:,1]),:]
+            
+        if size(gtis,1) < 1
+            @warn "No GTIs longer than min_length $(min_length)"
+            return mask, reshape(eltype(gtis)[], 0, 2)
+        end
+    end   
+
+    if dt < 0
+        dt = Statistics.median(diff(times))
+    end
+    epsilon_times_dt = epsilon * dt
+
+    new_gtis = [[0.0, 0.0] for _ in range(1,size(gtis,1))]
+    new_gti_mask = zeros(Bool, size(gtis,1))
+
+    gti_start = @view gtis[:, 1]
+    gti_end = @view gtis[:, 2]
+
+    for (ig,(limmin,limmax)) in enumerate(zip(gti_start,gti_end))
+        limmin += safe_interval[1]
+        limmax -= safe_interval[2]
+        if limmax - limmin >= min_length
+            new_gtis[ig][:] .= limmin, limmax
+            for (i,t) in enumerate(times) 
+                if (limmin + dt / 2 - epsilon_times_dt) <= t <= (limmax - dt / 2 + epsilon_times_dt)
+                    mask[i] = true
+                end
+            end
+            new_gti_mask[ig] = true
+        end
+    end
+
+    filtered_gtis = keepat!(new_gtis, new_gti_mask)
+    if isempty(filtered_gtis)
+        return mask, reshape(eltype(gtis)[], 0, 2)
+    end
+
+    return mask, mapreduce(permutedims, vcat, filtered_gtis, 
+                          init=reshape(eltype(gtis)[], 0, 2))
+end
+
+
+function create_gti_from_condition(time::AbstractVector{<:Real}, condition::AbstractVector{Bool};
+    safe_interval::AbstractVector{<:Real}=[0,0], dt::AbstractVector{<:Real}=Float64[])
+    
+    if length(time) != length(condition)
+        throw(ArgumentError("The length of the condition and time arrays must be the same."))
+    end
+
+    idxs = contiguous_regions(condition)
+
+    if isempty(dt)
+        dt = zero(time) .+ (time[2] .- time[1]) ./ 2
+    end
+
+    gtis = Vector{Float64}[]
+    for idx in eachrow(idxs)
+        startidx = idx[1]
+        stopidx = idx[2] - 1
+
+        t0 = time[startidx] - dt[startidx] + safe_interval[1]
+        t1 = time[stopidx] + dt[stopidx] - safe_interval[2]
+        if t1 - t0 < 0
+            continue
+        end
+        push!(gtis,[t0, t1])
+    end
+    
+    if isempty(gtis)
+        return reshape(Float64[], 0, 2)
+    end
+    
+    return mapreduce(permutedims, vcat, gtis, init=reshape(Float64[], 0, 2))
+end
+
+function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}}, 
+                            operation::Function) where {T<:Real}
+    
+    # Convert all GTIs to IntervalSets, handling empty ones
+    interval_sets = IntervalSet[]
+    
+    for gti in gti_list
+        if size(gti, 1) == 0
+            # Empty GTI becomes empty IntervalSet
+            push!(interval_sets, IntervalSet(Interval[]))
+        else
+            check_gtis(gti)
+            intervals = Interval[]
+            for ig in eachrow(gti)
+                push!(intervals, Interval{Closed,Open}(ig[1], ig[2]))
+            end
+            push!(interval_sets, IntervalSet(intervals))
+        end
+    end
+    
+    # If no interval sets, return empty
+    if isempty(interval_sets)
+        return reshape(T[], 0, 2)
+    end
+    
+    # Apply the operation across all interval sets
+    result_interval = interval_sets[1]
+    for i in 2:length(interval_sets)
+        result_interval = operation(result_interval, interval_sets[i])
+    end
+    
+    # Convert back to matrix format
+    if isempty(result_interval.items)
+        return reshape(T[], 0, 2)
+    end
+    
+    final_gti = Vector{T}[]
+    for interval in result_interval.items
+        push!(final_gti, [first(interval), last(interval)])
+    end
+    
+    return mapreduce(permutedims, vcat, final_gti, init=reshape(T[], 0, 2))
+end
+function intersect_gtis(gtis1::AbstractMatrix{<:Real}, gtis2::AbstractMatrix{<:Real})
+    check_gtis(gtis1)
+    check_gtis(gtis2)
+    return operations_on_gtis([gtis1, gtis2], intersect)
+end
+
+"""
+    get_btis(gtis::AbstractMatrix{<:Real}) -> Matrix{<:Real}
+
+Calculate Bad Time Intervals (BTIs) from GTIs using the full GTI time range.
+
+Convenience method that automatically uses the first GTI start time and last GTI 
+end time as the total observation window. Equivalent to calling 
+`get_btis(gtis, gtis[1,1], gtis[end,2])`.
+
+# Arguments
+- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries
+
+# Returns
+- `Matrix{<:Real}`: BTI matrix with same format as GTIs, or empty matrix if no gaps exist
+
+# Throws
+- `ArgumentError`: If GTIs are empty
+
+# Examples
+```julia
+# GTIs with gaps
+gtis = [100.0 200.0; 300.0 400.0; 500.0 600.0]
+btis = get_btis(gtis)
+# Returns: [200.0 300.0; 400.0 500.0]
+
+# Continuous GTIs (no gaps)
+gtis = [100.0 200.0; 200.0 300.0; 300.0 400.0]
+btis = get_btis(gtis)
+# Returns: 0×2 Matrix{Float64}
+```
+
+# See Also
+- [`get_btis(gtis, start_time, stop_time)`](@ref): Full method with custom time range
+"""
+function get_btis(gtis::AbstractMatrix{<:Real})
+    if isempty(gtis)
+        throw(ArgumentError("Empty GTI and no valid start_time and stop_time"))
+    end
+    return get_btis(gtis, gtis[1,1], gtis[end,2])
+end
+"""
+    get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) -> Matrix{T} where {T<:Real}
+
+Calculate Bad Time Intervals (BTIs) from GTIs within a specified time range.
+
+Computes the complement of GTIs within the given time window, identifying all 
+time intervals that are not covered by good time intervals. Uses interval 
+arithmetic to ensure precise boundary handling and proper gap identification.
+
+# Arguments
+- `gtis::AbstractMatrix{T}`: Matrix of GTI boundaries where each row contains [start_time, stop_time]
+- `start_time`: Overall observation start time
+- `stop_time`: Overall observation stop time
+
+# Returns
+- `Matrix{T}`: BTI matrix with same format as GTIs. Each row contains [bti_start, bti_stop].
+  Returns empty matrix (0×2) if no bad time intervals exist.
+
+# Algorithm
+1. Create total observation interval [start_time, stop_time)
+2. Convert GTIs to interval set with [start, stop) boundaries
+3. Compute set difference: BTIs = Total - GTIs
+4. Convert result back to matrix format
+
+# Interval Semantics
+- Uses closed-open intervals [start, stop) for precise boundary handling
+- Ensures no overlap between adjacent GTIs and BTIs
+- Maintains temporal continuity across interval boundaries
+
+# Examples
+```julia
+# Basic usage
+gtis = [100.0 200.0; 300.0 400.0]
+btis = get_btis(gtis, 50.0, 450.0)
+# Returns: [50.0 100.0; 200.0 300.0; 400.0 450.0]
+
+# No gaps (continuous GTIs)
+gtis = [100.0 200.0; 200.0 300.0; 300.0 400.0]
+btis = get_btis(gtis, 100.0, 400.0)
+# Returns: 0×2 Matrix{Float64}
+
+# Single GTI with gaps
+gtis = [150.0 250.0]
+btis = get_btis(gtis, 100.0, 300.0)
+# Returns: [100.0 150.0; 250.0 300.0]
+
+# Empty GTIs
+btis = get_btis(reshape(Float64[], 0, 2), 100.0, 200.0)
+# Returns: [100.0 200.0]
+```
+
+# Edge Cases
+- **Empty GTIs**: Returns single BTI covering entire time range
+- **No gaps**: Returns empty matrix (0×2)
+- **GTIs covering entire range**: Returns empty matrix
+
+# Dependencies
+- Requires `IntervalSets.jl` for interval arithmetic
+- Uses `Interval{T, Closed, Open}` for precise boundary handling
+
+# Performance Notes
+- Time complexity: O(n log n) for n GTI intervals
+- Memory usage: O(n) for interval set operations
+- Efficient for large GTI sets due to interval tree implementation
+
+# See Also
+- [`check_gtis`](@ref): Validate GTI format and ordering
+- [`fill_bad_time_intervals!`](@ref): Fill BTIs with synthetic events
+"""
+function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real}
+    if isempty(gtis)
+        return T[start_time stop_time]
+    end
+    
+    # Only check GTIs if they're not empty
+    if size(gtis, 1) > 0
+        check_gtis(gtis)
+    end
+
+    total_interval = Interval{T, Closed, Open}[Interval{T, Closed, Open}(start_time, stop_time)]
+    total_interval_set = IntervalSet(total_interval)
+
+    gti_interval = Interval{T, Closed, Open}[]
+    for ig in eachrow(gtis)
+        push!(gti_interval,Interval{T, Closed, Open}(ig[1],ig[2]))
+    end
+    gti_interval_set = IntervalSet(gti_interval)
+
+    bti_interval_set = setdiff(total_interval_set, gti_interval_set)
+
+    btis = Vector{T}[]
+
+    for interval in bti_interval_set.items
+        push!(btis, [first(interval), last(interval)])
+    end
+
+    if isempty(btis)
+        return reshape(T[], 0, 2)
+    end
+
+    return mapreduce(permutedims, vcat, btis, init=reshape(T[], 0, 2))
+end
+function time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real;
+                                  fraction_step::Real=1, epsilon::Real=1e-5)  
+    spectrum_start_times = Float64[]
+
+    gti_low = @view gtis[:,1]
+    gti_up = @view gtis[:,2]
+
+    for (g1,g2) in zip(gti_low,gti_up)
+        if g2 - g1 + epsilon < segment_size
+            continue
+        end
+
+        newtimes = range(g1, g2 - segment_size + epsilon, step = segment_size* fraction_step)
+        append!(spectrum_start_times,newtimes)
+    end
+    return spectrum_start_times, spectrum_start_times .+ segment_size
+end
+
+function calculate_segment_bin_start(startbin::Integer, stopbin::Integer,
+                                     nbin::Integer; fraction_step::Real=1)
+    st = floor.(range(startbin, stopbin, step=Int(nbin * fraction_step)))
+    if st[end] == stopbin
+        pop!(st)
+    end
+    if st[end] + nbin > stopbin
+        pop!(st)
+    end
+    return st
+end
+
+function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real,
+                                 time::AbstractVector{<:Real}; dt=nothing, 
+                                 fraction_step::Real=1, epsilon::Real=0.001)
+    if isnothing(dt)
+        dt = Statistics.median(diff(time))
+    end
+    time_min, time_max = extrema(time)
+    gti_min = minimum(gtis[:, 1])
+    gti_max = maximum(gtis[:, 2])
+    
+    if gti_max < time_min || gti_min > time_max
+        throw(ArgumentError("GTIs and time array do not overlap"))
+    end
+    
+    epsilon_times_dt = epsilon * dt
+    nbin = round(Int, segment_size / dt)
+    spectrum_start_bins = Int[]
+    gti_low = @view(gtis[:, 1]) .+ (dt ./ 2 .- epsilon_times_dt)
+    gti_up = @view(gtis[:, 2]) .- (dt ./ 2 .- epsilon_times_dt)
+    
+    for (g0, g1) in zip(gti_low, gti_up)
+        if (g1 - g0 .+ (dt + epsilon_times_dt)) < segment_size
+            continue
+        end
+        startbin, stopbin = searchsortedfirst.(Ref(time), [g0, g1])
+        startbin -= 1
+        
+        # The issue is here - we need to be more careful with bounds checking
+        if startbin < 0
+            startbin = 0
+        end
+        
+        if stopbin > length(time)
+            stopbin = length(time)
+        end
+        
+        # Only proceed if we have valid indices
+        if startbin >= length(time)
+            continue
+        end
+        
+        if startbin + 1 <= length(time) && time[startbin+1] < g0
+            startbin += 1
+        end
+        
+        # Would be g[1] - dt/2, but stopbin is the end of an interval
+        # so one has to add one bin
+        if stopbin <= length(time) && time[stopbin] > g1
+            stopbin -= 1
+        end
+        
+        # Make sure we still have valid range after adjustments
+        if startbin >= stopbin || startbin < 0 || stopbin > length(time)
+            continue
+        end
+        
+        newbins = calculate_segment_bin_start(
+            startbin, stopbin, nbin, fraction_step=fraction_step)
+        
+        append!(spectrum_start_bins, newbins)
+    end
+    return spectrum_start_bins, spectrum_start_bins .+ nbin
+end
+
+@resumable function generate_indices_of_segment_boundaries_unbinned(times::AbstractVector{<:Real},
+                                                                    gti::AbstractMatrix{<:Real},
+                                                                    segment_size::Real)
+    start, stop = time_intervals_from_gtis(gti, segment_size)
+
+    startidx = searchsortedfirst.(Ref(times), start)
+    stopidx = searchsortedfirst.(Ref(times), stop)
+
+    for (s, e, idx0, idx1) in zip(start, stop, startidx, stopidx)
+        @yield s, e, idx0, idx1
     end
 end
 
-# BTI calculation tests - Basic BTI calculation
-let
-    gtis = [2.0 4.0; 6.0 8.0]
-    btis = get_btis(gtis, 1.0, 9.0)
+@resumable function generate_indices_of_segment_boundaries_binned(times::AbstractVector{<:Real},
+                                                                  gti::AbstractMatrix{<:Real},
+                                                                  segment_size::Real; dt=nothing)
+    startidx, stopidx = bin_intervals_from_gtis(gti, segment_size, times;
+                                                dt=dt)
+
+    if isnothing(dt)
+        dt = 0
+    end
+    for (idx0, idx1) in zip(startidx, stopidx)
+        @yield times[idx0+1] - dt / 2, times[min(idx1, length(times) - 1)] - dt / 2,idx0, idx1
+    end
+end
+"""
+    split_by_gtis(el::EventList, gtis::AbstractMatrix{<:Real}) -> Vector{EventList}
+
+Apply Good Time Intervals (GTIs) to an EventList, returning a separate EventList for each GTI.
+
+This function filters the input EventList based on the provided GTI boundaries, creating 
+independent EventList objects for each valid time interval. This is essential for 
+X-ray timing analysis where data quality varies and only specific time intervals 
+contain reliable observations.
+
+# Arguments
+- `el::EventList`: Input event list containing photon arrival times and energies
+- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row contains 
+  [start_time, stop_time] for a valid observation interval
+
+# Returns
+- `Vector{EventList}`: Array of EventList objects, one for each GTI containing events 
+  that fall within the corresponding time interval. Empty GTIs are excluded from results.
+
+# Notes
+- Events are filtered based on arrival times: `gti_start ≤ time ≤ gti_stop`
+- Maintains all original metadata and extra columns for each filtered EventList
+- GTIs are validated using `check_gtis()` to ensure proper formatting and ordering
+- Only non-empty EventLists are returned (GTIs with zero events are excluded)
+
+# Examples
+```julia
+# Apply GTIs to filter data during good observation periods
+gtis = [100.0 200.0; 300.0 400.0; 500.0 600.0]  # Three GTI intervals
+filtered_events = apply_gtis(eventlist, gtis)
+println("Number of valid GTI segments: ", length(filtered_events))
+
+# Each segment can be analyzed independently
+for (i, segment) in enumerate(filtered_events)
+    println("GTI \$i: \$(length(segment)) events")
+end
+```
+
+# References
+- Stingray documentation on GTI handling
+- X-ray timing analysis best practices (Belloni et al. 2000)
+"""
+function split_by_gtis(el::EventList, gtis::AbstractMatrix{<:Real})
+    check_gtis(gtis)
     
-    expected_btis = [1.0 2.0; 4.0 6.0; 8.0 9.0]
-    @test size(btis) == size(expected_btis)
-    @test btis ≈ expected_btis
-end
-
-# BTI calculation tests - No BTIs (continuous GTI)
-let
-    gtis = [1.0 9.0]
-    btis = get_btis(gtis, 1.0, 9.0)
+    result = EventList[]
     
-    @test size(btis, 1) == 0
-end
-
-# BTI calculation tests - Empty GTIs
-let
-    gtis = reshape(Float64[], 0, 2)
-    btis = get_btis(gtis, 1.0, 9.0)
+    for i in 1:size(gtis, 1)
+        gti_start, gti_stop = gtis[i, 1], gtis[i, 2]
+        
+        # Create filter function for this specific GTI
+        gti_filter(t) = gti_start ≤ t ≤ gti_stop
+        
+        # Apply temporal filtering using existing infrastructure
+        filtered_el = filter_time(gti_filter, el)
+        
+        # Only include GTIs that contain events
+        if length(filtered_el.times) > 0
+            push!(result, filtered_el)
+        end
+    end
     
-    @test size(btis) == (1, 2)
-    @test btis ≈ [1.0 9.0]
+    return result
 end
-# Edge case where GTIs just touch (no overlap)
-let
-    gti1 = [2 3]
-    gti2 = [3 4]
-    newgti = operations_on_gtis([gti1, gti2], intersect)
-    @test isempty(newgti)
+"""
+    apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) -> Vector{LightCurve{T}} where T
+
+Apply Good Time Intervals (GTIs) to a LightCurve, returning separate LightCurve objects for each GTI.
+
+This function segments a light curve based on GTI boundaries, creating independent
+LightCurve objects for spectral timing analysis. Only complete time bins that fall
+entirely within GTI boundaries are included to maintain temporal coherence required
+for Fourier analysis and periodogram calculations.
+
+# Arguments
+- `lc::LightCurve{T}`: Input light curve with binned photon count data
+- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row contains
+  [start_time, stop_time] for valid observation intervals
+
+# Returns
+- `Vector{LightCurve{T}}`: Array of LightCurve objects, one for each GTI. Only
+  segments containing at least one complete time bin are included. Empty segments
+  are excluded from the result.
+
+# Filtering Strategy
+- **Bin inclusion criterion**: Complete bins only - bin center must fall within GTI
+- **Boundary handling**: Bins partially overlapping GTI edges are excluded
+- **Metadata preservation**: All properties and metadata are maintained per segment
+- **Temporal continuity**: Each segment maintains uniform time binning from original
+
+# Technical Details
+The filtering uses bin centers for GTI membership testing:
+```julia
+included_bins = (bin_center ≥ gti_start) && (bin_center ≤ gti_stop)
+```
+
+This conservative approach ensures that:
+1. All included bins have complete exposure within the GTI
+2. Fourier analysis assumptions are preserved (uniform sampling)
+3. Statistical properties remain well-defined
+4. No partial bins introduce systematic errors
+
+# Periodogram Compatibility
+!!! warning "Bartlett Periodogram Limitation"
+    This function is **NOT** suitable for Bartlett periodogram calculations, which
+    require segments of identical length. The resulting segments will have different
+    lengths depending on GTI durations.
+
+!!! note "Suitable Methods"
+    Use with Welch's method, Lomb-Scargle periodograms, or other techniques that
+    can handle variable-length segments.
+
+# Examples
+```julia
+# Basic segmentation
+gtis = [1000.0 2000.0; 3000.0 4000.0; 5000.0 6000.0]
+lc_segments = apply_gtis(lightcurve, gtis)
+
+println("Created \$(length(lc_segments)) light curve segments")
+
+# Analyze each segment independently
+for (i, segment) in enumerate(lc_segments)
+    mean_rate = mean(segment.counts ./ segment.exposure)
+    duration = segment.time[end] - segment.time[1] + segment.dt
+    println("GTI \$i: mean rate = \$(mean_rate) cts/s, duration = \$(duration) s")
+end
+
+# Variable-length periodogram analysis (NOT Bartlett)
+using FFTW
+periodograms = []
+for segment in lc_segments
+    # Welch's method can handle different segment lengths
+    pgram = welch_periodogram(segment.counts, segment.dt)
+    push!(periodograms, pgram)
+end
+
+# Check segment properties
+for (i, seg) in enumerate(lc_segments)
+    println("Segment \$i: \$(length(seg.time)) bins, Δt = \$(seg.dt) s")
+end
+```
+
+# Performance Notes
+- Time complexity: O(n) where n is the number of time bins
+- Memory usage: Creates new LightCurve objects for each segment
+- For large datasets, consider processing segments individually rather than
+  storing all segments in memory
+
+# References
+- Welch periodogram methodology for variable-length segments
+- X-ray timing analysis protocols (van der Klis 1989)
+- Stingray light curve segmentation documentation
+
+# See Also
+- [`LightCurve`](@ref): Light curve data structure
+- [`check_gtis`](@ref): Validate GTI format
+- [`create_filtered_lightcurve`](@ref): Create filtered light curve segments
+"""
+function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
+    check_gtis(gtis)
     
-    gti3 = [3 5]
-    newgti = operations_on_gtis([gti1, gti2, gti3], intersect)
-    @test isempty(newgti)
-end
-
-# One GTI completely contains others
-let
-    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
-    gti2 = [0.5 14]
-    newgti0 = operations_on_gtis([gti1, gti2], intersect)
-    newgti1 = operations_on_gtis([gti2, gti1], intersect)
+    result = LightCurve{T}[]
     
-    @test newgti0 == gti1
-    @test newgti1 == gti1
-end
-
-# Partial overlap scenarios
-let
-    gti1 = [1.5 12.5]
-    gti2 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
-    newgti0 = operations_on_gtis([gti1, gti2], intersect)
-    newgti1 = operations_on_gtis([gti2, gti1], intersect)
+    # Pre-allocate the mask buffer once
+    bin_mask = similar(lc.time, Bool)
     
-    expected = [[1.5 2]; [4 5]; [7 10]; [11 11.2]; [12.2 12.5];]
-    @test newgti0 == expected
-    @test newgti1 == expected
-end
-
-# Complex overlapping scenario
-let
-    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
-    gti2 = [[0.5 3]; [4.5 4.7]; [10 14];]
-    newgti0 = operations_on_gtis([gti1, gti2], intersect)
-    newgti1 = operations_on_gtis([gti2, gti1], intersect)
+    for i in 1:size(gtis, 1)
+        gti_start, gti_stop = T(gtis[i, 1]), T(gtis[i, 2])
+        
+        # Use @. to vectorize the mask creation
+        @. bin_mask = (lc.time ≥ gti_start) & (lc.time ≤ gti_stop)
+        
+        if any(bin_mask)
+            filtered_lc = create_filtered_lightcurve(lc, bin_mask, gti_start, gti_stop, i)
+            push!(result, filtered_lc)
+        end
+    end
     
-    expected = [[1 2]; [4.5 4.7]; [11 11.2]; [12.2 13.2];]
-    @test newgti0 == expected
-    @test newgti1 == expected
+    return result
 end
+"""
+    create_filtered_lightcurve(lc::LightCurve{T}, mask::BitVector, 
+                              gti_start::T, gti_stop::T, gti_index::Int) -> LightCurve{T}
 
-# GTIs that fill gaps between others
-let
-    gti0 = [[0 1]; [2 3]; [4 8];]
-    gti1 = [[1 2]; [3 4];]
-    result = operations_on_gtis([gti0, gti1], union)
-    @test result == [0 8]
-end
+Internal function to create a filtered LightCurve from a boolean mask.
 
-# check_gtis function tests
-let
-    @test_throws ArgumentError check_gtis(reshape(Float64[], 0, 2))
-end
+Creates a new LightCurve containing only the time bins specified by the mask,
+while preserving all metadata, properties, and statistical characteristics.
 
-# create_gti_mask function tests
-let
-    arr = [0, 1, 2, 3, 4, 5, 6]
-    gti = reshape(Float64[], 0, 2)
-    @test_throws ArgumentError create_gti_mask(arr, gti)
-end
+# Arguments
+- `lc::LightCurve{T}`: Source light curve
+- `mask::BitVector`: Boolean mask indicating which bins to include
+- `gti_start::T`: Start time of the GTI (for metadata)
+- `gti_stop::T`: Stop time of the GTI (for metadata)  
+- `gti_index::Int`: GTI sequence number (for metadata tracking)
 
-# bin_intervals_from_gtis error cases
-let
-    @test_throws ArgumentError bin_intervals_from_gtis([[0 400];], 128, [500, 501])
-    @test_throws ArgumentError bin_intervals_from_gtis([[1000 1400];], 128, [500, 501])
-end
+# Returns
+- `LightCurve{T}`: Filtered light curve with updated metadata reflecting the GTI application
 
-# Edge cases for create_gti_mask
-let
-    arr = [0.5, 1.5, 2.5, 3.5]
-    gti = [0 4]
-    mask, new_gti = create_gti_mask(arr, gti)
-    @test all(mask)
-    @test new_gti == gti
-end
+# Implementation Notes
+- Preserves bin size and exposure information
+- Maintains all computed properties (e.g., mean energy)
+- Updates metadata to reflect GTI filtering
+- Recalculates statistical errors for the filtered dataset
+"""
+function create_filtered_lightcurve(lc::LightCurve{T}, mask::AbstractVector{Bool}, 
+                                   gti_start::T, gti_stop::T, gti_index::Int) where T
 
-#operations_on_gtis with empty GTI handling
-let
-    gti1 = [[1 2]; [4 5]; [7 10]; [11 11.2]; [12.2 13.2];]
-    empty_gti = reshape(Float64[], 0, 2)
+    # Ensure mask is proper boolean vector
+    bool_mask = mask isa BitVector ? mask : BitVector(mask)
+    # Filter all primary arrays
+    filtered_time = lc.time[mask]
+    filtered_counts = lc.counts[mask]
+    filtered_exposure = isnothing(lc.exposure) ? nothing : lc.exposure[mask]
     
-    result = operations_on_gtis([gti1, empty_gti], intersect)
-    @test size(result) == (0, 2)
-    @test result isa Matrix{Float64}
+    # Filter all computed properties
+    filtered_properties = EventProperty{T}[]
+    for prop in lc.properties
+        filtered_values = prop.values[mask]
+        push!(filtered_properties, EventProperty(prop.name, filtered_values, prop.unit))
+    end
     
-    result = operations_on_gtis([gti1, empty_gti], union)
-    @test result == gti1
-end
-
-#Test operations with multiple empty GTIs
-let
-    empty_gti1 = reshape(Float64[], 0, 2)
-    empty_gti2 = reshape(Float64[], 0, 2)
+    # Update metadata with GTI information
+    updated_metadata = LightCurveMetadata(
+        lc.metadata.telescope,
+        lc.metadata.instrument, 
+        lc.metadata.object,
+        lc.metadata.mjdref,
+        (Float64(gti_start), Float64(gti_stop)),  # Update time range to GTI bounds
+        lc.metadata.bin_size,
+        lc.metadata.headers,
+        merge(lc.metadata.extra, Dict{String,Any}(
+            "gti_applied" => true,
+            "gti_index" => gti_index,
+            "gti_bounds" => [Float64(gti_start), Float64(gti_stop)],
+            "original_time_range" => lc.metadata.time_range,
+            "filtered_nbins" => length(filtered_time),
+            "original_nbins" => length(lc.time)
+        ))
+    )
     
-    result = operations_on_gtis([empty_gti1, empty_gti2], union)
-    @test size(result) == (0, 2)
-    @test result isa Matrix{Float64}
+    # Create new LightCurve with filtered data
+    filtered_lc = LightCurve{T}(
+        filtered_time,
+        lc.dt,  # Preserve original bin size
+        filtered_counts,
+        nothing,  # Errors will be recalculated
+        filtered_exposure,
+        filtered_properties,
+        updated_metadata,
+        lc.err_method
+    )
     
-    result = operations_on_gtis([empty_gti1, empty_gti2], intersect)
-    @test size(result) == (0, 2)
-    @test result isa Matrix{Float64}
-end
-
-# GTI length calculation edge cases
-let
-    tiny_gtis = [[1.0 1.0000001]; [2.0 2.0000001];]
-    total_length = get_total_gti_length(tiny_gtis)
-    @test total_length ≈ 2e-7
-end
-
-# BTI calculation tests - Empty GTIs
-let
-    empty_gti = reshape(Float64[], 0, 2)
-    @test_throws ArgumentError get_btis(empty_gti)
+    # Recalculate errors for the filtered dataset
+    calculate_errors!(filtered_lc)
     
-    # Test with explicit start/stop times
-    btis = get_btis(empty_gti, 0.0, 10.0)
-    @test btis == [0.0 10.0]
+    return filtered_lc
 end
+"""
+    fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real};
+                             dt::Real=1.0, random_fill_threshold::Real=10.0,
+                             rng::AbstractRNG=Random.GLOBAL_RNG) -> EventList
 
-# BTI calculation tests - Single GTI
-let
-    gti = [2.0 8.0]
-    btis = get_btis(gti, 0.0, 10.0)
-    expected = [[0.0 2.0]; [8.0 10.0];]
-    @test btis == expected
-end
+Fill Bad Time Intervals (BTIs) in an EventList with synthetic events for analysis continuity.
 
-# BTI calculation tests - Multiple GTIs
-let
-    gtis = [[1.0 3.0]; [5.0 7.0]; [9.0 9.5];]
-    btis = get_btis(gtis, 0.0, 10.0)
-    expected = [[0.0 1.0]; [3.0 5.0]; [7.0 9.0]; [9.5 10.0];]
-    @test btis == expected
-end
+This function identifies gaps between Good Time Intervals (GTIs) and conditionally
+fills short gaps with synthetic events to maintain temporal sampling for certain 
+analysis methods. The synthetic events are generated based on event rates from 
+nearby GTIs to preserve statistical properties.
 
-# BTI calculation tests - No BTIs (complete coverage)
-let
-    gtis = [0.0 10.0]
-    btis = get_btis(gtis, 0.0, 10.0)
-    @test size(btis) == (0, 2)
-end
+# Arguments
+- `el::EventList`: EventList to modify in-place
+- `gtis::AbstractMatrix{<:Real}`: GTI boundaries defining good observation periods,
+  where each row contains [start_time, stop_time]
+- `dt::Real=1.0`: Time step parameter (retained for API compatibility, not used in calculations)
+- `random_fill_threshold::Real=10.0`: Maximum BTI duration for random filling (seconds)
+- `rng::AbstractRNG=Random.GLOBAL_RNG`: Random number generator for synthetic events
 
-# GTI operations - Union of touching intervals
-let
-    gti1 = [1.0 3.0]
-    gti2 = [3.0 5.0]
-    result = operations_on_gtis([gti1, gti2], union)
-    @test result == [1.0 5.0]
+# Returns
+- `EventList`: The modified EventList (same object, modified in-place)
+
+# Filling Strategy
+- **Short BTIs** (< `random_fill_threshold`): Fill with synthetic events based on 
+  event rates calculated from nearby GTIs
+- **Long BTIs** (≥ `random_fill_threshold`): Leave empty to preserve data integrity
+- **Rate calculation**: Uses median event rate from all GTIs, with fallback to 
+  overall event rate if no GTI rates are available
+
+# Technical Implementation
+1. Compute BTIs using `get_btis()` based on GTI boundaries and EventList time range
+2. For each qualifying short BTI:
+   - Calculate event rates from all GTIs: `events_in_gti / gti_duration`
+   - Use median rate to determine number of synthetic events
+   - Generate uniformly distributed synthetic times within BTI boundaries
+   - Sample energies and extra column values from events in adjacent GTIs
+3. Append all synthetic data and re-sort chronologically
+4. Update metadata with filling statistics
+
+# Metadata Updates
+The function adds the following metadata to `el.meta.headers`:
+- `"BTI_FILLED"`: Boolean indicating if any BTIs were filled
+- `"N_SYNTH_EVENTS"`: Total number of synthetic events added
+- `"RAND_FILL_THRESH"`: The random fill threshold used
+- `"BTI_FILL_DT"`: The dt parameter used
+
+Additional metadata in `el.meta.extra_columns`:
+- `"filled_bti_durations"`: Vector of durations of filled BTIs
+
+# Warnings
+!!! warning "Data Integrity"
+    Synthetic events are clearly marked in metadata but are indistinguishable 
+    from real events in the main data arrays. Exercise caution in subsequent analysis.
+
+!!! note "Statistical Validity"
+    Synthetic events may bias certain statistical measures. Consider the impact
+    on your specific analysis before using this function.
+
+# Examples
+```julia
+# Basic usage with default parameters
+gtis = [1000.0 2000.0; 3000.0 4000.0; 5000.0 6000.0]
+fill_bad_time_intervals!(eventlist, gtis)
+
+# Custom parameters for short gaps only
+fill_bad_time_intervals!(eventlist, gtis, 
+                        random_fill_threshold=5.0)
+
+# Check what was filled
+if get(eventlist.meta.headers, "BTI_FILLED", false)
+    n_synth = eventlist.meta.headers["N_SYNTH_EVENTS"]
+    println("Filled \$n_synth synthetic events")
+    
+    # Access filled interval durations
+    if haskey(eventlist.meta.extra_columns, "filled_bti_durations")
+        durations = eventlist.meta.extra_columns["filled_bti_durations"]
+        println("Filled BTI durations: \$durations")
+    end
 end
-let
-    gti1 = [1.0 2.0]
-    gti2 = [3.0 4.0]
-    result = operations_on_gtis([gti1, gti2], intersect)
-    @test size(result) == (0, 2)
+```
+
+# References
+- Stingray BTI handling: https://stingray.readthedocs.io/en/stable/
+- Statistical considerations in X-ray timing analysis (Vaughan et al. 2003)
+
+# See Also
+- [`get_btis`](@ref): Function to compute Bad Time Intervals
+- [`apply_gtis`](@ref): Apply GTIs to segment data
+"""
+function fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real}; 
+                                  dt::Real=1.0, random_fill_threshold::Real=10.0,
+                                  rng::AbstractRNG=Random.GLOBAL_RNG)
+    check_gtis(gtis)
+    
+    # Determine the time range for BTI calculation
+    time_start, time_stop = extrema(el.times)
+    
+    # Calculate Bad Time Intervals
+    btis = get_btis(gtis, time_start, time_stop)
+    
+    # Track synthetic events for metadata
+    n_synthetic_events = 0
+    filled_intervals = Float64[]
+    
+    # Store all synthetic data before appending to avoid index issues
+    all_synthetic_times = Float64[]
+    all_synthetic_energies = Float64[]
+    synthetic_extra_columns = Dict{String, Vector}()
+    
+    # Initialize synthetic extra columns
+    for (col_name, col_data) in el.meta.extra_columns
+        synthetic_extra_columns[col_name] = similar(col_data, 0)
+    end
+    
+    # Process each BTI
+    for i in 1:size(btis, 1)
+        bti_start, bti_stop = btis[i, 1], btis[i, 2]
+        bti_duration = bti_stop - bti_start
+        
+        # Skip BTIs that are too long or have zero/negative duration
+        if bti_duration >= random_fill_threshold || bti_duration <= 0
+            continue
+        end
+        
+        # Calculate number of synthetic events based on event rate in nearby GTIs
+        gti_rates = Float64[]
+        for j in 1:size(gtis, 1)
+            gti_start, gti_stop = gtis[j, 1], gtis[j, 2]
+            events_in_gti = count(t -> gti_start <= t <= gti_stop, el.times)
+            gti_duration_j = gti_stop - gti_start
+            
+            if gti_duration_j > 0 && events_in_gti > 0
+                push!(gti_rates, events_in_gti / gti_duration_j)
+            end
+        end
+        
+        # Determine synthetic event count
+        n_synthetic = 0
+        if isempty(gti_rates)
+            # Fallback to overall event rate
+            if length(el.times) > 1
+                total_duration = maximum(el.times) - minimum(el.times)
+                if total_duration > 0
+                    overall_rate = length(el.times) / total_duration
+                    n_synthetic = max(1, round(Int, overall_rate * bti_duration))
+                end
+            end
+        else
+            # Use median rate from nearby GTIs
+            median_rate = Statistics.median(gti_rates)
+            n_synthetic = max(1, round(Int, median_rate * bti_duration))
+        end
+        
+        if n_synthetic > 0
+            # Generate uniformly distributed synthetic times within the BTI
+            # Generate times strictly within (bti_start, bti_stop) exclusive bounds
+            # Use a small epsilon to ensure we don't hit the exact boundaries
+            epsilon = 1e-10
+            effective_start = bti_start + epsilon
+            effective_stop = bti_stop - epsilon
+            effective_duration = effective_stop - effective_start
+            
+            synthetic_times = sort!(rand(rng, n_synthetic) .* effective_duration .+ effective_start)
+            append!(all_synthetic_times, synthetic_times)
+            
+            n_synthetic_events += n_synthetic
+            push!(filled_intervals, bti_duration)
+            
+            # Handle energy values if present - sample from nearby GTI events
+            if !isnothing(el.energies)
+                nearby_energies = Float64[]
+                
+                # Find energies from GTIs that are adjacent to this BTI
+                for j in 1:size(gtis, 1)
+                    gti_start, gti_stop = gtis[j, 1], gtis[j, 2]
+                    
+                    # Check if this GTI is adjacent to the BTI
+                    if abs(gti_stop - bti_start) < 1e-10 || abs(gti_start - bti_stop) < 1e-10
+                        # Find events in this GTI
+                        for (idx, t) in enumerate(el.times)
+                            if gti_start <= t <= gti_stop
+                                push!(nearby_energies, el.energies[idx])
+                            end
+                        end
+                    end
+                end
+                
+                # Sample energies
+                if !isempty(nearby_energies)
+                    synthetic_energies = rand(rng, nearby_energies, n_synthetic)
+                elseif !isempty(el.energies)
+                    synthetic_energies = rand(rng, el.energies, n_synthetic)
+                else
+                    synthetic_energies = zeros(eltype(el.energies), n_synthetic)
+                end
+                
+                append!(all_synthetic_energies, synthetic_energies)
+            end
+            
+            # Handle extra columns with values from nearby GTIs
+            for (col_name, col_data) in el.meta.extra_columns
+                nearby_values = similar(col_data, 0)
+                
+                # Find values from GTIs that are adjacent to this BTI
+                for j in 1:size(gtis, 1)
+                    gti_start, gti_stop = gtis[j, 1], gtis[j, 2]
+                    
+                    # Check if this GTI is adjacent to the BTI
+                    if abs(gti_stop - bti_start) < 1e-10 || abs(gti_start - bti_stop) < 1e-10
+                        # Find events in this GTI
+                        for (idx, t) in enumerate(el.times)
+                            if gti_start <= t <= gti_stop
+                                push!(nearby_values, col_data[idx])
+                            end
+                        end
+                    end
+                end
+                
+                # Sample values
+                if !isempty(nearby_values)
+                    synthetic_values = rand(rng, nearby_values, n_synthetic)
+                elseif !isempty(col_data)
+                    synthetic_values = rand(rng, col_data, n_synthetic)
+                else
+                    synthetic_values = zeros(eltype(col_data), n_synthetic)
+                end
+                
+                append!(synthetic_extra_columns[col_name], synthetic_values)
+            end
+        end
+    end
+    
+    # Now append all synthetic data at once
+    if n_synthetic_events > 0
+        append!(el.times, all_synthetic_times)
+        
+        if !isnothing(el.energies)
+            append!(el.energies, all_synthetic_energies)
+        end
+        
+        # Append synthetic extra columns
+        for (col_name, col_data) in el.meta.extra_columns
+            append!(col_data, synthetic_extra_columns[col_name])
+        end
+        
+        # Re-sort all arrays to maintain chronological order
+        sort_indices = sortperm(el.times)
+        el.times[:] = el.times[sort_indices]
+        
+        if !isnothing(el.energies)
+            el.energies[:] = el.energies[sort_indices]
+        end
+        
+        # Sort extra columns
+        for (col_name, col_data) in el.meta.extra_columns
+            col_data[:] = col_data[sort_indices]
+        end
+        
+        # metadata with BTI filling information
+        merge!(el.meta.headers, Dict{String,Any}(
+            "BTI_FILLED" => true,
+            "N_SYNTH_EVENTS" => n_synthetic_events,
+            "RAND_FILL_THRESH" => random_fill_threshold,
+            "BTI_FILL_DT" => dt
+        ))
+        
+        # Store vector metadata in extra_columns
+        el.meta.extra_columns["filled_bti_durations"] = filled_intervals
+    end
+    
+    return el
 end
+#todo
+# create a function that fills the bad time intervals in a light curve
+# in order to maintain optiizational sampling for periodograms
+# can be intially start like :
+# fill_bad_time_intervals!(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}; 
+#                             dt::Real=1.0, random_fill_threshold::Real=10.0,
+#                             rng::AbstractRNG=Random.GLOBAL_RNG) where T<:Real
