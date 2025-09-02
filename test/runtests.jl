@@ -1,7 +1,7 @@
 using Stingray
 using Test
 using FFTW, Distributions, Statistics, StatsBase, HDF5, FITSIO
-using Logging ,LinearAlgebra
+using Logging, LinearAlgebra
 using CFITSIO
 using Random
 using Plots
@@ -17,7 +17,7 @@ end
 @testset "Eventlist" begin
     include("test_events.jl")
 end
-@testset verbose=true "Synthetic Events Tests" begin
+@testset verbose = true "Synthetic Events Tests" begin
     include("test_missionSupport.jl")
 end
 @testset "lightcurve" begin
