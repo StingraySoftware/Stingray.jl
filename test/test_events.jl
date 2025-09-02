@@ -120,7 +120,7 @@ let
         nothing,                    # time_unit
         nothing,                    # time_sys
         nothing,                    # time_pixr
-        nothing                     # time_del
+        nothing,                     # time_del
     )
     ev_extra = EventList(times_extra, energies_extra, dummy_meta)
 
@@ -171,7 +171,7 @@ let
         nothing,                      # time_unit
         nothing,                      # time_sys
         nothing,                      # time_pixr
-        nothing                       # time_del
+        nothing,                       # time_del
     )
     ev_extra = EventList(times_extra, energies_extra, dummy_meta)
 
@@ -227,7 +227,7 @@ let
         nothing,                      # time_unit
         nothing,                      # time_sys
         nothing,                      # time_pixr
-        nothing                       # time_del
+        nothing,                       # time_del
     )
     ev_extra = EventList(times_extra, energies_extra, dummy_meta)
 
@@ -463,12 +463,12 @@ let
     # Test has_gti function
     times = [1.0, 2.0, 3.0, 4.0, 5.0]
     energies = [10.0, 20.0, 30.0, 40.0, 50.0]
-    
+
     # EventList without GTI
     ev_no_gti = EventList(times, energies)
     @test !has_gti(ev_no_gti)
     @test isnothing(gti(ev_no_gti))
-    
+
     # EventList with GTI - create metadata with GTI data
     gti_matrix = [1.0 3.0; 4.0 6.0]  # Two intervals: [1.0, 3.0] and [4.0, 6.0]
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
@@ -484,20 +484,20 @@ let
         nothing,                       # time_unit
         nothing,                       # time_sys
         nothing,                       # time_pixr
-        nothing                        # time_del
+        nothing,                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
-    
+
     @test has_gti(ev_with_gti)
     @test gti(ev_with_gti) == gti_matrix
-    
+
 end
 
 # Test gti_exposure function
 let
     times = [1.0, 2.0, 3.0, 4.0, 5.0]
     energies = [10.0, 20.0, 30.0, 40.0, 50.0]
-    
+
     # Test exposure calculation with GTI
     gti_matrix = [1.0 3.0; 4.0 6.0; 8.0 10.0]  # Intervals: 2s + 2s + 2s = 6s total
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
@@ -513,21 +513,21 @@ let
         nothing,                       # time_unit
         nothing,                       # time_sys
         nothing,                       # time_pixr
-        nothing                        # time_del
+        nothing,                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
-    
+
     @test gti_exposure(ev_with_gti) == 6.0
-    
+
     # Test exposure calculation without GTI (should use time span)
     ev_no_gti = EventList(times, energies)
     expected_span = maximum(times) - minimum(times)  # 5.0 - 1.0 = 4.0
     @test gti_exposure(ev_no_gti) == expected_span
-    
+
     # Test with empty times
     ev_empty = EventList(Float64[], Float64[])
     @test gti_exposure(ev_empty) == 0.0
-    
+
     # Test single interval GTI
     single_gti = reshape([2.0, 5.0], 1, 2)  # One interval: [2.0, 5.0] = 3s
     meta_single_gti = FITSMetadata{Dict{String,Any}}(
@@ -543,18 +543,18 @@ let
         nothing,                      # time_unit
         nothing,                      # time_sys
         nothing,                      # time_pixr
-        nothing                       # time_del
+        nothing,                       # time_del
     )
     ev_single_gti = EventList(times, energies, meta_single_gti)
     @test gti_exposure(ev_single_gti) == 3.0
-    
+
 end
 
 # Test GTI display and info functions
 let
     times = [1.0, 2.0, 3.0]
     energies = [10.0, 20.0, 30.0]
-    
+
     # Test gti_info with GTI present
     gti_matrix = [1.0 2.5; 3.0 4.0]
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
@@ -570,18 +570,18 @@ let
         nothing,                       # time_unit
         nothing,                       # time_sys
         nothing,                       # time_pixr
-        nothing                        # time_del
+        nothing,                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
-    
+
     # gti_info should not throw errors
     @test_nowarn gti_info(ev_with_gti)
-    
+
     # Test gti_info without GTI (should warn)
     ev_no_gti = EventList(times, energies)
     # Capture the warning - this should warn about no GTI
     @test_logs (:warn, "No GTI information available") gti_info(ev_no_gti)
-    
+
 end
 
 # Test FITSMetadata show method with GTI
@@ -602,19 +602,19 @@ let
         nothing,                       # time_unit
         nothing,                       # time_sys
         nothing,                       # time_pixr
-        nothing                        # time_del
+        nothing,                        # time_del
     )
-        
+
     # Test that show method includes GTI information
     io = IOBuffer()
     show(io, MIME("text/plain"), meta_with_gti)
     output = String(take!(io))
-    
+
     @test occursin("test.fits[2]", output)
     @test occursin("1 extra column(s)", output)
     @test occursin("GTI: 2 intervals", output)
     @test occursin("total exposure: 4.0 s", output)
-    
+
     # Test display without GTI
     meta_no_gti = FITSMetadata{Dict{String,Any}}(
         "/path/to/test.fits",          # filepath
@@ -629,23 +629,23 @@ let
         nothing,                       # time_unit
         nothing,                       # time_sys
         nothing,                       # time_pixr
-        nothing                        # time_del
+        nothing,                        # time_del
     )
-    
+
     io2 = IOBuffer()
     show(io2, MIME("text/plain"), meta_no_gti)
     output2 = String(take!(io2))
-    
+
     @test occursin("test.fits[2]", output2)
     @test occursin("1 extra column(s)", output2)
     @test !occursin("GTI:", output2)  # Should not mention GTI
-    
+
 end
 # Test Base.summary with GTI information
 let
     times = [1.0, 2.0, 3.0, 4.0]
     energies = [100.0, 200.0, 300.0, 400.0]
-    
+
     # Test summary with GTI
     gti_matrix = [1.0 2.0; 3.0 5.0]  # 1s + 2s = 3s total exposure
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
@@ -661,10 +661,10 @@ let
         nothing,                       # time_unit
         nothing,                       # time_sys
         nothing,                       # time_pixr
-        nothing                        # time_del
+        nothing,                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
-    
+
     summary_str = summary(ev_with_gti)
     @test occursin("4 events", summary_str)
     @test occursin("over 3.0 time units", summary_str)
@@ -672,13 +672,13 @@ let
     @test occursin("(keV)", summary_str)
     @test occursin("GTI: 2 intervals (3.0 s exposure)", summary_str)
     @test occursin("1 extra columns", summary_str)
-    
+
     # Test summary without GTI
     ev_no_gti = EventList(times, energies)
     summary_no_gti = summary(ev_no_gti)
     @test occursin("4 events", summary_no_gti)
     @test !occursin("GTI:", summary_no_gti)
-    
+
     # Test summary without energies but with GTI
     meta_time_only_gti = FITSMetadata{Dict{String,Any}}(
         "test.fits",                   # filepath
@@ -693,22 +693,22 @@ let
         nothing,                      # time_unit
         nothing,                      # time_sys
         nothing,                      # time_pixr
-        nothing                       # time_del
+        nothing,                       # time_del
     )
     ev_time_only_gti = EventList(times, nothing, meta_time_only_gti)
-    
+
     summary_time_only = summary(ev_time_only_gti)
     @test occursin("4 events", summary_time_only)
     @test !occursin("energies:", summary_time_only)
     @test occursin("GTI: 2 intervals", summary_time_only)
-    
+
 end
 
 # Test GTI with filtering operations
 let
     times = [1.0, 1.5, 2.0, 3.5, 4.0, 4.5, 5.0]
     energies = [10.0, 15.0, 20.0, 35.0, 40.0, 45.0, 50.0]
-    
+
     # Create EventList with GTI and extra columns
     gti_matrix = [1.0 2.5; 3.0 5.0]
     extra_cols = Dict("INDEX" => collect(1:7))
@@ -725,45 +725,45 @@ let
         nothing,                       # time_unit
         nothing,                       # time_sys
         nothing,                       # time_pixr
-        nothing                        # time_del
+        nothing,                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
-    
+
     # Test that GTI information persists after filtering
     @test has_gti(ev_with_gti)
     @test gti_exposure(ev_with_gti) == 3.5  # (2.5-1.0) + (5.0-3.0) = 1.5 + 2.0 = 3.5
-    
+
     # Filter by time and check GTI is preserved
     filter_time!(t -> t >= 2.0, ev_with_gti)
     @test has_gti(ev_with_gti)
     @test gti(ev_with_gti) == gti_matrix  # GTI matrix should be unchanged
     @test gti_exposure(ev_with_gti) == 3.5  # GTI exposure should be unchanged
-    
+
     # Filter by energy and check GTI is preserved
     filter_energy!(e -> e <= 45.0, ev_with_gti)
     @test has_gti(ev_with_gti)
     @test gti(ev_with_gti) == gti_matrix
-    
+
     # Test non-mutating filters preserve GTI
     times2 = [1.0, 2.0, 3.0, 4.0]
     energies2 = [10.0, 20.0, 30.0, 40.0]
     ev_with_gti2 = EventList(times2, energies2, meta_with_gti)
-    
+
     ev_filtered = filter_time(t -> t > 1.5, ev_with_gti2)
     @test has_gti(ev_filtered)
     @test gti(ev_filtered) == gti_matrix
-    
+
     ev_filtered_energy = filter_energy(e -> e < 35.0, ev_with_gti2)
     @test has_gti(ev_filtered_energy)
     @test gti(ev_filtered_energy) == gti_matrix
-    
+
 end
 
 # Test edge cases for GTI
 let
     times = [1.0, 2.0, 3.0]
     energies = [10.0, 20.0, 30.0]
-    
+
     # Test with empty GTI matrix
     empty_gti = Matrix{Float64}(undef, 0, 2)
     meta_empty_gti = FITSMetadata{Dict{String,Any}}(
@@ -779,12 +779,12 @@ let
         nothing,                      # time_unit
         nothing,                      # time_sys
         nothing,                      # time_pixr
-        nothing                       # time_del
+        nothing,                       # time_del
     )
     ev_empty_gti = EventList(times, energies, meta_empty_gti)
     @test has_gti(ev_empty_gti)
     @test gti_exposure(ev_empty_gti) == 0.0
-    
+
     # Test with single point GTI intervals (start == stop)
     point_gti = [2.0 2.0; 3.0 3.0]  # Zero-duration intervals
     meta_point_gti = FITSMetadata{Dict{String,Any}}(
@@ -800,12 +800,12 @@ let
         nothing,                      # time_unit
         nothing,                      # time_sys
         nothing,                      # time_pixr
-        nothing                       # time_del
+        nothing,                       # time_del
     )
     ev_point_gti = EventList(times, energies, meta_point_gti)
     @test has_gti(ev_point_gti)
     @test gti_exposure(ev_point_gti) == 0.0
-    
+
     # Test with very large GTI values
     large_gti = [1e6 2e6; 3e6 4e6]  # Large time values
     meta_large_gti = FITSMetadata{Dict{String,Any}}(
@@ -821,19 +821,19 @@ let
         nothing,                      # time_unit
         nothing,                      # time_sys
         nothing,                      # time_pixr
-        nothing                       # time_del
+        nothing,                       # time_del
     )
     ev_large_gti = EventList(times, energies, meta_large_gti)
     @test has_gti(ev_large_gti)
     @test gti_exposure(ev_large_gti) == 2e6  # (2e6-1e6) + (4e6-3e6) = 1e6 + 1e6 = 2e6
-    
+
 end
 
 # Test GTI source tracking
 let
     times = [1.0, 2.0, 3.0]
     energies = [10.0, 20.0, 30.0]
-    
+
     gti_matrix = [1.0 2.5; 3.0 4.0]
     meta_with_gti = FITSMetadata{Dict{String,Any}}(
         "test.fits",                    # filepath
@@ -848,13 +848,13 @@ let
         nothing,                       # time_unit
         nothing,                       # time_sys
         nothing,                       # time_pixr
-        nothing                        # time_del
+        nothing,                        # time_del
     )
     ev_with_gti = EventList(times, energies, meta_with_gti)
-    
+
     # @debug won't show by default, so this should not produce stderr output
     @test_nowarn gti_info(ev_with_gti)
-    
+
     # Test without GTI (still warns)
     ev_no_gti = EventList(times, energies)
     @test_logs (:warn, "No GTI information available") gti_info(ev_no_gti)
@@ -869,33 +869,39 @@ let
         "TIMEUNIT" => "s",
         "TIMESYS" => "TT",
         "TIMEPIXR" => 0.0,
-        "TIMEDEL" => 4.0e-8
+        "TIMEDEL" => 4.0e-8,
     )
-    
+
     # Test the extract_timing_keywords function directly
-    mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del = extract_timing_keywords(mock_header)
-    
+    mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del =
+        extract_timing_keywords(mock_header)
+
     # Test that MJDREF is correctly calculated from MJDREFI + MJDREFF
     @test mjd_ref ≈ (mock_header["MJDREFI"] + mock_header["MJDREFF"])
-    
+
     # Test that values are extracted correctly from header
     @test time_zero == mock_header["TIMEZERO"]
     @test time_sys == mock_header["TIMESYS"]
     @test time_pixr == mock_header["TIMEPIXR"]
     @test time_del == mock_header["TIMEDEL"]
-    
+
     # Test time unit conversion from string "s" to 1.0
     @test time_unit == 1.0
-    
+
     # Test different time unit conversions
     @test extract_timing_keywords(Dict("TIMEUNIT" => "s"))[3] == 1.0
     @test extract_timing_keywords(Dict("TIMEUNIT" => "d"))[3] == 86400.0
     @test extract_timing_keywords(Dict("TIMEUNIT" => "ms"))[3] == 0.001
     @test extract_timing_keywords(Dict("TIMEUNIT" => "1.5"))[3] == 1.5
-    
+
     # Test missing keywords return nothing
     empty_header = Dict{String,Any}()
-    mjd_empty, time_zero_empty, time_unit_empty, time_sys_empty, time_pixr_empty, time_del_empty = extract_timing_keywords(empty_header)
+    mjd_empty,
+    time_zero_empty,
+    time_unit_empty,
+    time_sys_empty,
+    time_pixr_empty,
+    time_del_empty = extract_timing_keywords(empty_header)
     @test isnothing(mjd_empty)
     @test isnothing(time_zero_empty)
     @test isnothing(time_unit_empty)
@@ -907,7 +913,8 @@ end
 let
     # Test basic MJDREF extraction
     header1 = Dict("MJDREF" => 49353.000696574074)
-    mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del = extract_timing_keywords(header1)
+    mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del =
+        extract_timing_keywords(header1)
     @test mjd_ref ≈ 49353.000696574074
     @test isnothing(time_zero)
     @test isnothing(time_unit)
@@ -927,9 +934,10 @@ let
         "TIMEUNIT" => "s",
         "TIMESYS" => "TT",
         "TIMEPIXR" => 0.0,
-        "TIMEDEL" => 0.1
+        "TIMEDEL" => 0.1,
     )
-    mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del = extract_timing_keywords(header3)
+    mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del =
+        extract_timing_keywords(header3)
     @test mjd_ref ≈ 56658.00077759259
     @test time_zero ≈ -1.0
     @test time_unit ≈ 1.0  # "s" converts to 1.0
@@ -949,15 +957,15 @@ let
     raw_times = [100000.0, 100001.0, 100002.0]
     mjd_ref = 56658.00077759259
     time_zero = -1.0
-    
+
     expected_times = mjd_ref .+ ((raw_times .+ time_zero) ./ 86400.0)
-    
+
     corrected_times = raw_times .+ time_zero
     mjd_tt_times = mjd_ref .+ (corrected_times ./ 86400.0)
-    
+
     @test mjd_tt_times ≈ expected_times
     @test all(mjd_tt_times .> 56000)
-    @test maximum(mjd_tt_times) - minimum(mjd_tt_times) ≈ 2.0/86400.0 atol=1e-10
+    @test maximum(mjd_tt_times) - minimum(mjd_tt_times) ≈ 2.0 / 86400.0 atol = 1e-10
 end
 
 # Test bin-centering correction for light curve data
@@ -967,18 +975,18 @@ let
     time_zero = 0.0
     time_del = 1.0
     time_pixr = 0.0
-    
+
     bin_center_correction = (0.5 - time_pixr) * time_del
     @test bin_center_correction ≈ 0.5
-    
+
     expected_corrected = raw_times .+ time_zero .+ bin_center_correction
     expected_mjd = mjd_ref .+ (expected_corrected ./ 86400.0)
-    
+
     corrected_times = raw_times .+ time_zero .+ bin_center_correction
     mjd_tt_times = mjd_ref .+ (corrected_times ./ 86400.0)
-    
+
     @test mjd_tt_times ≈ expected_mjd
-    @test mjd_tt_times[1] ≈ mjd_ref + 0.5/86400.0
+    @test mjd_tt_times[1] ≈ mjd_ref + 0.5 / 86400.0
 end
 
 # Test data type detection
@@ -986,7 +994,7 @@ let
     time_del_binned = 0.1
     is_binned = !isnothing(time_del_binned) && time_del_binned > 0.0
     @test is_binned == true
-    
+
     time_del_event = nothing
     is_binned_event = !isnothing(time_del_event) && time_del_event > 0.0
     @test is_binned_event == false
