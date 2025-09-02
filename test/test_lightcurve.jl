@@ -37,29 +37,39 @@ function validate_lightcurve_inputs(
     eventlist::EventList,
     binsize::Real,
     err_method::Symbol,
-    gaussian_errors::Union{Nothing,Vector{<:Real}}
+    gaussian_errors::Union{Nothing,Vector{<:Real}},
 )
     if isempty(eventlist.times)
         throw(ArgumentError("Event list is empty"))
     end
-    
+
     if binsize <= 0
         throw(ArgumentError("Bin size must be positive"))
     end
-    
+
     if !(err_method in [:poisson, :gaussian])
-        throw(ArgumentError("Unsupported error method: $err_method. Use :poisson or :gaussian"))
+        throw(
+            ArgumentError(
+                "Unsupported error method: $err_method. Use :poisson or :gaussian",
+            ),
+        )
     end
-    
+
     if err_method === :gaussian
         if isnothing(gaussian_errors)
-            throw(ArgumentError("Gaussian errors must be provided when using :gaussian method"))
+            throw(
+                ArgumentError(
+                    "Gaussian errors must be provided when using :gaussian method",
+                ),
+            )
         end
         if length(gaussian_errors) != length(eventlist.times)
-            throw(ArgumentError("Length of gaussian_errors must match length of event times"))
+            throw(
+                ArgumentError("Length of gaussian_errors must match length of event times"),
+            )
         end
     end
-    
+
     return true
 end
 
@@ -106,7 +116,7 @@ function create_mock_eventlist(times, energies = nothing)
         "OBJECT" => "TEST",
         "MJDREF" => 0.0,
     )
-    
+
     dummy_meta = FITSMetadata(
         "",  # filepath
         1,   # hdu
@@ -120,14 +130,10 @@ function create_mock_eventlist(times, energies = nothing)
         nothing,  # time_unit
         nothing,  # time_sys
         nothing,  # time_pixr
-        nothing   # time_del
+        nothing,   # time_del
     )
-    
-    return EventList{typeof(times),typeof(dummy_meta)}(
-        times,
-        energies,
-        dummy_meta,
-    )
+
+    return EventList{typeof(times),typeof(dummy_meta)}(times, energies, dummy_meta)
 end
 
 """
@@ -192,7 +198,7 @@ function create_mock_eventlist_meta(
         "EXPOSURE" => 1000.0,
         "DATAMODE" => "TE",
     )
-    
+
     meta = FITSMetadata(
         "",  # filepath
         1,   # hdu
@@ -206,9 +212,9 @@ function create_mock_eventlist_meta(
         nothing,       # time_unit
         nothing,       # time_sys
         nothing,       # time_pixr
-        nothing       # time_del
+        nothing,       # time_del
     )
-    
+
     return EventList(times, energies, meta)
 end
 # Test EventProperty structure creation and validation
@@ -293,16 +299,7 @@ let
         [Dict{String,Any}()],
         Dict{String,Any}(),
     )
-    lc = LightCurve{Float64}(
-        time,
-        dt,
-        counts,
-        errors,
-        exposure,
-        props,
-        metadata,
-        :poisson,
-    )
+    lc = LightCurve{Float64}(time, dt, counts, errors, exposure, props, metadata, :poisson)
     @test lc.time == time
     @test lc.dt == dt
     @test lc.counts == counts
@@ -385,12 +382,8 @@ let
     # Test with single bin
     single_edges = [1.0, 2.0]
     single_centers = [1.5]
-    props_single = calculate_event_properties(
-        [1.1, 1.2],
-        [10.0, 20.0],
-        single_edges,
-        single_centers,
-    )
+    props_single =
+        calculate_event_properties([1.1, 1.2], [10.0, 20.0], single_edges, single_centers)
     @test length(props_single) == 1
     @test props_single[1].values[1] ≈ 15.0
 end
@@ -453,7 +446,7 @@ let
     # Test metadata
     @test lc.metadata.bin_size == 1.0
     @test lc.metadata.extra["total_nevents"] == length(times)
-    @test lc.metadata.extra["filtered_nevents"] == length(times)    
+    @test lc.metadata.extra["filtered_nevents"] == length(times)
     # Test properties
     @test !isempty(lc.properties)
     @test lc.properties[1].name === :mean_energy
@@ -474,23 +467,23 @@ let
     lc_time = create_lightcurve(eventlist, 1.0; tstart = 2.0, tstop = 4.0)
     # Events at times 2.3, 2.4, 3.5 should pass the filter (3 out of 7)
     @test sum(lc_time.counts) == 3
-    @test lc_time.metadata.time_range[1] == 2.0  
+    @test lc_time.metadata.time_range[1] == 2.0
     @test lc_time.metadata.time_range[2] == 4.0
     lc_combined = create_lightcurve(
         eventlist,
         1.0;
         tstart = 2.0,
         tstop = 4.0,
-        energy_filter = (10.0, 50.0)
+        energy_filter = (10.0, 50.0),
     )
     # Events that pass both time (2.3, 2.4, 3.5) AND energy (15.0, 25.0, 35.0, 45.0) filters
     # Times 2.3 (energy 25.0), 2.4 (energy 35.0), 3.5 (energy 45.0) = 3 events
     @test sum(lc_combined.counts) == 3
     @test sum(lc_combined.counts) <= sum(lc_energy.counts)
-    @test sum(lc_combined.counts) <= sum(lc_time.counts)    
+    @test sum(lc_combined.counts) <= sum(lc_time.counts)
     # Test that time range reflects the filtering parameters
     @test lc_combined.metadata.time_range[1] == 2.0
-    @test lc_combined.metadata.time_range[2] == 4.0  
+    @test lc_combined.metadata.time_range[2] == 4.0
     # Test that energy filter is recorded in metadata
     @test lc_combined.metadata.extra["energy_filter"] == (10.0, 50.0)
 end
@@ -514,9 +507,9 @@ end
 let
     times = [1.1, 1.2, 2.3, 2.4, 3.5]
     energies = [10.0, 20.0, 15.0, 25.0, 30.0]
-    eventlist = create_mock_eventlist(times, energies) 
+    eventlist = create_mock_eventlist(times, energies)
     # Create lightcurve with Poisson errors
-    lc = create_lightcurve(eventlist, 1.0)  
+    lc = create_lightcurve(eventlist, 1.0)
     # Test setting custom Gaussian errors
     custom_errors = [0.5, 1.0, 1.5]
     if length(lc.counts) == length(custom_errors)
@@ -531,7 +524,8 @@ let
     @test errors_gauss == gaussian_errs
     # Test different length Gaussian errors
     different_gaussian = [0.1, 0.2, 0.3]
-    errors_diff = calculate_errors([1, 2, 3], :gaussian, gaussian_errors = different_gaussian)
+    errors_diff =
+        calculate_errors([1, 2, 3], :gaussian, gaussian_errors = different_gaussian)
     @test errors_diff == different_gaussian
 end
 # Test basic rebinning functionality
@@ -624,7 +618,7 @@ let
     @test length(lc_half.counts) == n_half_bins
     @test sum(lc_half.counts) == sum(lc.counts)
 end
- # Test rebinning with non-aligned time structure
+# Test rebinning with non-aligned time structure
 let
     start_time = 1.3
     end_time = 4.7
@@ -678,7 +672,7 @@ let
         ),
         :poisson,
     )
-   # Rebinning single bin to larger size should still work
+    # Rebinning single bin to larger size should still work
     single_rebinned = rebin(lc_single, 2.0)
     @test sum(single_rebinned.counts) == sum(single_counts)
     @test length(single_rebinned.counts) >= 1
@@ -742,7 +736,8 @@ let
     @test errors_gauss == gaussian_errs
     # Test different length Gaussian errors
     different_gaussian = [0.1, 0.2, 0.3]
-    errors_diff = calculate_errors([1, 2, 3], :gaussian, gaussian_errors = different_gaussian)
+    errors_diff =
+        calculate_errors([1, 2, 3], :gaussian, gaussian_errors = different_gaussian)
     @test errors_diff == different_gaussian
 end
 # Test error calculation[exclusive tests]
@@ -751,7 +746,11 @@ let
     # Test missing Gaussian errors
     @test_throws ArgumentError calculate_errors(counts, :gaussian)
     # Test wrong length Gaussian errors
-    @test_throws ArgumentError calculate_errors(counts, :gaussian, gaussian_errors = [1.0, 2.0])
+    @test_throws ArgumentError calculate_errors(
+        counts,
+        :gaussian,
+        gaussian_errors = [1.0, 2.0],
+    )
     # Test invalid error method
     @test_throws ArgumentError calculate_errors(counts, :invalid)
     # Test empty arrays
@@ -765,19 +764,24 @@ let
     # Test Gaussian errors with validation
     counts_gaussian = [10, 20, 30]
     gaussian_errors = [1.5, 2.5, 3.5]
-    result_gaussian = calculate_errors(counts_gaussian, :gaussian; gaussian_errors=gaussian_errors)
+    result_gaussian =
+        calculate_errors(counts_gaussian, :gaussian; gaussian_errors = gaussian_errors)
     @test result_gaussian == gaussian_errors
     # Test error conditions
     @test_throws ArgumentError calculate_errors(counts_gaussian, :gaussian)  # Missing errors
-    @test_throws ArgumentError calculate_errors(counts_gaussian, :gaussian; gaussian_errors=[1.0, 2.0])  # Wrong length
+    @test_throws ArgumentError calculate_errors(
+        counts_gaussian,
+        :gaussian;
+        gaussian_errors = [1.0, 2.0],
+    )  # Wrong length
     @test_throws ArgumentError calculate_errors(counts_gaussian, :invalid_method)  # Invalid method
 end
 # Test Comprehensive Filtering System
 let
     times = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5]
-    energies = [5.0, 15.0, 25.0, 35.0, 45.0, 55.0, 65.0]    
+    energies = [5.0, 15.0, 25.0, 35.0, 45.0, 55.0, 65.0]
     # Test time-only filtering
-    filtered_times, filtered_energies, start_t, stop_t = 
+    filtered_times, filtered_energies, start_t, stop_t =
         apply_filters(times, energies, 2.0, 5.0, nothing)
     @test all(2.0 .<= filtered_times .<= 5.0)
     @test length(filtered_times) == 3  # [2.5, 3.5, 4.5] (5.5 > 5.0)
@@ -787,14 +791,22 @@ let
     filtered_times_e, filtered_energies_e, _, _ =
         apply_filters(times, energies, nothing, nothing, (20.0, 50.0))
     @test all(20.0 .<= filtered_energies_e .< 50.0)
-    @test 25.0 in filtered_energies_e && 35.0 in filtered_energies_e && 45.0 in filtered_energies_e
+    @test 25.0 in filtered_energies_e &&
+          35.0 in filtered_energies_e &&
+          45.0 in filtered_energies_e
     @test 50.0 ∉ filtered_energies_e  # Exclusive upper bound
     filtered_times_c, filtered_energies_c, _, _ =
         apply_filters(times, energies, 2.0, 5.0, (20.0, 50.0))
     @test all(2.0 .<= filtered_times_c .<= 5.0)
     @test all(20.0 .<= filtered_energies_c .< 50.0)
     @test_throws ArgumentError apply_filters(times, energies, 10.0, 20.0, nothing)  # No events in time range
-    @test_throws ArgumentError apply_filters(times, energies, nothing, nothing, (100.0, 200.0))  # No events in energy range    
+    @test_throws ArgumentError apply_filters(
+        times,
+        energies,
+        nothing,
+        nothing,
+        (100.0, 200.0),
+    )  # No events in energy range    
     # Test filtering without energies
     filtered_no_energy, _, _, _ = apply_filters(times, nothing, 2.0, 5.0, (20.0, 50.0))
     @test all(2.0 .<= filtered_no_energy .<= 5.0)
@@ -808,7 +820,7 @@ let
     @test edges[end] >= stop_time
     @test all(diff(edges) .≈ binsize)
     @test length(centers) == length(edges) - 1
-    @test all(centers .≈ edges[1:end-1] .+ binsize/2)
+    @test all(centers .≈ edges[1:end-1] .+ binsize / 2)
     event_times = [0.1, 0.9, 1.1, 1.9, 2.1, 2.8, 3.2, 3.9]
     bin_edges = [0.0, 1.0, 2.0, 3.0, 4.0]
     counts = bin_events(event_times, bin_edges)
@@ -831,24 +843,51 @@ let
     @test validate_lightcurve_inputs(eventlist, 1.0, :gaussian, gaussian_errors) == true
 
     empty_eventlist = create_mock_eventlist(Float64[], nothing)
-    @test_throws ArgumentError validate_lightcurve_inputs(empty_eventlist, 1.0, :poisson, nothing)
-    @test_throws ArgumentError validate_lightcurve_inputs(eventlist, -1.0, :poisson, nothing)  
+    @test_throws ArgumentError validate_lightcurve_inputs(
+        empty_eventlist,
+        1.0,
+        :poisson,
+        nothing,
+    )
+    @test_throws ArgumentError validate_lightcurve_inputs(
+        eventlist,
+        -1.0,
+        :poisson,
+        nothing,
+    )
     @test_throws ArgumentError validate_lightcurve_inputs(eventlist, 1.0, :invalid, nothing)  # Invalid method
-    @test_throws ArgumentError validate_lightcurve_inputs(eventlist, 1.0, :gaussian, nothing)  # Missing gaussian errors
+    @test_throws ArgumentError validate_lightcurve_inputs(
+        eventlist,
+        1.0,
+        :gaussian,
+        nothing,
+    )  # Missing gaussian errors
 end
 # Test Light Curve Array Interface and Operations
 let
     times = [1.5, 2.5, 3.5, 4.5]
     counts = [10, 20, 15, 25]
     metadata = LightCurveMetadata(
-        "TEST_MISSION", "TEST_INSTRUMENT", "TEST_OBJECT", 0.0,
-        (1.0, 5.0), 1.0, [Dict{String,Any}()], Dict{String,Any}()
+        "TEST_MISSION",
+        "TEST_INSTRUMENT",
+        "TEST_OBJECT",
+        0.0,
+        (1.0, 5.0),
+        1.0,
+        [Dict{String,Any}()],
+        Dict{String,Any}(),
     )
     lc = LightCurve{Float64}(
-        times, 1.0, counts, nothing, nothing,
-        Vector{EventProperty{Float64}}(), metadata, :poisson
+        times,
+        1.0,
+        counts,
+        nothing,
+        nothing,
+        Vector{EventProperty{Float64}}(),
+        metadata,
+        :poisson,
     )
-    
+
     @test length(lc) == 4
     @test size(lc) == (4,)
     @test lc[1] == (1.5, 10)
@@ -892,14 +931,23 @@ let
         (0.0, 5.0),  # time_range
         1.0,         # bin_width
         Vector{Dict{String,Any}}(),  # filters
-        Dict{String,Any}()           # extra_info
+        Dict{String,Any}(),           # extra_info
     )
     err_method = :poisson
-    lc = LightCurve(times, bin_width, bins, count_error, rate, properties, metadata, err_method)
+    lc = LightCurve(
+        times,
+        bin_width,
+        bins,
+        count_error,
+        rate,
+        properties,
+        metadata,
+        err_method,
+    )
     lc.counts = counts
     set_errors!(lc)
     @test lc.err_method == :poisson
-    @test lc.count_error ≈ sqrt.(counts) 
+    @test lc.count_error ≈ sqrt.(counts)
     # Test set_errors! with custom errors
     custom_errors = [0.5, 1.2, 0.8, 1.1, 0.9]
     set_errors!(lc, custom_errors)
@@ -926,7 +974,7 @@ let
     # Store original Gaussian errors
     original_gaussian_errors = copy(lc.count_error)
     # Modify counts - Gaussian errors should remain unchanged
-    lc.counts .*= 2.0  
+    lc.counts .*= 2.0
     # For Gaussian method, calculate_errors! may not work since errors are fixed
     # So we test that the errors remain the same (no automatic recalculation)
     @test lc.err_method == :gaussian
@@ -939,20 +987,56 @@ let
     @test lc.count_error ≈ expected_errors
     @test lc.err_method == :poisson
     # Test return value consistency for calculate_errors!
-    times_2 = [1.0, 2.0]  
+    times_2 = [1.0, 2.0]
     counts_2 = [16.0, 25.0]
-    metadata_2 = LightCurveMetadata("TEST", "TEST", "TEST", 0.0, (0.0, 2.0), 1.0, Vector{Dict{String,Any}}(), Dict{String,Any}())
-    lc_test = LightCurve(times_2, 1.0, [1, 2], nothing, nothing, EventProperty{Float64}[], metadata_2, :poisson)
+    metadata_2 = LightCurveMetadata(
+        "TEST",
+        "TEST",
+        "TEST",
+        0.0,
+        (0.0, 2.0),
+        1.0,
+        Vector{Dict{String,Any}}(),
+        Dict{String,Any}(),
+    )
+    lc_test = LightCurve(
+        times_2,
+        1.0,
+        [1, 2],
+        nothing,
+        nothing,
+        EventProperty{Float64}[],
+        metadata_2,
+        :poisson,
+    )
     lc_test.counts = counts_2
-    set_errors!(lc_test) 
+    set_errors!(lc_test)
     returned_errors = calculate_errors!(lc_test)
     @test returned_errors == lc_test.count_error
     @test returned_errors ≈ [4.0, 5.0]
     # Test type consistency
     times_int = [1.0, 2.0, 3.0]
     counts_int = [100, 144, 225]
-    metadata_int = LightCurveMetadata("TEST", "TEST", "TEST", 0.0, (0.0, 3.0), 1.0, Vector{Dict{String,Any}}(), Dict{String,Any}())
-    lc_int = LightCurve(times_int, 1.0, [1, 2, 3], nothing, nothing, EventProperty{Float64}[], metadata_int, :poisson)
+    metadata_int = LightCurveMetadata(
+        "TEST",
+        "TEST",
+        "TEST",
+        0.0,
+        (0.0, 3.0),
+        1.0,
+        Vector{Dict{String,Any}}(),
+        Dict{String,Any}(),
+    )
+    lc_int = LightCurve(
+        times_int,
+        1.0,
+        [1, 2, 3],
+        nothing,
+        nothing,
+        EventProperty{Float64}[],
+        metadata_int,
+        :poisson,
+    )
     lc_int.counts = counts_int
     set_errors!(lc_int)
     @test eltype(lc_int.count_error) == Float64

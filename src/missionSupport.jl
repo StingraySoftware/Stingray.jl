@@ -13,14 +13,14 @@ Supported missions:
 - AXAF/Chandra: Advanced X-ray Astrophysics Facility
 - XTE/RXTE: Rossi X-ray Timing Explorer
 """
-const SIMPLE_CALIBRATION_FUNCS = Dict{String, Function}(
+const SIMPLE_CALIBRATION_FUNCS = Dict{String,Function}(
     "nustar" => (pi) -> pi * 0.04 + 1.62,
     "xmm" => (pi) -> pi * 0.001,
     "nicer" => (pi) -> pi * 0.01,
     "ixpe" => (pi) -> pi / 375 * 15,
     "axaf" => (pi) -> (pi - 1) * 14.6e-3,  # Chandra/AXAF
     "chandra" => (pi) -> (pi - 1) * 14.6e-3,  # Explicit chandra entry
-    "xte" => (pi) -> pi * 0.025  # RXTE/XTE
+    "xte" => (pi) -> pi * 0.025,  # RXTE/XTE
 )
 
 """
@@ -54,10 +54,10 @@ functions, energy column alternatives, and GTI extension preferences.
 """
 struct MissionSupport{T} <: AbstractMissionSupport
     name::String
-    instrument::Union{String, Nothing}
-    epoch::Union{T, Nothing}
+    instrument::Union{String,Nothing}
+    epoch::Union{T,Nothing}
     calibration_func::Function
-    interpretation_func::Union{Function, Nothing}
+    interpretation_func::Union{Function,Nothing}
     energy_alternatives::Vector{String}
     gti_extensions::Vector{String}
 end
@@ -95,21 +95,23 @@ ms = get_mission_support("nustar", "FPM_A")
 ms = get_mission_support("xte", "PCA", 50000.0)
 ```
 """
-function get_mission_support(mission::String, 
-                           instrument::Union{String, Nothing}=nothing,
-                           epoch::Union{Float64, Nothing}=nothing)
-    
+function get_mission_support(
+    mission::String,
+    instrument::Union{String,Nothing} = nothing,
+    epoch::Union{Float64,Nothing} = nothing,
+)
+
     # Check for empty mission string
     if isempty(mission)
         throw(ArgumentError("Mission name cannot be empty"))
     end
-    
+
     mission_lower = lowercase(mission)
 
     if mission_lower in ["chandra", "axaf"]
         mission_lower = "chandra"
     end
-    
+
     calib_func = if haskey(SIMPLE_CALIBRATION_FUNCS, mission_lower)
         SIMPLE_CALIBRATION_FUNCS[mission_lower]
     else
@@ -126,7 +128,7 @@ function get_mission_support(mission::String,
     else
         ["ENERGY", "PI", "PHA"]
     end
-    
+
     # Mission-specific GTI extensions
     gti_exts = if mission_lower == "xmm"
         ["GTI", "GTI0", "STDGTI"]
@@ -135,8 +137,16 @@ function get_mission_support(mission::String,
     else
         ["GTI", "STDGTI"]
     end
-    
-    MissionSupport{Float64}(mission_lower, instrument, epoch, calib_func, nothing, energy_alts, gti_exts)
+
+    MissionSupport{Float64}(
+        mission_lower,
+        instrument,
+        epoch,
+        calib_func,
+        nothing,
+        energy_alts,
+        gti_exts,
+    )
 end
 
 """
@@ -161,7 +171,10 @@ pi_values = [100, 500, 1000]
 energies = apply_calibration(ms, pi_values)
 ```
 """
-function apply_calibration(mission_support::MissionSupport, pi_channels::AbstractArray{T}) where T
+function apply_calibration(
+    mission_support::MissionSupport,
+    pi_channels::AbstractArray{T},
+) where {T}
     if isempty(pi_channels)
         return similar(pi_channels, Float64)
     end
@@ -190,19 +203,22 @@ info = Dict("gti" => "STDGTI", "ecol" => "PHA")
 patched = patch_mission_info(info, "xmm")  # Adds GTI0 to gti field
 ```
 """
-function patch_mission_info(info::Dict{String,Any}, mission::Union{String,Nothing}=nothing)
+function patch_mission_info(
+    info::Dict{String,Any},
+    mission::Union{String,Nothing} = nothing,
+)
     if isnothing(mission)
         return info
     end
-    
+
     mission_lower = lowercase(mission)
     patched_info = copy(info)
-    
+
     # Normalize chandra/axaf
     if mission_lower in ["chandra", "axaf"]
         mission_lower = "chandra"
     end
-    
+
     if mission_lower == "xmm" && haskey(patched_info, "gti")
         patched_info["gti"] = string(patched_info["gti"], ",GTI0")
     elseif mission_lower == "xte" && haskey(patched_info, "ecol")
@@ -217,7 +233,7 @@ function patch_mission_info(info::Dict{String,Any}, mission::Union{String,Nothin
             patched_info["time_system"] = patched_info["TIMESYS"]
         end
     end
-    
+
     return patched_info
 end
 function interpret_fits_data!(f::FITS, mission_support::MissionSupport)
