@@ -1031,6 +1031,9 @@ Times are ready for direct use in timing analysis without additional corrections
 """
 function readevents(
     path::AbstractString;
+    mission::Union{String,Nothing} = nothing,
+    instrument::Union{String,Nothing} = nothing,
+    epoch::Union{Float64,Nothing} = nothing,
     hdu::Int = 2,
     T::Type = Float64,
     sort::Bool = false,
@@ -1044,6 +1047,16 @@ function readevents(
     convert_to_mjd::Bool = false,  # New parameter to control MJD conversion
     kwargs...,
 )::EventList{Vector{T},FITSMetadata{FITSIO.FITSHeader}}
+
+    # Get mission support if specified
+    mission_support = if !isnothing(mission)
+        ms = get_mission_support(mission, instrument, epoch)
+        # Use mission-specific energy alternatives if available
+        energy_alternatives = ms.energy_alternatives
+        ms
+    else
+        nothing
+    end
 
     # Read GTI first if requested
     gti_data, gti_source = nothing, nothing
@@ -1072,16 +1085,30 @@ function readevents(
     time_del::Union{Nothing,Float64} = FITS(path, "r") do f
 
         selected_hdu = f[hdu]
+        
+        # Apply mission-specific FITS interpretation if available
+        if !isnothing(mission_support) && !isnothing(mission_support.interpretation_func)
+            interpret_fits_data!(f, mission_support)
+        end
+        
         header = read_header(selected_hdu)
         all_cols = FITSIO.colnames(selected_hdu)
         time = convert(Vector{T}, read(selected_hdu, "TIME", case_sensitive = false))
 
-        # Read energy column
+        # Read energy column using mission-specific alternatives
         energy_column, energy = read_energy_column(
             selected_hdu;
             T = T,
             energy_alternatives = energy_alternatives,
         )
+
+        # Apply mission-specific calibration if we have PI data and mission support
+        if !isnothing(energy) && !isnothing(mission_support) && 
+           !isnothing(energy_column) && uppercase(energy_column) == "PI"
+            energy = convert(Vector{T}, apply_calibration(mission_support, energy))
+            # Update the energy column name to reflect that it's now calibrated
+            energy_column = "ENERGY"
+        end
 
         # Read extra columns
         extra_data = Dict{String,Vector}()
@@ -1099,6 +1126,23 @@ function readevents(
         mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del = extract_timing_keywords(header)
 
         (time, energy, energy_column, header, extra_data, mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
+    end
+
+    # Apply mission-specific header patches if available
+    if !isnothing(mission_support)
+        # Convert header to dictionary for patching
+        header_dict = Dict{String,Any}()
+
+        # Use the proper way to access FITSHeader keys and values
+        for key in keys(header)
+            header_dict[key] = header[key]
+        end
+
+        # Apply mission patches
+        patched_header_dict = patch_mission_info(header_dict, mission)
+
+        # Note: We keep the original header structure but could extend this
+        # to update the header with patched information if needed
     end
 
     # Apply time corrections and optionally convert to MJD
@@ -1166,6 +1210,7 @@ function readevents(
         end
     end
     
+    # Create metadata with all the new timing information
     meta = FITSMetadata(path, hdu, energy_col, extra_data, header, gti_data, gti_source, 
                        mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
     return EventList(time, energy, meta)
