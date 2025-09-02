@@ -241,6 +241,11 @@ function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}},
     
     return mapreduce(permutedims, vcat, final_gti, init=reshape(T[], 0, 2))
 end
+function intersect_gtis(gtis1::AbstractMatrix{<:Real}, gtis2::AbstractMatrix{<:Real})
+    check_gtis(gtis1)
+    check_gtis(gtis2)
+    return operations_on_gtis([gtis1, gtis2], intersect)
+end
 
 """
     get_btis(gtis::AbstractMatrix{<:Real}) -> Matrix{<:Real}

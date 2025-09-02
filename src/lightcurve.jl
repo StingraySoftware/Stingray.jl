@@ -495,6 +495,77 @@ function apply_filters(
     
     return filtered_times, filtered_energies, start_t, stop_t
 end
+"""
+    apply_filters(times, energies, tstart, tstop, energy_filter)
+
+Basic event filtering without GTI consideration.
+
+# Arguments
+- `times::AbstractVector{T}`: Event arrival times
+- `energies::Union{Nothing,AbstractVector{T}}`: Event energies (optional)
+- `tstart::Union{Nothing,Real}`: Start time filter (inclusive)
+- `tstop::Union{Nothing,Real}`: Stop time filter (inclusive)
+- `energy_filter::Union{Nothing,Tuple{Real,Real}}`: Energy range (emin, emax)
+
+# Returns
+`Tuple{Vector, Union{Nothing,Vector}, Real, Real}`: 
+- Filtered times
+- Filtered energies (if provided)
+- Actual start time
+- Actual stop time
+
+# Examples
+```julia
+# Time filtering only
+filtered_times, _, start_t, stop_t = apply_filters(times, nothing, 1000.0, 2000.0, nothing)
+
+# Energy and time filtering
+filtered_times, filtered_energies, start_t, stop_t = apply_filters(
+    times, energies, 1000.0, 2000.0, (0.5, 10.0)
+)
+Notes
+- Energy filter is applied as: emin ≤ energy < emax
+- Time filter is applied as: tstart ≤ time ≤ tstop
+"""
+function apply_filters(
+    times::AbstractVector{T},
+    energies::Union{Nothing,AbstractVector{T}},
+    eventlist::EventList,
+    tstart::Union{Nothing,Real},
+    tstop::Union{Nothing,Real},
+    energy_filter::Union{Nothing,Tuple{Real,Real}},
+    binsize::Real
+) where T
+    mask = trues(length(times))
+    
+    # Apply energy filter
+    if !isnothing(energy_filter) && !isnothing(energies)
+        emin, emax = energy_filter
+        mask = mask .& (energies .>= emin) .& (energies .< emax)
+    end
+    
+    # Apply time filters
+    if !isnothing(tstart)
+        mask = mask .& (times .>= tstart)
+    end
+    if !isnothing(tstop)
+        mask = mask .& (times .<= tstop)
+    end
+    # If GTI is present, apply GTI mask
+    if has_gti(eventlist)
+        gti_mask, _ = create_gti_mask(times, eventlist.meta.gti, dt=binsize)
+        mask = mask .& gti_mask
+    end
+    
+    !any(mask) && throw(ArgumentError("No events remain after applying filters"))
+    
+    filtered_times = times[mask]
+    filtered_energies = isnothing(energies) ? nothing : energies[mask]
+    start_t = isnothing(tstart) ? minimum(filtered_times) : tstart
+    stop_t = isnothing(tstop) ? maximum(filtered_times) : tstop
+    
+    return filtered_times, filtered_energies, start_t, stop_t
+end
 
 """
     calculate_event_properties(times, energies, dt, bin_centers) -> Vector{EventProperty}
@@ -605,15 +676,22 @@ function extract_metadata(eventlist::EventList, start_time, stop_time, binsize, 
         n_filtered_events  # Assume it's already a count
     end
     
+    # Create extra metadata with GTI information[storing purpose]
     extra_metadata = Dict{String,Any}(
         "filtered_nevents" => n_events,
         "total_nevents" => length(eventlist.times),
         "energy_filter" => energy_filter,
-        "binning_method" => "histogram"
+        "binning_method" => "histogram",
+        "gti" => eventlist.meta.gti  #GTI information[this 'eventlist.meta.gti' need to bw rembered since it is the one where u will all gti information:)]
     )
     
     if hasfield(typeof(eventlist.meta), :extra)
         merge!(extra_metadata, eventlist.meta.extra)
+    end
+    
+    # Add GTI source information if available
+    if !isnothing(eventlist.meta.gti_source)
+        extra_metadata["gti_source"] = eventlist.meta.gti_source
     end
     
     return LightCurveMetadata(
@@ -691,22 +769,20 @@ function create_lightcurve(
     !(err_method in [:poisson, :gaussian]) && throw(ArgumentError(
         "Unsupported error method: $err_method. Use :poisson or :gaussian"
     ))
-    
     binsize_t = convert(T, binsize)
     
-    # Apply filters to get filtered times and energies
+
     filtered_times, filtered_energies, start_t, stop_t = apply_filters(
         eventlist.times,
         eventlist.energies,
+        eventlist,
         tstart,
         tstop,
-        energy_filter
+        energy_filter,
+        binsize_t
     )
     
-    # Check if we have any events left after filtering
-    if isempty(filtered_times)
-        throw(ArgumentError("No events remain after filtering"))
-    end
+    isempty(filtered_times) && throw(ArgumentError("No events remain after filtering"))
     
     # Determine time range
     start_time = minimum(filtered_times)
@@ -716,17 +792,17 @@ function create_lightcurve(
     dt, bin_centers = create_time_bins(start_time, stop_time, binsize_t)
     counts = bin_events(filtered_times, dt)
     
-    @info "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
+    @debug "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
     
     # Calculate exposure and properties
     exposure = fill(binsize_t, length(bin_centers))
     properties = calculate_event_properties(filtered_times, filtered_energies, dt, bin_centers)
     
-    # Extract metadata - use filtered time range if time filtering was applied
+    # Extract metadata with GTI information
     actual_start = !isnothing(tstart) ? T(tstart) : start_time
     actual_stop = !isnothing(tstop) ? T(tstop) : stop_time
     metadata = extract_metadata(eventlist, actual_start, actual_stop, binsize_t, 
-                               length(filtered_times), energy_filter)
+                              length(filtered_times), energy_filter)
     
     # Create light curve (errors will be calculated when needed)
     lc = LightCurve{T}(
@@ -736,6 +812,11 @@ function create_lightcurve(
     
     # Calculate initial errors
     calculate_errors!(lc)
+    
+    # Add debug info about GTI
+    if has_gti(eventlist)
+        @debug "GTI information preserved" n_intervals=size(eventlist.meta.gti, 1) time_range=extrema(eventlist.meta.gti)
+    end
     
     return lc
 end
