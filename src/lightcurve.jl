@@ -248,17 +248,16 @@ errors = calculate_errors(counts, :gaussian, exposures; gaussian_errors=gaussian
 function calculate_errors(
     counts::Vector{Int},
     method::Symbol;
-    gaussian_errors::Union{Nothing,Vector{<:Real}} = nothing
+    gaussian_errors::Union{Nothing,Vector{<:Real}} = nothing,
 )
     if method === :poisson
         return @. sqrt(max(counts, 1))
     elseif method === :gaussian
-        isnothing(gaussian_errors) && throw(ArgumentError(
-            "Gaussian errors must be provided when using :gaussian method"
-        ))
-        length(gaussian_errors) != length(counts) && throw(ArgumentError(
-            "Length of gaussian_errors must match length of counts"
-        ))
+        isnothing(gaussian_errors) && throw(
+            ArgumentError("Gaussian errors must be provided when using :gaussian method"),
+        )
+        length(gaussian_errors) != length(counts) &&
+            throw(ArgumentError("Length of gaussian_errors must match length of counts"))
         return convert(Vector{Float64}, gaussian_errors)
     else
         throw(ArgumentError("Unsupported error method: $method. Use :poisson or :gaussian"))
@@ -283,16 +282,15 @@ set_errors!(lc, custom_errors)
 # Throws
 - `ArgumentError`: If custom errors length doesn't match bin count
 """
-function set_errors!(lc::LightCurve{T}) where T
+function set_errors!(lc::LightCurve{T}) where {T}
     lc.err_method = :poisson
     lc.count_error = convert(Vector{T}, calculate_errors(lc.counts, :poisson))
     return lc
 end
 
-function set_errors!(lc::LightCurve{T}, errors::Vector{<:Real}) where T
-    length(errors) != length(lc.counts) && throw(ArgumentError(
-        "Length of errors must match number of bins"
-    ))
+function set_errors!(lc::LightCurve{T}, errors::Vector{<:Real}) where {T}
+    length(errors) != length(lc.counts) &&
+        throw(ArgumentError("Length of errors must match number of bins"))
     lc.err_method = :gaussian
     lc.count_error = convert(Vector{T}, errors)
     return lc
@@ -316,7 +314,7 @@ calculate_errors!(lc)  # Recalculates using lc.err_method
 # See Also
 - [`set_errors!`](@ref): Set error method and calculate errors
 """
-function calculate_errors!(lc::LightCurve{T}) where T
+function calculate_errors!(lc::LightCurve{T}) where {T}
     errors = calculate_errors(lc.counts, lc.err_method)
     lc.count_error = convert(Vector{T}, errors)
     return lc.count_error
@@ -357,18 +355,18 @@ println(length(centers))  # 100
 - Ensures complete coverage including stop_time
 - Centers calculated as bin_start + 0.5 * bin_size
 """
-function create_time_bins(start_time::T, stop_time::T, binsize::T) where T
+function create_time_bins(start_time::T, stop_time::T, binsize::T) where {T}
     start_bin = floor(start_time / binsize) * binsize
     time_span = stop_time - start_bin
     num_bins = max(1, ceil(Int, time_span / binsize))
-    
+
     if start_bin + num_bins * binsize <= stop_time
         num_bins += 1
     end
-    
+
     edges = [start_bin + i * binsize for i = 0:num_bins]
     centers = [start_bin + (i + 0.5) * binsize for i = 0:(num_bins-1)]
-    
+
     return edges, centers
 end
 
@@ -406,14 +404,14 @@ counts = bin_events(times, edges)
 # Throws
 - `ArgumentError`: If fewer than 2 bin edges provided
 """
-function bin_events(times::AbstractVector, dt::Vector{T}) where T
+function bin_events(times::AbstractVector, dt::Vector{T}) where {T}
     length(dt) < 2 && throw(ArgumentError("Need at least 2 bin edges"))
-    
+
     adjusted_edges = copy(dt)
     if length(adjusted_edges) > 1
         adjusted_edges[end] = nextfloat(adjusted_edges[end])
     end
-    
+
     hist = fit(Histogram, times, adjusted_edges)
     return Vector{Int}(hist.weights)
 end
@@ -460,18 +458,18 @@ function apply_filters(
     energies::Union{Nothing,AbstractVector{T}},
     tstart::Union{Nothing,Real},
     tstop::Union{Nothing,Real},
-    energy_filter::Union{Nothing,Tuple{Real,Real}}
-) where T
+    energy_filter::Union{Nothing,Tuple{Real,Real}},
+) where {T}
     # Start with all indices
     mask = trues(length(times))
-    
+
     # Apply energy filter first if provided and energies exist
     if !isnothing(energy_filter) && !isnothing(energies)
         emin, emax = energy_filter
         energy_mask = (energies .>= emin) .& (energies .< emax)
         mask = mask .& energy_mask
     end
-    
+
     # Apply time filters
     if !isnothing(tstart)
         mask = mask .& (times .>= tstart)
@@ -479,20 +477,91 @@ function apply_filters(
     if !isnothing(tstop)
         mask = mask .& (times .<= tstop)
     end
-    
+
     # Check if any events remain
     if !any(mask)
         throw(ArgumentError("No events remain after applying filters"))
     end
-    
+
     # Apply the mask
     filtered_times = times[mask]
     filtered_energies = isnothing(energies) ? nothing : energies[mask]
-    
+
     # Calculate time range
     start_t = isnothing(tstart) ? minimum(times) : tstart
     stop_t = isnothing(tstop) ? maximum(times) : tstop
-    
+
+    return filtered_times, filtered_energies, start_t, stop_t
+end
+"""
+    apply_filters(times, energies, tstart, tstop, energy_filter)
+
+Basic event filtering without GTI consideration.
+
+# Arguments
+- `times::AbstractVector{T}`: Event arrival times
+- `energies::Union{Nothing,AbstractVector{T}}`: Event energies (optional)
+- `tstart::Union{Nothing,Real}`: Start time filter (inclusive)
+- `tstop::Union{Nothing,Real}`: Stop time filter (inclusive)
+- `energy_filter::Union{Nothing,Tuple{Real,Real}}`: Energy range (emin, emax)
+
+# Returns
+`Tuple{Vector, Union{Nothing,Vector}, Real, Real}`: 
+- Filtered times
+- Filtered energies (if provided)
+- Actual start time
+- Actual stop time
+
+# Examples
+```julia
+# Time filtering only
+filtered_times, _, start_t, stop_t = apply_filters(times, nothing, 1000.0, 2000.0, nothing)
+
+# Energy and time filtering
+filtered_times, filtered_energies, start_t, stop_t = apply_filters(
+    times, energies, 1000.0, 2000.0, (0.5, 10.0)
+)
+Notes
+- Energy filter is applied as: emin ≤ energy < emax
+- Time filter is applied as: tstart ≤ time ≤ tstop
+"""
+function apply_filters(
+    times::AbstractVector{T},
+    energies::Union{Nothing,AbstractVector{T}},
+    eventlist::EventList,
+    tstart::Union{Nothing,Real},
+    tstop::Union{Nothing,Real},
+    energy_filter::Union{Nothing,Tuple{Real,Real}},
+    binsize::Real,
+) where {T}
+    mask = trues(length(times))
+
+    # Apply energy filter
+    if !isnothing(energy_filter) && !isnothing(energies)
+        emin, emax = energy_filter
+        mask = mask .& (energies .>= emin) .& (energies .< emax)
+    end
+
+    # Apply time filters
+    if !isnothing(tstart)
+        mask = mask .& (times .>= tstart)
+    end
+    if !isnothing(tstop)
+        mask = mask .& (times .<= tstop)
+    end
+    # If GTI is present, apply GTI mask
+    if has_gti(eventlist)
+        gti_mask, _ = create_gti_mask(times, eventlist.meta.gti, dt = binsize)
+        mask = mask .& gti_mask
+    end
+
+    !any(mask) && throw(ArgumentError("No events remain after applying filters"))
+
+    filtered_times = times[mask]
+    filtered_energies = isnothing(energies) ? nothing : energies[mask]
+    start_t = isnothing(tstart) ? minimum(filtered_times) : tstart
+    stop_t = isnothing(tstop) ? maximum(filtered_times) : tstop
+
     return filtered_times, filtered_energies, start_t, stop_t
 end
 
@@ -528,19 +597,19 @@ function calculate_event_properties(
     times::AbstractVector,
     energies::Union{Nothing,AbstractVector},
     dt::Vector{T},
-    bin_centers::Vector{T}
-) where T
+    bin_centers::Vector{T},
+) where {T}
     properties = Vector{EventProperty}()
-    
+
     if !isnothing(energies) && !isempty(energies) && length(bin_centers) > 0
         start_bin = dt[1]
-        binsize = length(bin_centers) == 1 ? 
-            (length(dt) > 1 ? dt[2] - dt[1] : T(1)) :
+        binsize =
+            length(bin_centers) == 1 ? (length(dt) > 1 ? dt[2] - dt[1] : T(1)) :
             bin_centers[2] - bin_centers[1]
-        
+
         energy_sums = zeros(T, length(bin_centers))
         energy_counts = zeros(Int, length(bin_centers))
-        
+
         for (t, e) in zip(times, energies)
             bin_idx = floor(Int, (t - start_bin) / binsize) + 1
             if 1 <= bin_idx <= length(bin_centers)
@@ -548,11 +617,11 @@ function calculate_event_properties(
                 energy_counts[bin_idx] += 1
             end
         end
-        
+
         mean_energy = @. ifelse(energy_counts > 0, energy_sums / energy_counts, zero(T))
         push!(properties, EventProperty{T}(:mean_energy, mean_energy, "keV"))
     end
-    
+
     return properties
 end
 """
@@ -580,7 +649,14 @@ metadata structure with filtering and processing information.
 - Extracts standard FITS keywords (TELESCOP, INSTRUME, OBJECT, MJDREF)
 - Preserves filtering and processing history
 """
-function extract_metadata(eventlist::EventList, start_time, stop_time, binsize, n_filtered_events, energy_filter)
+function extract_metadata(
+    eventlist::EventList,
+    start_time,
+    stop_time,
+    binsize,
+    n_filtered_events,
+    energy_filter,
+)
     headers = if eventlist.meta.headers isa FITSIO.FITSHeader
         [Dict{String,Any}(pairs(eventlist.meta.headers))]
     elseif eventlist.meta.headers isa Vector
@@ -590,36 +666,48 @@ function extract_metadata(eventlist::EventList, start_time, stop_time, binsize, 
     else
         [Dict{String,Any}()]
     end
-    
+
     first_header = isempty(headers) ? Dict{String,Any}() : headers[1]
-    
+
     telescope = get(first_header, "TELESCOP", get(first_header, "TELESCOPE", ""))
     instrument = get(first_header, "INSTRUME", get(first_header, "INSTRUMENT", ""))
     object = get(first_header, "OBJECT", get(first_header, "TARGET", ""))
     mjdref = get(first_header, "MJDREF", get(first_header, "MJDREFI", 0.0))
-    
+
     # Handle both array of events and count of events
     n_events = if n_filtered_events isa AbstractVector
         length(n_filtered_events)
     else
         n_filtered_events  # Assume it's already a count
     end
-    
+
+    # Create extra metadata with GTI information[storing purpose]
     extra_metadata = Dict{String,Any}(
         "filtered_nevents" => n_events,
         "total_nevents" => length(eventlist.times),
         "energy_filter" => energy_filter,
-        "binning_method" => "histogram"
+        "binning_method" => "histogram",
+        "gti" => eventlist.meta.gti,  #GTI information[this 'eventlist.meta.gti' need to bw rembered since it is the one where u will all gti information:)]
     )
-    
+
     if hasfield(typeof(eventlist.meta), :extra)
         merge!(extra_metadata, eventlist.meta.extra)
     end
-    
+
+    # Add GTI source information if available
+    if !isnothing(eventlist.meta.gti_source)
+        extra_metadata["gti_source"] = eventlist.meta.gti_source
+    end
+
     return LightCurveMetadata(
-        telescope, instrument, object, Float64(mjdref),
-        (Float64(start_time), Float64(stop_time)), Float64(binsize),
-        headers, extra_metadata
+        telescope,
+        instrument,
+        object,
+        Float64(mjdref),
+        (Float64(start_time), Float64(stop_time)),
+        Float64(binsize),
+        headers,
+        extra_metadata,
     )
 end
 """
@@ -680,63 +768,80 @@ function create_lightcurve(
     err_method::Symbol = :poisson,
     tstart::Union{Nothing,Real} = nothing,
     tstop::Union{Nothing,Real} = nothing,
-    energy_filter::Union{Nothing,Tuple{Real,Real}} = nothing
-) where {TimeType<:AbstractVector, MetaType<:FITSMetadata}
-    
+    energy_filter::Union{Nothing,Tuple{Real,Real}} = nothing,
+) where {TimeType<:AbstractVector,MetaType<:FITSMetadata}
+
     T = eltype(TimeType)
-    
+
     # Validate inputs
     isempty(eventlist.times) && throw(ArgumentError("Event list is empty"))
     binsize <= 0 && throw(ArgumentError("Bin size must be positive"))
-    !(err_method in [:poisson, :gaussian]) && throw(ArgumentError(
-        "Unsupported error method: $err_method. Use :poisson or :gaussian"
-    ))
-    
+    !(err_method in [:poisson, :gaussian]) && throw(
+        ArgumentError("Unsupported error method: $err_method. Use :poisson or :gaussian"),
+    )
     binsize_t = convert(T, binsize)
-    
-    # Apply filters to get filtered times and energies
+
+
     filtered_times, filtered_energies, start_t, stop_t = apply_filters(
         eventlist.times,
         eventlist.energies,
+        eventlist,
         tstart,
         tstop,
-        energy_filter
+        energy_filter,
+        binsize_t,
     )
-    
-    # Check if we have any events left after filtering
-    if isempty(filtered_times)
-        throw(ArgumentError("No events remain after filtering"))
-    end
-    
+
+    isempty(filtered_times) && throw(ArgumentError("No events remain after filtering"))
+
     # Determine time range
     start_time = minimum(filtered_times)
     stop_time = maximum(filtered_times)
-    
+
     # Create time bins and bin events
     dt, bin_centers = create_time_bins(start_time, stop_time, binsize_t)
     counts = bin_events(filtered_times, dt)
-    
-    @info "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
-    
+
+    @debug "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
+
     # Calculate exposure and properties
     exposure = fill(binsize_t, length(bin_centers))
-    properties = calculate_event_properties(filtered_times, filtered_energies, dt, bin_centers)
-    
-    # Extract metadata - use filtered time range if time filtering was applied
+    properties =
+        calculate_event_properties(filtered_times, filtered_energies, dt, bin_centers)
+
+    # Extract metadata with GTI information
     actual_start = !isnothing(tstart) ? T(tstart) : start_time
     actual_stop = !isnothing(tstop) ? T(tstop) : stop_time
-    metadata = extract_metadata(eventlist, actual_start, actual_stop, binsize_t, 
-                               length(filtered_times), energy_filter)
-    
+    metadata = extract_metadata(
+        eventlist,
+        actual_start,
+        actual_stop,
+        binsize_t,
+        length(filtered_times),
+        energy_filter,
+    )
+
     # Create light curve (errors will be calculated when needed)
     lc = LightCurve{T}(
-        bin_centers, binsize_t, counts, nothing, exposure,
-        properties, metadata, err_method
+        bin_centers,
+        binsize_t,
+        counts,
+        nothing,
+        exposure,
+        properties,
+        metadata,
+        err_method,
     )
-    
+
     # Calculate initial errors
     calculate_errors!(lc)
-    
+
+    # Add debug info about GTI
+    if has_gti(eventlist)
+        @debug "GTI information preserved" n_intervals = size(eventlist.meta.gti, 1) time_range =
+            extrema(eventlist.meta.gti)
+    end
+
     return lc
 end
 """
@@ -774,24 +879,23 @@ lc_10s = rebin(lc, 10.0)
 # Throws
 - `ArgumentError`: If new bin size is not larger than current bin size
 """
-function rebin(lc::LightCurve{T}, new_binsize::Real) where T
-    new_binsize <= lc.metadata.bin_size && throw(ArgumentError(
-        "New bin size must be larger than current bin size"
-    ))
-    
+function rebin(lc::LightCurve{T}, new_binsize::Real) where {T}
+    new_binsize <= lc.metadata.bin_size &&
+        throw(ArgumentError("New bin size must be larger than current bin size"))
+
     old_binsize = T(lc.metadata.bin_size)
     new_binsize_t = convert(T, new_binsize)
-    
+
     start_time = T(lc.metadata.time_range[1])
     stop_time = T(lc.metadata.time_range[2])
-    
+
     # Create new bins
     new_edges, new_centers = create_time_bins(start_time, stop_time, new_binsize_t)
-    
+
     # Rebin counts
     new_counts = zeros(Int, length(new_centers))
     start_bin = new_edges[1]
-    
+
     for (i, time) in enumerate(lc.time)
         if lc.counts[i] > 0
             bin_idx = floor(Int, (time - start_bin) / new_binsize_t) + 1
@@ -800,13 +904,13 @@ function rebin(lc::LightCurve{T}, new_binsize::Real) where T
             end
         end
     end
-    
+
     # Handle properties
     new_properties = Vector{EventProperty}()
     for prop in lc.properties
         new_values = zeros(T, length(new_centers))
         counts = zeros(Int, length(new_centers))
-        
+
         for (i, val) in enumerate(prop.values)
             if lc.counts[i] > 0
                 bin_idx = floor(Int, (lc.time[i] - start_bin) / new_binsize_t) + 1
@@ -816,29 +920,41 @@ function rebin(lc::LightCurve{T}, new_binsize::Real) where T
                 end
             end
         end
-        
+
         new_values = @. ifelse(counts > 0, new_values / counts, zero(T))
         push!(new_properties, EventProperty(prop.name, new_values, prop.unit))
     end
-    
+
     # Update metadata
     new_metadata = LightCurveMetadata(
-        lc.metadata.telescope, lc.metadata.instrument, lc.metadata.object,
-        lc.metadata.mjdref, lc.metadata.time_range, Float64(new_binsize_t),
+        lc.metadata.telescope,
+        lc.metadata.instrument,
+        lc.metadata.object,
+        lc.metadata.mjdref,
+        lc.metadata.time_range,
+        Float64(new_binsize_t),
         lc.metadata.headers,
-        merge(lc.metadata.extra, Dict{String,Any}("original_binsize" => Float64(old_binsize)))
+        merge(
+            lc.metadata.extra,
+            Dict{String,Any}("original_binsize" => Float64(old_binsize)),
+        ),
     )
-    
+
     # Create rebinned light curve
     rebinned_lc = LightCurve{T}(
-        new_centers, new_binsize_t, new_counts, nothing,
-        fill(new_binsize_t, length(new_centers)), new_properties,
-        new_metadata, lc.err_method
+        new_centers,
+        new_binsize_t,
+        new_counts,
+        nothing,
+        fill(new_binsize_t, length(new_centers)),
+        new_properties,
+        new_metadata,
+        lc.err_method,
     )
-    
+
     # Calculate errors for rebinned curve
     calculate_errors!(rebinned_lc)
-    
+
     return rebinned_lc
 end
 """
@@ -872,7 +988,6 @@ Base.lastindex(lc::LightCurve) = length(lc.time)
 Base.getindex(lc::LightCurve, i::Int) = (lc.time[i], lc.counts[i])
 Base.getindex(lc::LightCurve, r::UnitRange{Int}) = [(lc.time[i], lc.counts[i]) for i in r]
 
-Base.iterate(lc::LightCurve) = 
-    isempty(lc.time) ? nothing : ((lc.time[1], lc.counts[1]), 2)
-Base.iterate(lc::LightCurve, state) = 
-state > length(lc.time) ? nothing : ((lc.time[state], lc.counts[state]), state + 1)
+Base.iterate(lc::LightCurve) = isempty(lc.time) ? nothing : ((lc.time[1], lc.counts[1]), 2)
+Base.iterate(lc::LightCurve, state) =
+    state > length(lc.time) ? nothing : ((lc.time[state], lc.counts[state]), state + 1)
