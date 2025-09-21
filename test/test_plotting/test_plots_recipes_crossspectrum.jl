@@ -117,9 +117,8 @@ let
     
     p = plot(cs, plot_type=:snr)
     plot_data = p.series_list[1]
-    noise_level = theoretical_noise_level(cs)
-    expected_snr = abs.(powers) ./ noise_level
-    @test plot_data.plotattributes[:x] ≈ freqs
+    expected_snr = signal_to_noise_ratio(cs)  # Use the same function as recipe
+    @test plot_data.plotattributes[:x] ≈ cs.freq
     @test plot_data.plotattributes[:y] ≈ expected_snr
 end
 
