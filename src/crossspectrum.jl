@@ -370,7 +370,7 @@ function CrossSpectrum(
         freq = freq[fgt0]
     end
 
-    # Process ONLY THE FIRST valid segment
+    # Process ONLY THE FIRST valid segment with improved length handling
     cross_power = nothing
     pds1_power = nothing
     pds2_power = nothing
@@ -378,13 +378,35 @@ function CrossSpectrum(
     segment_photons2 = 0.0
 
     for i = 1:minseg
-        if length(lcs1[i].counts) != length(lcs2[i].counts)
+        lc1_seg = lcs1[i]
+        lc2_seg = lcs2[i]
+        
+        # Handle different segment lengths by truncating to common length
+        min_len = min(length(lc1_seg.counts), length(lc2_seg.counts))
+        
+        if min_len < 2
             continue
+        end
+        
+        # Use common length
+        counts1 = lc1_seg.counts[1:min_len]
+        counts2 = lc2_seg.counts[1:min_len]
+        
+        # Ensure we have the expected number of bins or adjust
+        if length(counts1) != n_bin || length(counts2) != n_bin
+            # If segment is longer than expected, truncate
+            if length(counts1) >= n_bin && length(counts2) >= n_bin
+                counts1 = counts1[1:n_bin]
+                counts2 = counts2[1:n_bin]
+            else
+                # If too short, skip this segment
+                continue
+            end
         end
 
         # Calculate FFTs
-        ft1 = fft(Float64.(lcs1[i].counts))
-        ft2 = fft(Float64.(lcs2[i].counts))
+        ft1 = fft(Float64.(counts1))
+        ft2 = fft(Float64.(counts2))
 
         # Calculate cross spectrum and power spectra
         cross_power = ft1 .* conj.(ft2)
@@ -399,8 +421,8 @@ function CrossSpectrum(
         end
 
         # Store photon counts
-        segment_photons1 = sum(lcs1[i].counts)
-        segment_photons2 = sum(lcs2[i].counts)
+        segment_photons1 = sum(counts1)
+        segment_photons2 = sum(counts2)
 
         # BREAK after first valid segment - this is the key difference!
         break

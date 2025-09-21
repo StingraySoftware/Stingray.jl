@@ -5,7 +5,6 @@
 plot(cs)
 plot(cs, plot_type=:amplitude, xscale=:log10)
 
-# Phase analysis with errors
 plot(cs, plot_type=:phase_lag, show_errors=true, freq_range=(0.1, 10))
 
 # Multiple plots
@@ -163,6 +162,28 @@ plot(cs, plot_type=:coherence, show_noise_level=true)
 
         return freq_plot, time_lag_plot
 
+    elseif plot_type == :raw_coherence
+        if is_averaged(cs)
+            title --> "Averaged Raw Coherence Function ($(cs.m) segments)"
+        else
+            title --> "Single Raw Coherence Function"
+        end
+        xlabel --> "Frequency (Hz)"
+        ylabel --> "Raw Coherence"
+        xaxis --> xscale
+        yaxis --> :identity
+        ylims --> (0, 1.1)
+    
+        # Raw coherence calculation (biased)
+        raw_coherence_plot =
+            abs2.(cs.power[freq_mask]) ./ (cs.ps1[freq_mask] .* cs.ps2[freq_mask])
+    
+        seriestype --> :line
+        color --> color
+        label --> "Raw Coherence"
+    
+        return freq_plot, raw_coherence_plot
+    
     elseif plot_type == :coherence
         if is_averaged(cs)
             title --> "Averaged Coherence Function ($(cs.m) segments)"
@@ -174,14 +195,15 @@ plot(cs, plot_type=:coherence, show_noise_level=true)
         xaxis --> xscale
         yaxis --> :identity
         ylims --> (0, 1.1)
-
-        coherence_plot =
-            abs2.(cs.power[freq_mask]) ./ (cs.ps1[freq_mask] .* cs.ps2[freq_mask])
-
+    
+        # Use the bias-corrected coherence function
+        coherence_values = coherence(cs)
+        coherence_plot = coherence_values[freq_mask]
+    
         seriestype --> :line
         color --> color
         label --> "Coherence"
-
+    
         return freq_plot, coherence_plot
 
     elseif plot_type == :snr
@@ -192,18 +214,18 @@ plot(cs, plot_type=:coherence, show_noise_level=true)
         end
         xlabel --> "Frequency (Hz)"
         ylabel --> "S/N Ratio"
-        xaxis --> xscale
+        xaxis --> :log10
         yaxis --> :identity
 
-        noise_level = theoretical_noise_level(cs)
-        snr_plot = abs.(cs.power[freq_mask]) ./ noise_level
+        # Use empirical noise level (consistent with signal_to_noise_ratio function)
+        snr_plot = signal_to_noise_ratio(cs)  # This uses white_noise_level internally
 
         seriestype --> :line
-        color --> color
-        label --> "S/N Ratio"
+        color --> :purple
+        label --> "S/N Ratio (Empirical)"
 
-        return freq_plot, snr_plot
-
+        return cs.freq, snr_plot
+    
     elseif plot_type == :cross_power_raw
         title --> "Cross Power (Raw Complex Values)"
         xlabel --> "Frequency (Hz)"
@@ -298,6 +320,7 @@ plot(cs, Val(:significant_detections), threshold=5.0)
     cs::CrossSpectrum{T},
     ::Val{:significant_detections};
     threshold = 3.0,
+    use_empirical_noise = true,  # New parameter for consistency
 ) where {T}
 
     if is_averaged(cs)
@@ -313,7 +336,13 @@ plot(cs, Val(:significant_detections), threshold=5.0)
     grid --> true
     legend --> :topright
 
-    noise_level = theoretical_noise_level(cs)
+    # Use consistent noise level estimation
+    noise_level = if use_empirical_noise
+        white_noise_level(cs)  # Same as signal_to_noise_ratio() uses
+    else
+        theoretical_noise_level(cs)  # Original behavior
+    end
+    
     snr_data = abs.(cs.power) ./ noise_level
     significant_mask = snr_data .> threshold
 
@@ -343,7 +372,7 @@ plot(cs, Val(:significant_detections), threshold=5.0)
         color --> :black
         linestyle --> :dash
         alpha --> 0.7
-        label --> "Noise Level"
+        label --> use_empirical_noise ? "Empirical Noise Level" : "Theoretical Noise Level"
         Float64[], Float64[]
     end
 

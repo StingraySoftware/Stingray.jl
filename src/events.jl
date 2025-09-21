@@ -422,11 +422,16 @@ by applying the same filtering mask derived from the source column.
 function filter_on!(f, src_col::AbstractVector, ev::EventList)
     @assert size(src_col) == size(ev.times) "Source column size must match times size"
 
+    # Handle empty input - return immediately
+    if isempty(src_col) || isempty(ev.times)
+        return ev
+    end
+
     # Modified from Base.filter! implementation for multiple arrays
     # Use two pointers: i for reading, j for writing
     j = firstindex(ev.times)
 
-    for i in eachindex(ev.times)
+    for i in eachindex(src_col)  # Use src_col indices, not ev.times
         predicate = f(src_col[i])::Bool
 
         if predicate
@@ -446,18 +451,18 @@ function filter_on!(f, src_col::AbstractVector, ev::EventList)
         end
     end
 
-    # Resize all arrays to new length
-    if j <= lastindex(ev.times)
-        new_length = j - 1
-        resize!(ev.times, new_length)
+    # Calculate new length correctly
+    new_length = j - firstindex(ev.times)
+    
+    # Resize all arrays to new length (handles 0 length correctly)
+    resize!(ev.times, new_length)
 
-        if !isnothing(ev.energies)
-            resize!(ev.energies, new_length)
-        end
+    if !isnothing(ev.energies)
+        resize!(ev.energies, new_length)
+    end
 
-        for (_, col) in ev.meta.extra_columns
-            resize!(col, new_length)
-        end
+    for (_, col) in ev.meta.extra_columns
+        resize!(col, new_length)
     end
 
     ev
@@ -1050,7 +1055,7 @@ function readevents(
     gti_hdu_indices::Union{Vector{Int},Nothing} = nothing,
     combine_gtis::Bool = true,
     apply_gti_filter::Bool = false,
-    convert_to_mjd::Bool = false,  # New parameter to control MJD conversion
+    convert_to_mjd::Bool = false,
     kwargs...,
 )::EventList{Vector{T},FITSMetadata{FITSIO.FITSHeader}}
 
@@ -1067,8 +1072,12 @@ function readevents(
     # Read GTI first if requested
     gti_data, gti_source = nothing, nothing
     if load_gti
-        gti_data, gti_source =
-            read_gti_from_fits(path; gti_hdu_candidates, gti_hdu_indices, combine_gtis)
+        gti_data, gti_source = read_gti_from_fits(
+            path; 
+            gti_hdu_candidates, 
+            gti_hdu_indices, 
+            combine_gtis
+        )
 
         if !isnothing(gti_data)
             @debug "Found GTI data" n_intervals = size(gti_data, 1) time_range =
@@ -1122,12 +1131,10 @@ function readevents(
         # Read extra columns
         extra_data = Dict{String,Vector}()
         for col_name in extra_columns
-            actual_col_idx =
-                findfirst(col -> uppercase(col) == uppercase(col_name), all_cols)
+            actual_col_idx = findfirst(col -> uppercase(col) == uppercase(col_name), all_cols)
             if !isnothing(actual_col_idx)
                 actual_col_name = all_cols[actual_col_idx]
-                extra_data[col_name] =
-                    read(selected_hdu, actual_col_name, case_sensitive = false)
+                extra_data[col_name] = read(selected_hdu, actual_col_name, case_sensitive = false)
             else
                 @warn "Column '$col_name' not found in FITS file"
             end
@@ -1181,8 +1188,7 @@ function readevents(
 
             corrected_time = time .+ effective_timezero .+ bin_center_correction
             @debug "Applied bin-centering correction" time_zero = effective_timezero timedel =
-                time_del timepixr = effective_timepixr bin_correction =
-                bin_center_correction
+                time_del timepixr = effective_timepixr bin_correction = bin_center_correction
         else
             corrected_time = time .+ effective_timezero
             @debug "Applied time zero correction" time_zero = effective_timezero
@@ -1191,13 +1197,51 @@ function readevents(
         # Convert to MJD only if requested
         if convert_to_mjd
             time = convert(Vector{T}, sec_to_mjd(corrected_time, mjd_ref))
+            
+            # Apply the same time corrections to GTI data
+            if !isnothing(gti_data)
+                # Apply time zero correction to GTI
+                gti_corrected = gti_data .+ effective_timezero
+                
+                # Apply bin-centering correction to GTI if applicable
+                if !isnothing(time_del) && time_del > 0.0
+                    effective_timepixr = isnothing(time_pixr) ? 0.0 : time_pixr
+                    bin_center_correction = (0.5 - effective_timepixr) * time_del
+                    gti_corrected = gti_corrected .+ bin_center_correction
+                end
+                
+                # Convert GTI to MJD using the same reference
+                gti_data = sec_to_mjd.(gti_corrected, mjd_ref)
+                @debug "Applied same time corrections to GTI data"
+            end
+            
             @debug "Converted to MJD(TT)" mjd_ref = mjd_ref
         else
             time = convert(Vector{T}, corrected_time)
+            
+            # Apply time corrections to GTI even when not converting to MJD
+            if !isnothing(gti_data)
+                # Apply time zero correction to GTI
+                gti_corrected = gti_data .+ effective_timezero
+                
+                # Apply bin-centering correction to GTI if applicable
+                if !isnothing(time_del) && time_del > 0.0
+                    effective_timepixr = isnothing(time_pixr) ? 0.0 : time_pixr
+                    bin_center_correction = (0.5 - effective_timepixr) * time_del
+                    gti_corrected = gti_corrected .+ bin_center_correction
+                end
+                
+                gti_data = gti_corrected
+                @debug "Applied time corrections to GTI data"
+            end
+            
             @debug "Kept times in seconds (corrected)"
         end
 
         @debug "Final time range" time_range = (minimum(time), maximum(time))
+        if !isnothing(gti_data)
+            @debug "Final GTI range" gti_range = (minimum(gti_data), maximum(gti_data))
+        end
     end
 
     # Validate data consistency
@@ -1207,14 +1251,28 @@ function readevents(
 
     # Apply GTI filtering if requested
     if apply_gti_filter && !isnothing(gti_data)
-        gti_mask, _ = create_gti_mask(time, gti_data)
-
-        time = time[gti_mask]
-        if !isnothing(energy)
-            energy = energy[gti_mask]
-        end
-        for (col_name, col_data) in extra_data
-            extra_data[col_name] = col_data[gti_mask]
+        @debug "Applying GTI filter" n_events_before = length(time)
+        
+        try
+            gti_mask, _ = create_gti_mask(time, gti_data)
+            n_kept = sum(gti_mask)
+            
+            @debug "GTI filter results" events_kept = n_kept events_removed = (length(time) - n_kept)
+            
+            if n_kept > 0
+                time = time[gti_mask]
+                if !isnothing(energy)
+                    energy = energy[gti_mask]
+                end
+                for (col_name, col_data) in extra_data
+                    extra_data[col_name] = col_data[gti_mask]
+                end
+                @debug "Successfully applied GTI filter"
+            else
+                @warn "GTI filtering removed all events - check time system consistency" event_range = extrema(time) gti_range = extrema(gti_data)
+            end
+        catch e
+            @warn "GTI filtering failed: $e - proceeding without GTI filter"
         end
     end
 
@@ -1231,12 +1289,13 @@ function readevents(
             for (col_name, col_data) in extra_data
                 extra_data[col_name] = col_data[sort_indices]
             end
+            @debug "Events sorted by time"
         else
             @assert false "Times are not sorted (pass `sort = true` to force sorting)"
         end
     end
 
-    # Create metadata with all the new timing information
+    # Create metadata with all timing information
     meta = FITSMetadata(
         path,
         hdu,
