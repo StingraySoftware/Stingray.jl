@@ -113,8 +113,14 @@ function create_mock_eventlist(times, energies = nothing)
         "keV",  # energy_units
         Dict{String,Vector}(),  # extra_columns
         headers,  # headers
-        nothing,       # gti
-        nothing        # gti_source
+        nothing,  # gti
+        nothing,  # gti_source
+        nothing,  # mjd_ref
+        nothing,  # time_zero
+        nothing,  # time_unit
+        nothing,  # time_sys
+        nothing,  # time_pixr
+        nothing   # time_del
     )
     
     return EventList{typeof(times),typeof(dummy_meta)}(
@@ -194,7 +200,13 @@ function create_mock_eventlist_meta(
         Dict{String,Vector}(),  # extra_columns
         test_headers,  # headers
         nothing,       # gti
-        nothing        # gti_source
+        nothing,       # gti_source
+        nothing,       # mjd_ref
+        nothing,       # time_zero
+        nothing,       # time_unit
+        nothing,       # time_sys
+        nothing,       # time_pixr
+        nothing       # time_del
     )
     
     return EventList(times, energies, meta)
