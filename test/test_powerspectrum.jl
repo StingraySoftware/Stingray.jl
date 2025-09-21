@@ -372,7 +372,7 @@ let
     dt = 0.1
     segment_size = 2.0
     
-    @test_nowarn ps_events = Powerspectrum(events, dt, segment_size)
+    @test_nowarn ps_events = Powerspectrum(events, dt=dt)
     @test_nowarn aps_events = AveragedPowerspectrum(events, segment_size, dt=dt)
     
     # Test with very sparse events
