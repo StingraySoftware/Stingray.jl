@@ -53,7 +53,7 @@ let
     gti_matrix = [1.0 3.0; 4.0 6.0]
     meta = FITSMetadata{Dict{String,Any}}(
         "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        gti_matrix, "GTI"
+        gti_matrix, "GTI",nothing, nothing, nothing, nothing, nothing, nothing
     )
     el = EventList(times, energies, meta)
     
@@ -69,7 +69,7 @@ let
     gti_matrix = [1.0 3.0; 4.0 6.0]
     meta = FITSMetadata{Dict{String,Any}}(
         "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        gti_matrix, "GTI"
+        gti_matrix, "GTI",nothing, nothing, nothing, nothing, nothing, nothing
     )
     el = EventList(times, energies, meta)
     
@@ -305,7 +305,7 @@ let
     gti_matrix = [1.0 2.5; 3.5 5.0; 6.5 8.0]
     meta = FITSMetadata{Dict{String,Any}}(
         "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        gti_matrix, "GTI"
+        gti_matrix, "GTI",nothing, nothing, nothing, nothing, nothing, nothing
     )
     el = EventList(times, energies, meta)
     
@@ -319,7 +319,7 @@ let
     gti_matrix = [1.0 2.5; 3.5 5.0]
     meta = FITSMetadata{Dict{String,Any}}(
         "test.fits", 2, "ENERGY", Dict{String,Vector}(), Dict{String,Any}(),
-        gti_matrix, "GTI"
+        gti_matrix, "GTI",nothing, nothing, nothing, nothing, nothing, nothing
     )
     el = EventList(times, energies, meta)
     
