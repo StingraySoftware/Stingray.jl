@@ -1097,6 +1097,7 @@ function fill_bad_time_intervals!(
 
     return el
 end
+get_gti_lengths(gti::AbstractMatrix{<:Real}) = vec(diff(gti; dims=2))
 #todo
 # create a function that fills the bad time intervals in a light curve
 # in order to maintain optiizational sampling for periodograms
