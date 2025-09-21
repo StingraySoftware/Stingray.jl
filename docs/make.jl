@@ -5,7 +5,7 @@ DocMeta.setdocmeta!(Stingray, :DocTestSetup, :(using Stingray); recursive = true
 
 makedocs(;
     modules = [Stingray],
-    authors = "Aman Pandey",
+    authors = "Aman Pandey and Kashish Shrivastav",
     repo = "https://github.com/matteobachetti/Stingray.jl/blob/{commit}{path}#{line}",
     sitename = "Stingray.jl",
     format = Documenter.HTML(;
@@ -14,7 +14,13 @@ makedocs(;
         edit_link = "master",
         assets = String[],
     ),
-    pages = ["Home" => "index.md"],
+    pages = [
+        "Home" => "index.md",
+        "Event List" => "eventlist/eventlist.md",
+        "Light Curve" => "lightcurve/lightcurve.md",
+        "Power Spectrum" => "powerspectrum/powerspectrum.md",
+        "Cross Spectrum" => "cross_spectrum/crossspectrum.md",
+    ],
 )
 
 deploydocs(; repo = "https://github.com/matteobachetti/Stingray.jl", devbranch = "main")
