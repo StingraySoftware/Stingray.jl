@@ -24,13 +24,8 @@ function get_gti_from_hdu(gtihdu::TableHDU)
     gtistart = read(gtihdu,startstr)
     gtistop = read(gtihdu,stopstr)
 
-    if isempty(gtistart) || isempty(gtistop)
-        return reshape(Float64[], 0, 2)
-    end
-
     return mapreduce(permutedims, vcat, 
-        [[a, b] for (a,b) in zip(gtistart, gtistop)], 
-        init=reshape(Float64[], 0, 2))
+    [[a, b] for (a,b) in zip(gtistart, gtistop)])
 end
 """
     check_gtis(gti::AbstractMatrix)
@@ -83,15 +78,12 @@ check_gtis(bad_gtis)  # Throws ArgumentError
 - [`apply_gtis`](@ref): Apply GTIs to filter data
 """
 function check_gtis(gti::AbstractMatrix)
-
-    if ndims(gti) != 2 || size(gti,2) != 2
-        throw(ArgumentError("Please check the formatting of the GTIs. 
-       They need to be provided as [[gti00 gti01]; [gti10 gti11]; ...]."))
-    end
-
-    # Check for empty GTI
     if size(gti, 1) == 0
-        throw(ArgumentError("GTI matrix is empty. Please provide valid time intervals."))
+        throw(ArgumentError("GTI matrix cannot be empty"))
+    end
+    if ndims(gti) != 2 || size(gti,2) != 2
+        throw(ArgumentError("Please check the formatting of the GTIs.
+       They need to be provided as [[gti00 gti01]; [gti10 gti11]; ...]."))
     end
 
     gti_start = @view gti[:, 1]
@@ -100,7 +92,7 @@ function check_gtis(gti::AbstractMatrix)
     if any(gti_end < gti_start)
         throw(ArgumentError(
             "The GTI end times must be larger than the GTI start times."
-        )) 
+        ))
     end
 
     if any(@view(gti_start[begin+1:end]) < @view(gti_end[begin:end-1]))
@@ -126,7 +118,7 @@ function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Re
             
         if size(gtis,1) < 1
             @warn "No GTIs longer than min_length $(min_length)"
-            return mask, reshape(eltype(gtis)[], 0, 2)
+            return mask, gtis
         end
     end   
 
@@ -155,15 +147,8 @@ function create_gti_mask(times::AbstractVector{<:Real},gtis::AbstractMatrix{<:Re
         end
     end
 
-    filtered_gtis = keepat!(new_gtis, new_gti_mask)
-    if isempty(filtered_gtis)
-        return mask, reshape(eltype(gtis)[], 0, 2)
-    end
-
-    return mask, mapreduce(permutedims, vcat, filtered_gtis, 
-                          init=reshape(eltype(gtis)[], 0, 2))
+    return mask, mapreduce(permutedims, vcat, keepat!(new_gtis,new_gti_mask))
 end
-
 
 function create_gti_from_condition(time::AbstractVector{<:Real}, condition::AbstractVector{Bool};
     safe_interval::AbstractVector{<:Real}=[0,0], dt::AbstractVector{<:Real}=Float64[])
@@ -190,58 +175,43 @@ function create_gti_from_condition(time::AbstractVector{<:Real}, condition::Abst
         end
         push!(gtis,[t0, t1])
     end
-    
-    if isempty(gtis)
-        return reshape(Float64[], 0, 2)
-    end
-    
-    return mapreduce(permutedims, vcat, gtis, init=reshape(Float64[], 0, 2))
+    return mapreduce(permutedims, vcat, gtis)
 end
 
 function operations_on_gtis(gti_list::AbstractVector{<:AbstractMatrix{T}}, 
                             operation::Function) where {T<:Real}
-    
-    # Convert all GTIs to IntervalSets, handling empty ones
-    interval_sets = IntervalSet[]
-    
+
+    required_interval = nothing
+
     for gti in gti_list
-        if size(gti, 1) == 0
-            # Empty GTI becomes empty IntervalSet
-            push!(interval_sets, IntervalSet(Interval[]))
-        else
+        # Skip check_gtis for empty matrices - they should be allowed in operations
+        if size(gti, 1) > 0
             check_gtis(gti)
-            intervals = Interval[]
-            for ig in eachrow(gti)
-                push!(intervals, Interval{Closed,Open}(ig[1], ig[2]))
-            end
-            push!(interval_sets, IntervalSet(intervals))
+        end
+
+        combined_gti = Interval{T}[]
+        for ig in eachrow(gti)
+            push!(combined_gti,Interval{Closed,Open}(ig[1],ig[2]))
+        end
+        if isnothing(required_interval)
+            required_interval = IntervalSet(combined_gti)
+        else
+            required_interval = operation(required_interval, IntervalSet(combined_gti))
         end
     end
-    
-    # If no interval sets, return empty
-    if isempty(interval_sets)
-        return reshape(T[], 0, 2)
-    end
-    
-    # Apply the operation across all interval sets
-    result_interval = interval_sets[1]
-    for i in 2:length(interval_sets)
-        result_interval = operation(result_interval, interval_sets[i])
-    end
-    
-    # Convert back to matrix format
-    if isempty(result_interval.items)
-        return reshape(T[], 0, 2)
-    end
-    
+
     final_gti = Vector{T}[]
-    for interval in result_interval.items
+
+    for interval in required_interval.items
         push!(final_gti, [first(interval), last(interval)])
     end
-    
-    return mapreduce(permutedims, vcat, final_gti, init=reshape(T[], 0, 2))
-end
 
+    if isempty(final_gti)
+        return reshape(T[], 0, 2)
+    end
+
+    return mapreduce(permutedims, vcat, final_gti)
+end
 """
     get_btis(gtis::AbstractMatrix{<:Real}) -> Matrix{<:Real}
 
@@ -355,11 +325,7 @@ function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real
     if isempty(gtis)
         return T[start_time stop_time]
     end
-    
-    # Only check GTIs if they're not empty
-    if size(gtis, 1) > 0
-        check_gtis(gtis)
-    end
+    check_gtis(gtis)
 
     total_interval = Interval{T, Closed, Open}[Interval{T, Closed, Open}(start_time, stop_time)]
     total_interval_set = IntervalSet(total_interval)
@@ -378,11 +344,12 @@ function get_btis(gtis::AbstractMatrix{T}, start_time, stop_time) where {T<:Real
         push!(btis, [first(interval), last(interval)])
     end
 
+    # Fix: Handle empty btis vector
     if isempty(btis)
-        return reshape(T[], 0, 2)
+        return reshape(T[], 0, 2)  # Return empty matrix with correct dimensions
     end
 
-    return mapreduce(permutedims, vcat, btis, init=reshape(T[], 0, 2))
+    return mapreduce(permutedims, vcat, btis)
 end
 function time_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Real;
                                   fraction_step::Real=1, epsilon::Real=1e-5)  
@@ -404,13 +371,20 @@ end
 
 function calculate_segment_bin_start(startbin::Integer, stopbin::Integer,
                                      nbin::Integer; fraction_step::Real=1)
-    st = floor.(range(startbin, stopbin, step=Int(nbin * fraction_step)))
-    if st[end] == stopbin
-        pop!(st)
+    if startbin >= stopbin
+        return Int[]
     end
-    if st[end] + nbin > stopbin
-        pop!(st)
+    
+    step_size = Int(nbin * fraction_step)
+    if step_size <= 0
+        step_size = 1
     end
+    
+    st = collect(range(startbin, stop=stopbin-nbin, step=step_size))
+    
+    # Remove bins that would extend beyond stopbin
+    filter!(x -> x + nbin <= stopbin, st)
+    
     return st
 end
 
@@ -420,20 +394,25 @@ function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Rea
     if isnothing(dt)
         dt = Statistics.median(diff(time))
     end
-    time_min, time_max = extrema(time)
-    gti_min = minimum(gtis[:, 1])
-    gti_max = maximum(gtis[:, 2])
+
+    if isempty(time)
+        throw(ArgumentError("Time array cannot be empty"))
+    end
     
-    if gti_max < time_min || gti_min > time_max
-        throw(ArgumentError("GTIs and time array do not overlap"))
+    # Check if GTIs overlap with time range
+    time_start, time_end = extrema(time)
+    if all(gtis[:, 2] .< time_start) || all(gtis[:, 1] .> time_end)
+        throw(ArgumentError("GTI intervals do not overlap with time array"))
     end
     
     epsilon_times_dt = epsilon * dt
     nbin = round(Int, segment_size / dt)
+
     spectrum_start_bins = Int[]
+
     gti_low = @view(gtis[:, 1]) .+ (dt ./ 2 .- epsilon_times_dt)
     gti_up = @view(gtis[:, 2]) .- (dt ./ 2 .- epsilon_times_dt)
-    
+
     for (g0, g1) in zip(gti_low, gti_up)
         if (g1 - g0 .+ (dt + epsilon_times_dt)) < segment_size
             continue
@@ -441,41 +420,32 @@ function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Rea
         startbin, stopbin = searchsortedfirst.(Ref(time), [g0, g1])
         startbin -= 1
         
-        # The issue is here - we need to be more careful with bounds checking
-        if startbin < 0
-            startbin = 0
+        # Validate bounds before accessing arrays
+        if startbin < 0 || startbin >= length(time)
+            throw(ArgumentError("GTI start time outside time array bounds"))
+        end
+        if stopbin < 1 || stopbin > length(time) + 1
+            throw(ArgumentError("GTI stop time outside time array bounds"))
         end
         
         if stopbin > length(time)
             stopbin = length(time)
         end
-        
-        # Only proceed if we have valid indices
-        if startbin >= length(time)
-            continue
-        end
-        
+
         if startbin + 1 <= length(time) && time[startbin+1] < g0
             startbin += 1
         end
         
-        # Would be g[1] - dt/2, but stopbin is the end of an interval
-        # so one has to add one bin
         if stopbin <= length(time) && time[stopbin] > g1
             stopbin -= 1
         end
-        
-        # Make sure we still have valid range after adjustments
-        if startbin >= stopbin || startbin < 0 || stopbin > length(time)
-            continue
-        end
-        
+
         newbins = calculate_segment_bin_start(
             startbin, stopbin, nbin, fraction_step=fraction_step)
         
         append!(spectrum_start_bins, newbins)
-    end
-    return spectrum_start_bins, spectrum_start_bins .+ nbin
+    end 
+    return spectrum_start_bins, spectrum_start_bins .+ nbin 
 end
 
 @resumable function generate_indices_of_segment_boundaries_unbinned(times::AbstractVector{<:Real},

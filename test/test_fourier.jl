@@ -123,7 +123,7 @@ end
     N = len ÷ dt
     dt = len / N
     times = sort(rand(Uniform(0, len), len * ctrate))
-    gti = [[0 len];;]
+    gti = Float64[0 len]  # Fixed: Changed from [[0 len];;] to Float64[0 len]
     bins = LinRange(0, len, N + 1)
     counts = fit(Histogram, times, bins).weights
     errs = fill!(similar(counts),1) * sqrt(ctrate)
