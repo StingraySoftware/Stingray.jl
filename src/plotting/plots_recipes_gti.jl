@@ -113,10 +113,8 @@ btianalysis(events::EventList{T}) where T = BTIAnalysisPlot(events)
     
     !bti_analysis && return nothing
     
-    # Extract EventList from wrapper
     gti_event = events.eventlist
     
-    # Helper function to create "No BTI found" plot
     function create_no_bti_plot()
         title --> "Bad Time Interval Analysis: No BTIs Found"
         xlabel --> "Observation Quality"
@@ -141,20 +139,7 @@ btianalysis(events::EventList{T}) where T = BTIAnalysisPlot(events)
     
     if isempty(gtis) || size(gtis, 1) == 0
         println("No BTI found - all GTI")
-        
-        title --> "Bad Time Interval Analysis: No GTIs Available"
-        xlabel --> "Observation Quality"
-        ylabel --> "Coverage Status"
-        grid --> false
-        legend --> false
-        size --> (600, 200)
-        seriestype --> :scatter
-        markersize --> 0
-        xlims --> (0, 1)
-        ylims --> (0, 1)
-        annotations --> [(0.5, 0.5, "No GTI Information Available")]
-        
-        return [0.5], [0.5]
+        return create_no_bti_plot()
     end
     
     start_time = isempty(gti_event.times) ? 0.0 : minimum(gti_event.times)
@@ -168,7 +153,6 @@ btianalysis(events::EventList{T}) where T = BTIAnalysisPlot(events)
         return create_no_bti_plot()
     end
     
-    # Check if BTIs exist and are valid
     if isnothing(btis) || isempty(btis) || size(btis, 1) == 0
         println("No BTI found - all GTI")
         return create_no_bti_plot()
@@ -210,6 +194,7 @@ btianalysis(events::EventList{T}) where T = BTIAnalysisPlot(events)
     println("Total exposure: $(total_exposure)")
     println("Total BTI length: $(total_bti_length)")
     println("Total BTI length (short BTIs): $(total_short_bti_length)")
+    
     data_min, data_max = 0.0, 1.0
     try
         data_min = minimum(bti_lengths)
@@ -219,13 +204,19 @@ btianalysis(events::EventList{T}) where T = BTIAnalysisPlot(events)
         return create_no_bti_plot()
     end
     
-    # Calculate bin range for display
-    bin_min = min(1e-3, data_min * 0.1)
-    bin_max = max(10000, data_max * 2.0)
-    num_bins = Int(nbins)
-    
+    bin_min = max(1e-6, min(1e-3, data_min * 0.9))  # Never go below 1e-6
+    bin_max = max(1e-3, max(10000.0, data_max * 1.1))  # Ensure bin_max > bin_min
+
+    # Additional safety check
+    if bin_min <= 0 || !isfinite(bin_min)
+        bin_min = 1e-6
+    end
+    if bin_max <= bin_min || !isfinite(bin_max)
+        bin_max = max(1e-3, bin_min * 1000)
+    end
+
     title --> "Distribution of Bad Time Interval Lengths"
-    xlabel --> "Length of bad time interval"
+    xlabel --> "Length of bad time interval (seconds)"
     ylabel --> "Number of intervals"
     xscale --> :log10
     yscale --> :log10
@@ -244,13 +235,35 @@ btianalysis(events::EventList{T}) where T = BTIAnalysisPlot(events)
     
     grid --> true
     legend --> false
-    size --> (600, 400)  
-    seriestype --> :histogram
-    nbins --> num_bins
+    size --> (600, 400)
+    
+    # Manual binning for clean bars on log scale
+    log_min = log10(bin_min)
+    log_max = log10(bin_max)
+    bin_edges = 10 .^ range(log_min, log_max, length=nbins+1)
+    
+    # Calculate histogram counts
+    hist_counts = zeros(Int, nbins)
+    for val in bti_lengths
+        bin_idx = searchsortedlast(bin_edges, val)
+        if bin_idx > 0 && bin_idx <= nbins
+            hist_counts[bin_idx] += 1
+        end
+    end
+    
+    # Calculate bin centers (geometric mean for log scale)
+    bin_centers = sqrt.(bin_edges[1:end-1] .* bin_edges[2:end])
+    
+    # Filter out empty bins
+    valid_bins = hist_counts .> 0
+    plot_x = bin_centers[valid_bins]
+    plot_y = hist_counts[valid_bins]
+    
+    seriestype --> :bar
     fillcolor --> :steelblue
-    fillalpha --> 0.7
+    fillalpha --> 0.8
     linecolor --> :steelblue
     linewidth --> 1
     
-    return bti_lengths
+    return plot_x, plot_y
 end
