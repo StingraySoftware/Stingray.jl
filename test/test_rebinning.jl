@@ -24,7 +24,7 @@ using Statistics
         @test all(lc_binned.counts .== 2) # Sum of counts
     end
 
-    @testset "PowerSpectrum Rebinning (Linear)" begin
+    @testset "Powerspectrum Rebinning (Linear)" begin
         dt = 0.1
         times = collect(0:dt:100.0-dt)
         n_bins = length(times)

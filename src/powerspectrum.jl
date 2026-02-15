@@ -10,28 +10,9 @@ Subtypes include:
 - `T`: The numeric type for frequency and power values (typically Float64)
 """
 abstract type AbstractPowerSpectrum{T} end
-"""
-    PowerSpectrum{T}
+# TODO: Add docstring for Powerspectrum
 
-$(TYPEDEF)
-
-Power spectrum for a single light curve segment.
-
-$(TYPEDFIELDS)
-
-# Examples
-```julia
-# Create power spectrum from light curve
-lc = LightCurve(times, counts)
-ps = Powerspectrum(lc, norm="leahy")
-
-# Access properties
-println(ps.freq)    # Frequency array
-println(ps.power)   # Power values
-println(ps.norm)    # Normalization type
-```
-"""
-struct PowerSpectrum{T} <: AbstractPowerSpectrum{T}
+struct Powerspectrum{T} <: AbstractPowerSpectrum{T}
     "Frequencies in Hz"
     freq::Vector{T}
     "Power values in requested normalization"
@@ -52,27 +33,7 @@ struct PowerSpectrum{T} <: AbstractPowerSpectrum{T}
     metadata::Union{LightCurveMetadata,FITSMetadata}
 end
 
-"""
-    AveragedPowerspectrum{T}
-
-$(TYPEDEF)
-
-Averaged power spectrum from multiple light curve segments.
-
-$(TYPEDFIELDS)
-
-# Examples
-```julia
-# Create averaged power spectrum from light curve
-lc = LightCurve(times, counts)
-ps_avg = AveragedPowerspectrum(lc, 1024.0, norm="leahy")
-
-# Access properties
-println(ps_avg.freq)         # Frequency array
-println(ps_avg.power)        # Averaged power values
-println(ps_avg.segment_size) # Size of segments used
-```
-"""
+# TODO: Add docstring for AveragedPowerspectrum
 struct AveragedPowerspectrum{T} <: AbstractPowerSpectrum{T}
     "Frequencies in Hz"
     freq::Vector{T}
@@ -152,7 +113,7 @@ function Powerspectrum(lc::LightCurve{T}; norm::String = "frac") where {T<:Real}
         sqrt.(power)
     end
 
-    return PowerSpectrum{T}(
+    return Powerspectrum{T}(
         freqs,
         power,
         power_err,
@@ -769,7 +730,8 @@ The new frequency resolution will be `df * factor`.
 The power values are averaged in the new bins.
 The errors are propagated accordingly.
 """
-function rebin(ps::PowerSpectrum{T}, factor::Integer) where {T}
+
+function rebin(ps::Powerspectrum{T}, factor::Integer) where {T}
     if factor == 1
         return ps
     end
@@ -791,7 +753,7 @@ function rebin(ps::PowerSpectrum{T}, factor::Integer) where {T}
         new_err[i] = sqrt(sum_sq_err) / factor
     end
 
-    return PowerSpectrum{T}(
+    return Powerspectrum{T}(
         new_freq,
         new_power,
         new_err,
@@ -914,8 +876,8 @@ function logrebin(ps::AbstractPowerSpectrum{T}; f::Real = 0.01) where {T}
     end
     
     # Construct the new object based on the type of ps
-    if ps isa PowerSpectrum
-        return PowerSpectrum{T}(
+    if ps isa Powerspectrum
+        return Powerspectrum{T}(
             new_freqs,
             new_powers,
             new_errs,

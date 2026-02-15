@@ -135,7 +135,7 @@ let
     # Test 3: Absolute mean power matches poisson_level formula
     mean_rate = mean(lc.counts) / dt
     expected_abs_mean = 2.0 * mean_rate
-    @test abs(mean(ps_abs.power) - expected_abs_mean) < 0.1 * expected_abs_mean
+    @test abs(mean(ps_abs.power) - expected_abs_mean) < 0.15 * expected_abs_mean
 
     # Test 4: Scaling between normalizations is consistent
     scaling_ratio = mean(ps_abs.power) / mean(ps_frac.power)

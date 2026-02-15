@@ -611,6 +611,10 @@ function extract_metadata(eventlist::EventList, start_time, stop_time, binsize, 
         "energy_filter" => energy_filter,
         "binning_method" => "histogram"
     )
+
+    if !isnothing(eventlist.meta.gti)
+        extra_metadata["gti"] = eventlist.meta.gti
+    end
     
     if hasfield(typeof(eventlist.meta), :extra)
         merge!(extra_metadata, eventlist.meta.extra)
