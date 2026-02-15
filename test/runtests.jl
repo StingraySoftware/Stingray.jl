@@ -6,6 +6,7 @@ using CFITSIO
 using Random
 
 include("test_fourier.jl")
+include("test_rebinning.jl")
 @testset "GTI" begin
     include("test_gti.jl")
 end

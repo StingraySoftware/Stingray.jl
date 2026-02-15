@@ -876,3 +876,17 @@ Base.iterate(lc::LightCurve) =
     isempty(lc.time) ? nothing : ((lc.time[1], lc.counts[1]), 2)
 Base.iterate(lc::LightCurve, state) = 
 state > length(lc.time) ? nothing : ((lc.time[state], lc.counts[state]), state + 1)
+
+"""
+    rebin(lc::LightCurve, factor::Integer)
+
+Rebin a light curve by an integer factor using the existing `rebin` function.
+
+# Arguments
+- `lc::LightCurve`: Input light curve
+- `factor::Integer`: Rebinning factor
+
+# Returns
+- `LightCurve`: Rebinned light curve with `new_binsize = factor * lc.metadata.bin_size`
+"""
+rebin(lc::LightCurve, factor::Integer) = rebin(lc, factor * Float64(lc.metadata.bin_size))
