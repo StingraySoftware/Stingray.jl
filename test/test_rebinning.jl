@@ -24,13 +24,13 @@ using Statistics
         @test all(lc_binned.counts .== 2) # Sum of counts
     end
 
-    @testset "Powerspectrum Rebinning (Linear)" begin
+    @testset "PowerSpectrum Rebinning (Linear)" begin
         dt = 0.1
         times = collect(0:dt:100.0-dt)
         n_bins = length(times)
         counts = rand(0:10, n_bins) 
         lc = make_lc(times, counts, dt)
-        ps = Powerspectrum(lc, norm="leahy")
+        ps = PowerSpectrum(lc, norm="leahy")
         
         factor = 4
         ps_binned = rebin(ps, factor)
@@ -53,7 +53,7 @@ using Statistics
         times = collect(0:dt:100.0-dt)
         counts = rand(0:10, length(times))
         lc = make_lc(times, counts, dt)
-        ps = Powerspectrum(lc)
+        ps = PowerSpectrum(lc)
         
         f_res = 0.1
         ps_log = logrebin(ps, f=f_res)

@@ -6,23 +6,23 @@ let
     lc = create_test_lightcurve(times, counts, dt)
 
     let
-        ps = Powerspectrum(lc)
+        ps = PowerSpectrum(lc)
         @test ps !== nothing
 
         events = create_test_eventlist(sort(rand(1000) * 10.0))
         lc_from_events = create_lightcurve(events, dt)
-        ps_events = Powerspectrum(lc_from_events)
+        ps_events = PowerSpectrum(lc_from_events)
         @test ps_events !== nothing
     end
 
     let
-        ps = Powerspectrum(lc, norm = "leahy")
+        ps = PowerSpectrum(lc, norm = "leahy")
         @test mean(ps.power) ≈ 2.0 rtol = 0.5
 
-        ps_frac = Powerspectrum(lc, norm = "frac")
+        ps_frac = PowerSpectrum(lc, norm = "frac")
         @test all(ps_frac.power .≥ 0)
 
-        ps_abs = Powerspectrum(lc, norm = "abs")
+        ps_abs = PowerSpectrum(lc, norm = "abs")
         @test ps_abs.norm == "abs"
     end
 end
@@ -35,7 +35,7 @@ let
     times = collect(0.0:dt:(n_points-1)*dt)
     counts = rand(Poisson(100), length(times))
     lc = create_test_lightcurve(times, counts, dt)
-    ps = Powerspectrum(lc)
+    ps = PowerSpectrum(lc)
 
     @test issorted(ps.freq)
     @test ps.freq[1] > 0
@@ -54,9 +54,9 @@ let
     dt = times[2] - times[1]
     lc = create_test_lightcurve(times, counts, dt)
 
-    @test_throws ArgumentError AveragedPowerspectrum(lc, 0.0)
-    @test_throws ArgumentError AveragedPowerspectrum(lc, -1.0)
-    @test_throws ArgumentError Powerspectrum(lc, norm = "invalid")
+    @test_throws ArgumentError AveragedPowerSpectrum(lc, 0.0)
+    @test_throws ArgumentError AveragedPowerSpectrum(lc, -1.0)
+    @test_throws ArgumentError PowerSpectrum(lc, norm = "invalid")
 end
 
 # Light Curve Rebinning
@@ -82,13 +82,13 @@ let
     dt = 0.1
 
     lc_from_events = create_lightcurve(events, dt)
-    ps = Powerspectrum(lc_from_events)
+    ps = PowerSpectrum(lc_from_events)
 
     @test ps !== nothing
     @test all(ps.freq .≥ 0)
     @test issorted(ps.freq)
 
-    aps = AveragedPowerspectrum(lc_from_events, 1.0)
+    aps = AveragedPowerSpectrum(lc_from_events, 1.0)
     @test aps.m > 0
     @test all(aps.power .≥ 0)
 end
@@ -100,9 +100,9 @@ let
     dt = times[2] - times[1]
     lc = create_test_lightcurve(times, counts, dt)
 
-    ps_leahy = Powerspectrum(lc, norm = "leahy")
-    ps_frac = Powerspectrum(lc, norm = "frac")
-    ps_abs = Powerspectrum(lc, norm = "abs")
+    ps_leahy = PowerSpectrum(lc, norm = "leahy")
+    ps_frac = PowerSpectrum(lc, norm = "frac")
+    ps_abs = PowerSpectrum(lc, norm = "abs")
 
     @test ps_leahy.norm == "leahy"
     @test ps_frac.norm == "frac"
@@ -119,9 +119,9 @@ let
     dt = times[2] - times[1]
     lc = create_test_lightcurve(times, counts, dt)
 
-    ps_frac = Powerspectrum(lc, norm = "frac")
-    ps_leahy = Powerspectrum(lc, norm = "leahy")
-    ps_abs = Powerspectrum(lc, norm = "abs")
+    ps_frac = PowerSpectrum(lc, norm = "frac")
+    ps_leahy = PowerSpectrum(lc, norm = "leahy")
+    ps_abs = PowerSpectrum(lc, norm = "abs")
 
     # Test 1: Fractional RMS integrated power equals variance/mean²
     integrated_frac =
@@ -197,7 +197,7 @@ let
         :poisson,
     )
 
-    @test_nowarn aps = AveragedPowerspectrum(lc_gti, 1.0)
+    @test_nowarn aps = AveragedPowerSpectrum(lc_gti, 1.0)
 
     # Test with very tight GTIs
     tight_gti = [1.0 1.5; 2.0 2.5; 8.0 8.5]
@@ -223,7 +223,7 @@ let
         :poisson,
     )
 
-    @test_nowarn aps_tight = AveragedPowerspectrum(lc_tight, 0.4)
+    @test_nowarn aps_tight = AveragedPowerSpectrum(lc_tight, 0.4)
 end
 
 # Comprehensive Error Handling
@@ -233,13 +233,13 @@ let
     dt = times[2] - times[1]
     lc = create_test_lightcurve(times, counts, dt)
 
-    @test_throws ArgumentError Powerspectrum(lc, norm = "invalid_norm")
-    @test_throws ArgumentError Powerspectrum(lc, norm = "nonsense")
+    @test_throws ArgumentError PowerSpectrum(lc, norm = "invalid_norm")
+    @test_throws ArgumentError PowerSpectrum(lc, norm = "nonsense")
 
-    @test_throws ArgumentError AveragedPowerspectrum(lc, NaN)
-    @test_throws ArgumentError AveragedPowerspectrum(lc, Inf)
-    @test_throws ArgumentError AveragedPowerspectrum(lc, -1.0)
-    @test_throws ArgumentError AveragedPowerspectrum(lc, 0.0)
+    @test_throws ArgumentError AveragedPowerSpectrum(lc, NaN)
+    @test_throws ArgumentError AveragedPowerSpectrum(lc, Inf)
+    @test_throws ArgumentError AveragedPowerSpectrum(lc, -1.0)
+    @test_throws ArgumentError AveragedPowerSpectrum(lc, 0.0)
 
     empty_times = Float64[]
     empty_counts = Int[]
@@ -248,7 +248,7 @@ let
     single_times = [1.0]
     single_counts = [100]
     lc_single = create_test_lightcurve(single_times, single_counts, dt)
-    @test_throws ArgumentError Powerspectrum(lc_single)
+    @test_throws ArgumentError PowerSpectrum(lc_single)
 end
 
 # Statistical Properties
@@ -259,20 +259,20 @@ let
     dt = times[2] - times[1]
     lc_high = create_test_lightcurve(times, high_counts, dt)
 
-    ps_leahy = Powerspectrum(lc_high, norm = "leahy")
+    ps_leahy = PowerSpectrum(lc_high, norm = "leahy")
     # For Poisson noise, Leahy power should average to 2
     @test abs(mean(ps_leahy.power) - 2.0) < 0.1
 
     low_counts = rand(Poisson(1), length(times))
     lc_low = create_test_lightcurve(times, low_counts, dt)
-    ps_low = Powerspectrum(lc_low, norm = "leahy")
+    ps_low = PowerSpectrum(lc_low, norm = "leahy")
     @test all(isfinite.(ps_low.power))
     @test all(ps_low.power .≥ 0)
 
     # Test averaging reduces scatter
     segment_size = 1.0
-    aps = AveragedPowerspectrum(lc_high, segment_size, norm = "leahy")
-    ps_single = Powerspectrum(lc_high, norm = "leahy")
+    aps = AveragedPowerSpectrum(lc_high, segment_size, norm = "leahy")
+    ps_single = PowerSpectrum(lc_high, norm = "leahy")
 
     @test std(aps.power) < std(ps_single.power)
     @test aps.m > 1  # Multiple segments
@@ -287,7 +287,7 @@ let
     counts = rand(Poisson(100), length(times))
     lc = create_test_lightcurve(times, counts, dt)
 
-    ps = Powerspectrum(lc)
+    ps = PowerSpectrum(lc)
 
     @test issorted(ps.freq)
     @test ps.freq[1] > 0  # No zero frequency
@@ -309,7 +309,7 @@ let
     lc = create_test_lightcurve(times, counts, dt)
 
     for segment_size in [1.0, 2.5, 5.0, 10.0]
-        aps = AveragedPowerspectrum(lc, segment_size)
+        aps = AveragedPowerSpectrum(lc, segment_size)
 
         expected_segments = floor(Int, (times[end] - times[1]) / segment_size)
         @test aps.m <= expected_segments  # May be less due to GTI constraints
@@ -319,7 +319,7 @@ let
 
     # Test with leftover data (non-integer number of segments)
     segment_size = (times[end] - times[1]) / 2.5  # 2.5 segments worth
-    aps = AveragedPowerspectrum(lc, segment_size)
+    aps = AveragedPowerSpectrum(lc, segment_size)
     @test aps.m == 2  # Should get 2 complete segments
 end
 
@@ -333,8 +333,8 @@ let
     counts_with_zeros[1:50] .= 0  # First half zero
     lc_zeros = create_test_lightcurve(times, counts_with_zeros, dt)
 
-    ps = Powerspectrum(lc_zeros)
-    aps = AveragedPowerspectrum(lc_zeros, 2.0)
+    ps = PowerSpectrum(lc_zeros)
+    aps = AveragedPowerSpectrum(lc_zeros, 2.0)
 
     @test all(isfinite.(ps.power))
     @test all(ps.power .≥ 0)
@@ -346,8 +346,8 @@ let
     zero_counts[end÷2:end] = rand(Poisson(50), length(zero_counts[end÷2:end]))
     lc_partial_zero = create_test_lightcurve(times, zero_counts, dt)
 
-    ps_partial = Powerspectrum(lc_partial_zero)
-    aps_partial = AveragedPowerspectrum(lc_partial_zero, 2.0)
+    ps_partial = PowerSpectrum(lc_partial_zero)
+    aps_partial = AveragedPowerSpectrum(lc_partial_zero, 2.0)
 
     @test all(isfinite.(ps_partial.power))
     @test all(ps_partial.power .≥ 0)
@@ -358,8 +358,8 @@ let
     low_counts = rand(Poisson(1), length(times))
     lc_low = create_test_lightcurve(times, low_counts, dt)
 
-    ps_low = Powerspectrum(lc_low)
-    aps_low = AveragedPowerspectrum(lc_low, 2.0)
+    ps_low = PowerSpectrum(lc_low)
+    aps_low = AveragedPowerSpectrum(lc_low, 2.0)
 
     @test all(isfinite.(ps_low.power))
     @test all(ps_low.power .≥ 0)
@@ -371,7 +371,7 @@ let
     sparse_counts[500] = 1000  # One big spike
     lc_sparse = create_test_lightcurve(times, sparse_counts, dt)
 
-    ps_sparse = Powerspectrum(lc_sparse)
+    ps_sparse = PowerSpectrum(lc_sparse)
     @test all(isfinite.(ps_sparse.power))
     @test all(ps_sparse.power .≥ 0)
 
@@ -379,7 +379,7 @@ let
     very_sparse = rand(Poisson(0.1), length(times))  # Very low rate
     lc_very_sparse = create_test_lightcurve(times, very_sparse, dt)
 
-    ps_very_sparse = Powerspectrum(lc_very_sparse)
+    ps_very_sparse = PowerSpectrum(lc_very_sparse)
     @test all(isfinite.(ps_very_sparse.power))
     @test all(ps_very_sparse.power .≥ 0)
 end
@@ -392,15 +392,15 @@ let
     dt = 0.1
     segment_size = 2.0
 
-    @test_nowarn ps_events = Powerspectrum(events, dt, segment_size)
-    @test_nowarn aps_events = AveragedPowerspectrum(events, segment_size, dt = dt)
+    @test_nowarn ps_events = PowerSpectrum(events, dt, segment_size)
+    @test_nowarn aps_events = AveragedPowerSpectrum(events, segment_size, dt = dt)
 
     # Test with very sparse events
     sparse_times = sort(rand(50) * 10.0)
     sparse_events = create_test_eventlist(sparse_times)
 
     lc_sparse = create_lightcurve(sparse_events, dt)
-    @test_nowarn ps_sparse = Powerspectrum(lc_sparse)
+    @test_nowarn ps_sparse = PowerSpectrum(lc_sparse)
 
     # Test with clustered events
     cluster1 = rand(300) * 2.0 .+ 1.0
@@ -409,9 +409,9 @@ let
     clustered_events = create_test_eventlist(clustered_times)
 
     lc_clustered = create_lightcurve(clustered_events, dt)
-    @test_nowarn ps_clustered = Powerspectrum(lc_clustered)
+    @test_nowarn ps_clustered = PowerSpectrum(lc_clustered)
     @test_nowarn aps_clustered =
-        AveragedPowerspectrum(clustered_events, segment_size, dt = dt)
+        AveragedPowerSpectrum(clustered_events, segment_size, dt = dt)
 end
 
 # Method Parameters
@@ -423,7 +423,7 @@ let
 
     # Test different epsilon values for segment boundaries
     for epsilon in [1e-5, 1e-3, 1e-1]
-        aps = AveragedPowerspectrum(lc, 2.0, epsilon = epsilon)
+        aps = AveragedPowerSpectrum(lc, 2.0, epsilon = epsilon)
         @test aps.m >= 1
         @test all(isfinite.(aps.power))
     end
@@ -434,19 +434,19 @@ let
     for dt_test in [0.01, 0.05, 0.1]
         try
             lc_from_events = create_lightcurve(events, dt_test)
-            ps = Powerspectrum(lc_from_events)
+            ps = PowerSpectrum(lc_from_events)
             @test ps !== nothing
             @test all(isfinite.(ps.power))
 
             try
                 # Use larger segment size (5.0 instead of 2.0) to ensure we have enough bins
                 segment_size = max(5.0, 20 * dt_test)  # Ensure at least 20 bins per segment
-                aps = AveragedPowerspectrum(events, segment_size, dt = dt_test)
+                aps = AveragedPowerSpectrum(events, segment_size, dt = dt_test)
                 @test aps.m >= 1
                 @test all(isfinite.(aps.power))
             catch e
                 if e isa Union{BoundsError,ArgumentError,DimensionMismatch}
-                    @test_skip "AveragedPowerspectrum skipped for dt=$dt_test due to: $e"
+                    @test_skip "AveragedPowerSpectrum skipped for dt=$dt_test due to: $e"
                 else
                     rethrow(e)
                 end
@@ -464,13 +464,13 @@ let
     dt_edge = 0.5
     try
         lc_from_events = create_lightcurve(events, dt_edge)
-        ps = Powerspectrum(lc_from_events)
+        ps = PowerSpectrum(lc_from_events)
         @test ps !== nothing
         @test all(isfinite.(ps.power))
 
         try
             segment_size = max(10.0, 50 * dt_edge)  # Ensure plenty of bins
-            aps = AveragedPowerspectrum(events, segment_size, dt = dt_edge)
+            aps = AveragedPowerSpectrum(events, segment_size, dt = dt_edge)
             @test aps.m >= 1
             @test all(isfinite.(aps.power))
         catch e
@@ -484,11 +484,11 @@ let
 
     # Test with LightCurve parameters
     for norm in ["frac", "leahy", "abs"]
-        ps = Powerspectrum(lc, norm = norm)
+        ps = PowerSpectrum(lc, norm = norm)
         @test ps.norm == norm
         @test all(isfinite.(ps.power))
 
-        aps = AveragedPowerspectrum(lc, 2.0, norm = norm)
+        aps = AveragedPowerSpectrum(lc, 2.0, norm = norm)
         @test aps.norm == norm
         @test all(isfinite.(aps.power))
     end

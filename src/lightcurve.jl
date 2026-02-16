@@ -616,6 +616,10 @@ function extract_metadata(eventlist::EventList, start_time, stop_time, binsize, 
         extra_metadata["gti"] = eventlist.meta.gti
     end
     
+    if hasfield(typeof(eventlist.meta), :gti_source) && !isnothing(eventlist.meta.gti_source)
+        extra_metadata["gti_source"] = eventlist.meta.gti_source
+    end
+    
     if hasfield(typeof(eventlist.meta), :extra)
         merge!(extra_metadata, eventlist.meta.extra)
     end
@@ -711,6 +715,21 @@ function create_lightcurve(
     if isempty(filtered_times)
         throw(ArgumentError("No events remain after filtering"))
     end
+
+    # Apply GTI filtering if present
+    if !isnothing(eventlist.meta.gti)
+        gti_mask, _ = create_gti_mask(filtered_times, eventlist.meta.gti)
+        if !all(gti_mask)
+            filtered_times = filtered_times[gti_mask]
+            if !isnothing(filtered_energies)
+                filtered_energies = filtered_energies[gti_mask]
+            end
+        end
+        
+        if isempty(filtered_times)
+            throw(ArgumentError("No events remain after GTI filtering"))
+        end
+    end
     
     # Determine time range
     start_time = minimum(filtered_times)
@@ -720,7 +739,7 @@ function create_lightcurve(
     dt, bin_centers = create_time_bins(start_time, stop_time, binsize_t)
     counts = bin_events(filtered_times, dt)
     
-    @info "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
+    @debug "Created light curve: $(length(bin_centers)) bins, bin size = $(binsize_t) s"
     
     # Calculate exposure and properties
     exposure = fill(binsize_t, length(bin_centers))
