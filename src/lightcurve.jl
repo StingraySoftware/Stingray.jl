@@ -489,7 +489,7 @@ function apply_filters(
     filtered_times = times[mask]
     filtered_energies = isnothing(energies) ? nothing : energies[mask]
     
-    # Calculate time range - using filtered times as requested by reviewer
+    # Calculate time range
     start_t = isnothing(tstart) ? minimum(filtered_times) : tstart
     stop_t = isnothing(tstop) ? maximum(filtered_times) : tstop
     
