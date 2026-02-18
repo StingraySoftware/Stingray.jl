@@ -283,13 +283,13 @@ set_errors!(lc, custom_errors)
 # Throws
 - `ArgumentError`: If custom errors length doesn't match bin count
 """
-function set_errors!(lc::LightCurve{T}) where T
+function set_errors!(lc::LightCurve{T}) where {T}
     lc.err_method = :poisson
     lc.count_error = convert(Vector{T}, calculate_errors(lc.counts, :poisson))
     return lc
 end
 
-function set_errors!(lc::LightCurve{T}, errors::Vector{<:Real}) where T
+function set_errors!(lc::LightCurve{T}, errors::Vector{<:Real}) where {T}
     length(errors) != length(lc.counts) && throw(ArgumentError(
         "Length of errors must match number of bins"
     ))
@@ -316,7 +316,7 @@ calculate_errors!(lc)  # Recalculates using lc.err_method
 # See Also
 - [`set_errors!`](@ref): Set error method and calculate errors
 """
-function calculate_errors!(lc::LightCurve{T}) where T
+function calculate_errors!(lc::LightCurve{T}) where {T}
     errors = calculate_errors(lc.counts, lc.err_method)
     lc.count_error = convert(Vector{T}, errors)
     return lc.count_error
@@ -357,7 +357,7 @@ println(length(centers))  # 100
 - Ensures complete coverage including stop_time
 - Centers calculated as bin_start + 0.5 * bin_size
 """
-function create_time_bins(start_time::T, stop_time::T, binsize::T) where T
+function create_time_bins(start_time::T, stop_time::T, binsize::T) where {T}
     start_bin = floor(start_time / binsize) * binsize
     time_span = stop_time - start_bin
     num_bins = max(1, ceil(Int, time_span / binsize))
@@ -406,7 +406,7 @@ counts = bin_events(times, edges)
 # Throws
 - `ArgumentError`: If fewer than 2 bin edges provided
 """
-function bin_events(times::AbstractVector, dt::Vector{T}) where T
+function bin_events(times::AbstractVector, dt::Vector{T}) where {T}
     length(dt) < 2 && throw(ArgumentError("Need at least 2 bin edges"))
     
     adjusted_edges = copy(dt)
@@ -461,7 +461,7 @@ function apply_filters(
     tstart::Union{Nothing,Real},
     tstop::Union{Nothing,Real},
     energy_filter::Union{Nothing,Tuple{Real,Real}}
-) where T
+) where {T}
     # Start with all indices
     mask = trues(length(times))
     
@@ -489,9 +489,9 @@ function apply_filters(
     filtered_times = times[mask]
     filtered_energies = isnothing(energies) ? nothing : energies[mask]
     
-    # Calculate time range
-    start_t = isnothing(tstart) ? minimum(times) : tstart
-    stop_t = isnothing(tstop) ? maximum(times) : tstop
+    # Calculate time range - using filtered times as requested by reviewer
+    start_t = isnothing(tstart) ? minimum(filtered_times) : tstart
+    stop_t = isnothing(tstop) ? maximum(filtered_times) : tstop
     
     return filtered_times, filtered_energies, start_t, stop_t
 end
@@ -529,7 +529,7 @@ function calculate_event_properties(
     energies::Union{Nothing,AbstractVector},
     dt::Vector{T},
     bin_centers::Vector{T}
-) where T
+) where {T}
     properties = Vector{EventProperty}()
     
     if !isnothing(energies) && !isempty(energies) && length(bin_centers) > 0
@@ -612,16 +612,18 @@ function extract_metadata(eventlist::EventList, start_time, stop_time, binsize, 
         "binning_method" => "histogram"
     )
 
-    if !isnothing(eventlist.meta.gti)
+    # Merge existing extra metadata first
+    if hasfield(typeof(eventlist.meta), :extra) && !isnothing(eventlist.meta.extra)
+        merge!(extra_metadata, eventlist.meta.extra)
+    end
+
+    # Add GTI information if present
+    if hasfield(typeof(eventlist.meta), :gti) && !isnothing(eventlist.meta.gti)
         extra_metadata["gti"] = eventlist.meta.gti
     end
     
     if hasfield(typeof(eventlist.meta), :gti_source) && !isnothing(eventlist.meta.gti_source)
         extra_metadata["gti_source"] = eventlist.meta.gti_source
-    end
-    
-    if hasfield(typeof(eventlist.meta), :extra)
-        merge!(extra_metadata, eventlist.meta.extra)
     end
     
     return LightCurveMetadata(
@@ -716,8 +718,10 @@ function create_lightcurve(
         throw(ArgumentError("No events remain after filtering"))
     end
 
-    # Apply GTI filtering if present
-    if !isnothing(eventlist.meta.gti)
+    # Apply GTI filtering *after* user-specified time/energy filtering:
+    # - reduces the data we build the GTI mask for
+    # - ensures final event list respects both user filters and instrument GTIs
+    if hasfield(typeof(eventlist.meta), :gti) && !isnothing(eventlist.meta.gti)
         gti_mask, _ = create_gti_mask(filtered_times, eventlist.meta.gti)
         if !all(gti_mask)
             filtered_times = filtered_times[gti_mask]
@@ -797,7 +801,7 @@ lc_10s = rebin(lc, 10.0)
 # Throws
 - `ArgumentError`: If new bin size is not larger than current bin size
 """
-function rebin(lc::LightCurve{T}, new_binsize::Real) where T
+function rebin(lc::LightCurve{T}, new_binsize::Real) where {T}
     new_binsize <= lc.metadata.bin_size && throw(ArgumentError(
         "New bin size must be larger than current bin size"
     ))

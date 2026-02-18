@@ -906,6 +906,16 @@ function logrebin(ps::AbstractPowerSpectrum{T}; f::Real = 0.01) where {T}
         start_idx = end_idx + 1
     end
     
+    # Calculate effective df (median bin width) to avoid df=0.0
+    df_eff = if length(new_freqs) > 1
+        median(diff(new_freqs))
+    elseif length(new_freqs) == 1
+        # For a single bin, estimate based on f or original df
+        ps.df * (1 + f)
+    else
+        zero(T)
+    end
+    
     # Construct the new object based on the type of ps
     if ps isa PowerSpectrum
         return PowerSpectrum{T}(
@@ -913,7 +923,7 @@ function logrebin(ps::AbstractPowerSpectrum{T}; f::Real = 0.01) where {T}
             new_powers,
             new_errs,
             ps.norm,
-            0.0, # df is variable
+            df_eff, 
             ps.nphots,
             ps.m,
             length(new_freqs),
@@ -925,7 +935,7 @@ function logrebin(ps::AbstractPowerSpectrum{T}; f::Real = 0.01) where {T}
             new_powers,
             new_errs,
             ps.norm,
-            0.0, # df is variable
+            df_eff, 
             ps.segment_size,
             ps.nphots,
             ps.m,
