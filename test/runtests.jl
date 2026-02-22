@@ -5,7 +5,7 @@ using Logging ,LinearAlgebra
 using CFITSIO
 using Random
 
-include("test_fourier.jl")
+# include("test_fourier.jl")
 @testset "GTI" begin
     include("test_gti.jl")
 end
@@ -15,4 +15,8 @@ end
 
 @testset "lightcurve" begin
     include("test_lightcurve.jl")
+end
+
+@testset "Plotting" begin
+    include("test_plotting.jl")
 end
