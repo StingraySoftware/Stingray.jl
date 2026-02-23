@@ -478,7 +478,7 @@ function bin_intervals_from_gtis(gtis::AbstractMatrix{<:Real}, segment_size::Rea
     return spectrum_start_bins, spectrum_start_bins .+ nbin
 end
 
-@resumable function generate_indices_of_segment_boundaries_unbinned(times::AbstractVector{<:Real},
+function generate_indices_of_segment_boundaries_unbinned(times::AbstractVector{<:Real},
                                                                     gti::AbstractMatrix{<:Real},
                                                                     segment_size::Real)
     start, stop = time_intervals_from_gtis(gti, segment_size)
@@ -486,12 +486,10 @@ end
     startidx = searchsortedfirst.(Ref(times), start)
     stopidx = searchsortedfirst.(Ref(times), stop)
 
-    for (s, e, idx0, idx1) in zip(start, stop, startidx, stopidx)
-        @yield s, e, idx0, idx1
-    end
+    return zip(start, stop, startidx, stopidx)
 end
 
-@resumable function generate_indices_of_segment_boundaries_binned(times::AbstractVector{<:Real},
+function generate_indices_of_segment_boundaries_binned(times::AbstractVector{<:Real},
                                                                   gti::AbstractMatrix{<:Real},
                                                                   segment_size::Real; dt=nothing)
     startidx, stopidx = bin_intervals_from_gtis(gti, segment_size, times;
@@ -500,9 +498,8 @@ end
     if isnothing(dt)
         dt = 0
     end
-    for (idx0, idx1) in zip(startidx, stopidx)
-        @yield times[idx0+1] - dt / 2, times[min(idx1, length(times) - 1)] - dt / 2,idx0, idx1
-    end
+    return ((times[idx0+1] - dt / 2, times[min(idx1, length(times) - 1)] - dt / 2, idx0, idx1) 
+            for (idx0, idx1) in zip(startidx, stopidx))
 end
 """
     split_by_gtis(el::EventList, gtis::AbstractMatrix{<:Real}) -> Vector{EventList}
