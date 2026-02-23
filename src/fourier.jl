@@ -195,7 +195,7 @@ function get_average_ctrate(times:: AbstractVector{<:Real}, gti::AbstractMatrix{
     return (n_ph / (n_intvs * segment_size))
 end
 
-@resumable function get_flux_iterable_from_segments(times:: AbstractVector{<:Real}, 
+function get_flux_iterable_from_segments(times:: AbstractVector{<:Real}, 
                                                     gti::AbstractMatrix{<:Real}, 
                                                     segment_size::Real; n_bin=nothing,
                                                     fluxes=nothing, errors=nothing)
@@ -206,22 +206,21 @@ end
     end
     fun = _which_segment_idx_fun(;binned, dt)
 
-    for (s, e, idx0, idx1) in fun(times, gti, segment_size)
+    return (begin
         if idx1 - idx0 < 2
-            @yield nothing
-            continue
-        end
-        if !binned
+            nothing
+        elseif !binned
             event_times = @view times[idx0:idx1-1]
-            cts = fit(Histogram,float.(event_times .- s);nbins=n_bin).weights
+            fit(Histogram,float.(event_times .- s);nbins=n_bin).weights
         else
             cts = float.(@view fluxes[idx0+1:idx1])
             if !isnothing(errors)
-                cts = cts, @view errors[idx0+1:idx1]
+                (cts, @view errors[idx0+1:idx1])
+            else
+                cts
             end
         end
-        @yield cts
-    end
+    end for (s, e, idx0, idx1) in fun(times, gti, segment_size))
 end
 
 function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac", 
