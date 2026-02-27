@@ -1085,11 +1085,17 @@ function readevents(
     time_del::Union{Nothing,Float64} = FITS(path, "r") do f
 
         selected_hdu = f[hdu]
+
+        # Apply mission-specific FITS interpretation if available
+        if !isnothing(mission_support) && !isnothing(mission_support.interpretation_func)
+            interpret_fits_data!(f, mission_support)
+        end
+
         header = read_header(selected_hdu)
         all_cols = FITSIO.colnames(selected_hdu)
         time = convert(Vector{T}, read(selected_hdu, "TIME", case_sensitive = false))
 
-        # Read energy column using separated function with mission-specific alternatives
+        # Read energy column
         energy_column, energy = read_energy_column(
             selected_hdu;
             T = T,
@@ -1133,7 +1139,7 @@ function readevents(
         end
         
         # Apply mission patches
-        patch_mission_info(header_dict, mission)
+        patched_header_dict = patch_mission_info(header_dict, mission)
         
         # Note: We keep the original header structure but could extend this
         # to update the header with patched information if needed

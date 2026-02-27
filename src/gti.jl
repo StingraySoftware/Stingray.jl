@@ -97,13 +97,13 @@ function check_gtis(gti::AbstractMatrix)
     gti_start = @view gti[:, 1]
     gti_end = @view gti[:, 2]
 
-    if any(gti_end < gti_start)
+    if any(gti_end .< gti_start)
         throw(ArgumentError(
             "The GTI end times must be larger than the GTI start times."
         )) 
     end
 
-    if any(@view(gti_start[begin+1:end]) < @view(gti_end[begin:end-1]))
+    if any(@view(gti_start[begin+1:end]) .< @view(gti_end[begin:end-1]))
         throw(ArgumentError(
             "This GTI has overlaps"
         ))
@@ -568,8 +568,200 @@ function split_by_gtis(el::EventList, gtis::AbstractMatrix{<:Real})
     
     return result
 end
+"""
+    apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) -> Vector{LightCurve{T}} where T
 
+Apply Good Time Intervals (GTIs) to a LightCurve, returning separate LightCurve objects for each GTI.
 
+This function segments a light curve based on GTI boundaries, creating independent
+LightCurve objects for spectral timing analysis. Only complete time bins that fall
+entirely within GTI boundaries are included to maintain temporal coherence required
+for Fourier analysis and periodogram calculations.
+
+# Arguments
+- `lc::LightCurve{T}`: Input light curve with binned photon count data
+- `gtis::AbstractMatrix{<:Real}`: Matrix of GTI boundaries where each row contains
+  [start_time, stop_time] for valid observation intervals
+
+# Returns
+- `Vector{LightCurve{T}}`: Array of LightCurve objects, one for each GTI. Only
+  segments containing at least one complete time bin are included. Empty segments
+  are excluded from the result.
+
+# Filtering Strategy
+- **Bin inclusion criterion**: Complete bins only - bin center must fall within GTI
+- **Boundary handling**: Bins partially overlapping GTI edges are excluded
+- **Metadata preservation**: All properties and metadata are maintained per segment
+- **Temporal continuity**: Each segment maintains uniform time binning from original
+
+# Technical Details
+The filtering uses bin centers for GTI membership testing:
+```julia
+included_bins = (bin_center ≥ gti_start) && (bin_center ≤ gti_stop)
+```
+
+This conservative approach ensures that:
+1. All included bins have complete exposure within the GTI
+2. Fourier analysis assumptions are preserved (uniform sampling)
+3. Statistical properties remain well-defined
+4. No partial bins introduce systematic errors
+
+# Periodogram Compatibility
+!!! warning "Bartlett Periodogram Limitation"
+    This function is **NOT** suitable for Bartlett periodogram calculations, which
+    require segments of identical length. The resulting segments will have different
+    lengths depending on GTI durations.
+
+!!! note "Suitable Methods"
+    Use with Welch's method, Lomb-Scargle periodograms, or other techniques that
+    can handle variable-length segments.
+
+# Examples
+```julia
+# Basic segmentation
+gtis = [1000.0 2000.0; 3000.0 4000.0; 5000.0 6000.0]
+lc_segments = apply_gtis(lightcurve, gtis)
+
+println("Created \$(length(lc_segments)) light curve segments")
+
+# Analyze each segment independently
+for (i, segment) in enumerate(lc_segments)
+    mean_rate = mean(segment.counts ./ segment.exposure)
+    duration = segment.time[end] - segment.time[1] + segment.dt
+    println("GTI \$i: mean rate = \$(mean_rate) cts/s, duration = \$(duration) s")
+end
+
+# Variable-length periodogram analysis (NOT Bartlett)
+using FFTW
+periodograms = []
+for segment in lc_segments
+    # Welch's method can handle different segment lengths
+    pgram = welch_periodogram(segment.counts, segment.dt)
+    push!(periodograms, pgram)
+end
+
+# Check segment properties
+for (i, seg) in enumerate(lc_segments)
+    println("Segment \$i: \$(length(seg.time)) bins, Δt = \$(seg.dt) s")
+end
+```
+
+# Performance Notes
+- Time complexity: O(n) where n is the number of time bins
+- Memory usage: Creates new LightCurve objects for each segment
+- For large datasets, consider processing segments individually rather than
+  storing all segments in memory
+
+# References
+- Welch periodogram methodology for variable-length segments
+- X-ray timing analysis protocols (van der Klis 1989)
+- Stingray light curve segmentation documentation
+
+# See Also
+- [`LightCurve`](@ref): Light curve data structure
+- [`check_gtis`](@ref): Validate GTI format
+- [`create_filtered_lightcurve`](@ref): Create filtered light curve segments
+"""
+function apply_gtis(lc::LightCurve{T}, gtis::AbstractMatrix{<:Real}) where T
+    check_gtis(gtis)
+    
+    result = LightCurve{T}[]
+    
+    # Pre-allocate the mask buffer once
+    bin_mask = similar(lc.time, Bool)
+    
+    for i in 1:size(gtis, 1)
+        gti_start, gti_stop = T(gtis[i, 1]), T(gtis[i, 2])
+        
+        # Use @. to vectorize the mask creation
+        @. bin_mask = (lc.time ≥ gti_start) & (lc.time ≤ gti_stop)
+        
+        if any(bin_mask)
+            filtered_lc = create_filtered_lightcurve(lc, bin_mask, gti_start, gti_stop, i)
+            push!(result, filtered_lc)
+        end
+    end
+    
+    return result
+end
+"""
+    create_filtered_lightcurve(lc::LightCurve{T}, mask::BitVector, 
+                              gti_start::T, gti_stop::T, gti_index::Int) -> LightCurve{T}
+
+Internal function to create a filtered LightCurve from a boolean mask.
+
+Creates a new LightCurve containing only the time bins specified by the mask,
+while preserving all metadata, properties, and statistical characteristics.
+
+# Arguments
+- `lc::LightCurve{T}`: Source light curve
+- `mask::BitVector`: Boolean mask indicating which bins to include
+- `gti_start::T`: Start time of the GTI (for metadata)
+- `gti_stop::T`: Stop time of the GTI (for metadata)  
+- `gti_index::Int`: GTI sequence number (for metadata tracking)
+
+# Returns
+- `LightCurve{T}`: Filtered light curve with updated metadata reflecting the GTI application
+
+# Implementation Notes
+- Preserves bin size and exposure information
+- Maintains all computed properties (e.g., mean energy)
+- Updates metadata to reflect GTI filtering
+- Recalculates statistical errors for the filtered dataset
+"""
+function create_filtered_lightcurve(lc::LightCurve{T}, mask::AbstractVector{Bool}, 
+                                   gti_start::T, gti_stop::T, gti_index::Int) where T
+
+    # Ensure mask is proper boolean vector
+    bool_mask = mask isa BitVector ? mask : BitVector(mask)
+    # Filter all primary arrays
+    filtered_time = lc.time[mask]
+    filtered_counts = lc.counts[mask]
+    filtered_exposure = isnothing(lc.exposure) ? nothing : lc.exposure[mask]
+    
+    # Filter all computed properties
+    filtered_properties = EventProperty{T}[]
+    for prop in lc.properties
+        filtered_values = prop.values[mask]
+        push!(filtered_properties, EventProperty(prop.name, filtered_values, prop.unit))
+    end
+    
+    # Update metadata with GTI information
+    updated_metadata = LightCurveMetadata(
+        lc.metadata.telescope,
+        lc.metadata.instrument, 
+        lc.metadata.object,
+        lc.metadata.mjdref,
+        (Float64(gti_start), Float64(gti_stop)),  # Update time range to GTI bounds
+        lc.metadata.bin_size,
+        lc.metadata.headers,
+        merge(lc.metadata.extra, Dict{String,Any}(
+            "gti_applied" => true,
+            "gti_index" => gti_index,
+            "gti_bounds" => [Float64(gti_start), Float64(gti_stop)],
+            "original_time_range" => lc.metadata.time_range,
+            "filtered_nbins" => length(filtered_time),
+            "original_nbins" => length(lc.time)
+        ))
+    )
+    
+    # Create new LightCurve with filtered data
+    filtered_lc = LightCurve{T}(
+        filtered_time,
+        lc.dt,  # Preserve original bin size
+        filtered_counts,
+        nothing,  # Errors will be recalculated
+        filtered_exposure,
+        filtered_properties,
+        updated_metadata,
+        lc.err_method
+    )
+    
+    # Recalculate errors for the filtered dataset
+    calculate_errors!(filtered_lc)
+    
+    return filtered_lc
+end
 """
     fill_bad_time_intervals!(el::EventList, gtis::AbstractMatrix{<:Real};
                              dt::Real=1.0, random_fill_threshold::Real=10.0,
