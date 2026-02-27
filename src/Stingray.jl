@@ -45,21 +45,6 @@ export FITSMetadata,
     has_gti,
     extract_timing_keywords
 
-include("lightcurve.jl")
-export AbstractLightCurve,
-       EventProperty,
-       LightCurveMetadata,
-       LightCurve,
-       calculate_errors,
-       set_errors!,
-       calculate_errors!,
-       create_time_bins,
-       bin_events,
-       apply_filters,
-       calculate_event_properties,
-       extract_metadata,
-       create_lightcurve,
-       rebin
 include("utils.jl")
 
 include("gti.jl")
@@ -77,4 +62,12 @@ export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
 
+include("missionSupport.jl")
+export MissionSupport,
+       get_mission_support,
+       apply_calibration,
+       patch_mission_info,
+       SIMPLE_CALIBRATION_FUNCS,
+       interpret_fits_data!,
+       AbstractMissionSupport
 end

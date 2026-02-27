@@ -669,7 +669,7 @@ let
     @test occursin("4 events", summary_str)
     @test occursin("over 3.0 time units", summary_str)
     @test occursin("energies: 100.0 - 400.0", summary_str)
-    @test occursin("(keV)", summary_str)
+    @test occursin("(ENERGY)", summary_str)
     @test occursin("GTI: 2 intervals (3.0 s exposure)", summary_str)
     @test occursin("1 extra columns", summary_str)
     

@@ -13,6 +13,6 @@ end
     include("test_events.jl")
 end
 
-@testset "lightcurve" begin
-    include("test_lightcurve.jl")
+@testset "Synthetic Events Tests" begin
+    include("test_missionSupport.jl")
 end

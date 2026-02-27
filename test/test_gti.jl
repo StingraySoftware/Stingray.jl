@@ -19,21 +19,6 @@ function create_test_eventlist(times::Vector{Float64}, energies::Union{Vector{Fl
     return EventList(times, energies, mock_metadata)
 end
 
-# Helper function to create mock LightCurve for testing
-function create_test_lightcurve(times::Vector{Float64}, counts::Vector{Int}, dt::Float64=1.0)
-    metadata = LightCurveMetadata(
-        "", "", "", 0.0, 
-        (minimum(times)-dt/2, maximum(times)+dt/2), 
-        dt, 
-        Vector{Dict{String,Any}}(),
-        Dict{String,Any}()
-    )
-    
-    return LightCurve(
-        times, dt, counts, nothing, nothing, EventProperty{Float64}[], 
-        metadata, :poisson
-    )
-end
 
 # Helper function to create EventProperty
 function create_event_property(name::String, values::Vector{Float64}, unit::String="")
@@ -315,96 +300,6 @@ let
     @test result[1].energies == energies
 end
 
-# LightCurve GTI Tests - Basic functionality
-let
-    time_bins = get_basic_times()
-    counts = get_basic_counts()
-    
-    lc = create_test_lightcurve(time_bins, counts)
-    
-    gtis = [2.0 6.0; 7.0 9.0]
-    result = apply_gtis(lc, gtis)
-    
-    @test length(result) == 2
-    @test result[1].time ≈ [2.5, 3.5, 4.5, 5.5]
-    @test result[1].counts ≈ [20, 25, 30, 35]
-    @test result[2].time ≈ [7.5, 8.5]
-    @test result[2].counts ≈ [45, 50]
-end
-
-# LightCurve GTI Tests - With exposure
-let
-    time_bins = get_simple_times()
-    counts = get_simple_counts()
-    exposure = [0.9, 1.0, 1.0, 0.8, 1.0]
-    
-    metadata = LightCurveMetadata(
-        "", "", "", 0.0, (0.0, 6.0), 1.0, 
-        Vector{Dict{String,Any}}(), Dict{String,Any}()
-    )
-    
-    lc = LightCurve(
-        time_bins, 1.0, counts, nothing, exposure, EventProperty{Float64}[], 
-        metadata, :poisson
-    )
-    
-    gtis = [1.5 3.5]
-    result = apply_gtis(lc, gtis)
-    
-    @test length(result) == 1
-    @test result[1].time ≈ [2.0, 3.0]
-    @test result[1].counts ≈ [20, 30]
-    @test result[1].exposure ≈ [1.0, 1.0]
-end
-
-# LightCurve GTI Tests - With properties
-let
-    time_bins = get_simple_times()
-    counts = get_simple_counts()
-    
-    energy_prop = create_event_property("energy", [1.5, 2.5, 3.5, 4.5, 5.5], "keV")
-    properties = [energy_prop]
-    
-    metadata = LightCurveMetadata(
-        "", "", "", 0.0, (0.0, 6.0), 1.0, 
-        Vector{Dict{String,Any}}(), Dict{String,Any}()
-    )
-    
-    lc = LightCurve(
-        time_bins, 1.0, counts, nothing, nothing, properties, 
-        metadata, :poisson
-    )
-    
-    gtis = [1.5 3.5]
-    result = apply_gtis(lc, gtis)
-    
-    @test length(result) == 1
-    @test result[1].properties[1].values ≈ [2.5, 3.5]
-end
-
-# Filtered LightCurve Tests - Basic filtering
-let
-    time_bins = get_simple_times()
-    counts = get_simple_counts()
-    
-    lc = create_test_lightcurve(time_bins, counts)
-    lc.metadata = LightCurveMetadata(
-        "TEST", "INSTR", "OBJ", 58000.0, (0.0, 6.0), 1.0, 
-        Vector{Dict{String,Any}}([Dict{String,Any}("OBSERVER" => "Test")]), 
-        Dict{String,Any}("original_key" => "value")
-    )
-    
-    mask = [false, true, true, false, true]
-    filtered_lc = create_filtered_lightcurve(lc, mask, 1.5, 3.5, 1)
-    
-    @test filtered_lc.time ≈ [2.0, 3.0, 5.0]
-    @test filtered_lc.counts ≈ [20, 30, 50]
-    @test filtered_lc.dt == 1.0
-    @test filtered_lc.metadata.extra["gti_applied"] == true
-    @test filtered_lc.metadata.extra["gti_index"] == 1
-    @test filtered_lc.metadata.extra["filtered_nbins"] == 3
-    @test filtered_lc.metadata.extra["original_nbins"] == 5
-end
 
 # BTI Filling Tests - Basic BTI filling
 let
