@@ -26,6 +26,9 @@ end
 @testset "powerspectrum" begin
     include("test_powerspectrum.jl")
 end
+@testset "rebinning" begin
+    include("test_rebinning.jl")
+end
 @testset "crossspectrum" begin
     include("test_crossspectrum.jl")
 end

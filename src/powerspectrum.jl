@@ -760,3 +760,170 @@ Get the frequency, power, and error at index i.
 - `Tuple{T, T, T}`: (frequency, power, error) at index i
 """
 Base.getindex(ps::AbstractPowerSpectrum, i) = (ps.freq[i], ps.power[i], ps.power_err[i])
+
+"""
+    rebin(ps::AbstractPowerSpectrum, factor::Integer)
+
+Rebin a power spectrum by a factor `factor`.
+The new frequency resolution will be `df * factor`.
+The power values are averaged in the new bins.
+The errors are propagated accordingly.
+"""
+
+function rebin(ps::PowerSpectrum{T}, factor::Integer) where {T}
+    if factor == 1
+        return ps
+    end
+
+    n_new = floor(Int, length(ps.freq) / factor)
+    new_freq = zeros(T, n_new)
+    new_power = zeros(T, n_new)
+    new_err = zeros(T, n_new)
+
+    for i in 1:n_new
+        start_idx = (i - 1) * factor + 1
+        end_idx = i * factor
+        
+        new_freq[i] = mean(ps.freq[start_idx:end_idx])
+        new_power[i] = mean(ps.power[start_idx:end_idx])
+        
+        # Error propagation for the mean: sqrt(sum(sigma_i^2)) / N
+        sum_sq_err = sum(abs2, ps.power_err[start_idx:end_idx])
+        new_err[i] = sqrt(sum_sq_err) / factor
+    end
+
+    return PowerSpectrum{T}(
+        new_freq,
+        new_power,
+        new_err,
+        ps.norm,
+        ps.df * factor,
+        ps.nphots,
+        ps.m,  
+        n_new,
+        ps.metadata
+    )
+end
+
+function rebin(ps::AveragedPowerspectrum{T}, factor::Integer) where {T}
+    if factor == 1
+        return ps
+    end
+
+    n_new = floor(Int, length(ps.freq) / factor)
+    new_freq = zeros(T, n_new)
+    new_power = zeros(T, n_new)
+    new_err = zeros(T, n_new)
+
+    for i in 1:n_new
+        start_idx = (i - 1) * factor + 1
+        end_idx = i * factor
+        
+        new_freq[i] = mean(ps.freq[start_idx:end_idx])
+        new_power[i] = mean(ps.power[start_idx:end_idx])
+        
+        # Error propagation for the mean: sqrt(sum(sigma_i^2)) / N
+        sum_sq_err = sum(abs2, ps.power_err[start_idx:end_idx])
+        new_err[i] = sqrt(sum_sq_err) / factor
+    end
+
+    return AveragedPowerspectrum{T}(
+        new_freq,
+        new_power,
+        new_err,
+        ps.norm,
+        ps.df * factor,
+        ps.segment_size,
+        ps.nphots,
+        ps.m,
+        ps.mean_rate,
+        n_new,
+        ps.metadata
+    )
+end
+
+"""
+    logrebin(ps::AbstractPowerSpectrum; f::Real=0.01)
+
+Rebin the power spectrum logarithmically.
+The frequency bins increase geometrically with a factor `1 + f`.
+"""
+function logrebin(ps::AbstractPowerSpectrum{T}; f::Real = 0.01) where {T}
+    
+    min_freq = ps.freq[1]
+    max_freq = ps.freq[end]
+    
+    min_bin_width = ps.df
+    
+    k = 1
+    current_freq = min_freq
+    new_freqs = T[]
+    new_powers = T[]
+    new_errs = T[]
+    
+    start_idx = 1
+    n = length(ps.freq)
+    
+    while start_idx <= n
+        target_next_freq = current_freq * (1+f)
+        if target_next_freq - current_freq < min_bin_width
+             target_next_freq = current_freq + min_bin_width
+        end
+        
+        end_idx = start_idx
+        while end_idx <= n && ps.freq[end_idx] < target_next_freq
+            end_idx += 1
+        end
+        end_idx -= 1
+        
+        if end_idx < start_idx
+            end_idx = start_idx
+        end
+        
+        push!(new_freqs, mean(ps.freq[start_idx:end_idx]))
+        push!(new_powers, mean(ps.power[start_idx:end_idx]))
+        
+        n_averaged = end_idx - start_idx + 1
+        sum_sq_err = sum(abs2, ps.power_err[start_idx:end_idx])
+        push!(new_errs, sqrt(sum_sq_err) / n_averaged)
+        
+        current_freq = ps.freq[end_idx]
+        start_idx = end_idx + 1
+    end
+    
+    df_eff = if length(new_freqs) > 1
+        median(diff(new_freqs))
+    elseif length(new_freqs) == 1
+        ps.df * (1 + f)
+    else
+        zero(T)
+    end
+    
+    if ps isa PowerSpectrum
+        return PowerSpectrum{T}(
+            new_freqs,
+            new_powers,
+            new_errs,
+            ps.norm,
+            df_eff, 
+            ps.nphots,
+            ps.m,
+            length(new_freqs),
+            ps.metadata
+        )
+    elseif ps isa AveragedPowerspectrum
+        return AveragedPowerspectrum{T}(
+            new_freqs,
+            new_powers,
+            new_errs,
+            ps.norm,
+            df_eff, 
+            ps.segment_size,
+            ps.nphots,
+            ps.m,
+            ps.mean_rate,
+            length(new_freqs),
+            ps.metadata
+        )
+    end
+end

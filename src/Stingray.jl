@@ -99,7 +99,7 @@ export white_noise_level, noise_corrected_power, signal_to_noise_ratio
 export detect_aliasing, coherence, phase_lag, time_lag, noise_properties
 export significant_frequencies, get_noise_level, quality_metrics
 export rebin, rebin_log, geometric_rebin, adaptive_rebin
-export is_rebinned, effective_samples_per_bin, AbstractCrossSpectrum
+export is_rebinned, effective_samples_per_bin, AbstractCrossSpectrum, logrebin
 include("plotting/plots_recipes_lightcurve.jl")
 export create_segments
 include("plotting/plots_recipes_gti.jl")
