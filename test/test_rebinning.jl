@@ -32,7 +32,7 @@ using Statistics
         n_bins = length(times)
         counts = rand(0:10, n_bins) 
         lc = make_lc(times, counts, dt)
-        ps = PowerSpectrum(lc, norm="leahy")
+        ps = Powerspectrum(lc, norm="leahy")
         
         factor = 4
         ps_binned = rebin(ps, factor)
@@ -49,7 +49,7 @@ using Statistics
         times = collect(0:dt:100.0-dt)
         counts = rand(0:10, length(times))
         lc = make_lc(times, counts, dt)
-        ps = PowerSpectrum(lc)
+        ps = Powerspectrum(lc)
         
         f_res = 0.1
         ps_log = logrebin(ps, f=f_res)
