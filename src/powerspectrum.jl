@@ -4,27 +4,32 @@ of power across different frequencies in a signal.
 
 Subtypes include:
 - PowerSpectrum{T}: Represents a power spectrum for a single signal segment
-- AveragedPowerSpectrum{T}: Represents a power spectrum averaged over multiple segments
+- AveragedPowerspectrum{T}: Represents a power spectrum averaged over multiple segments
 
 # Type Parameters
 - `T`: The numeric type for frequency and power values (typically Float64)
 """
 abstract type AbstractPowerSpectrum{T} end
 """
-    PowerSpectrum{T} <: AbstractPowerSpectrum{T}
+    PowerSpectrum{T}
 
-Power spectrum of a single light curve segment.
+$(TYPEDEF)
 
-# Fields
-- `freq::Vector{T}`: Frequencies
-- `power::Vector{T}`: Power values
-- `power_err::Vector{T}`: Uncertainties on power
-- `norm::String`: Normalization used
-- `df::T`: Frequency resolution
-- `nphots::Int`: Total number of photons
-- `m::Int`: Number of segments (always 1)
-- `n::Int`: Number of frequencies
-- `metadata::Union{LightCurveMetadata,FITSMetadata}`: Source metadata
+Power spectrum for a single light curve segment.
+
+$(TYPEDFIELDS)
+
+# Examples
+```julia
+# Create power spectrum from light curve
+lc = LightCurve(times, counts)
+ps = Powerspectrum(lc, norm="leahy")
+
+# Access properties
+println(ps.freq)    # Frequency array
+println(ps.power)   # Power values
+println(ps.norm)    # Normalization type
+```
 """
 struct PowerSpectrum{T} <: AbstractPowerSpectrum{T}
     "Frequencies in Hz"
@@ -48,24 +53,27 @@ struct PowerSpectrum{T} <: AbstractPowerSpectrum{T}
 end
 
 """
-    AveragedPowerSpectrum{T} <: AbstractPowerSpectrum{T}
+    AveragedPowerspectrum{T}
+
+$(TYPEDEF)
 
 Averaged power spectrum from multiple light curve segments.
 
-# Fields
-- `freq::Vector{T}`: Frequencies
-- `power::Vector{T}`: Averaged power values
-- `power_err::Vector{T}`: Uncertainties on power
-- `norm::String`: Normalization used
-- `df::T`: Frequency resolution
-- `segment_size::T`: Length of each segment in seconds
-- `nphots::Int`: Total number of photons processed
-- `m::Int`: Number of segments averaged
-- `mean_rate::T`: Mean count rate
-- `n::Int`: Number of frequencies
-- `metadata::Union{LightCurveMetadata,FITSMetadata}`: Source metadata
+$(TYPEDFIELDS)
+
+# Examples
+```julia
+# Create averaged power spectrum from light curve
+lc = LightCurve(times, counts)
+ps_avg = AveragedPowerspectrum(lc, 1024.0, norm="leahy")
+
+# Access properties
+println(ps_avg.freq)         # Frequency array
+println(ps_avg.power)        # Averaged power values
+println(ps_avg.segment_size) # Size of segments used
+```
 """
-struct AveragedPowerSpectrum{T} <: AbstractPowerSpectrum{T}
+struct AveragedPowerspectrum{T} <: AbstractPowerSpectrum{T}
     "Frequencies in Hz"
     freq::Vector{T}
     "Averaged power values"
@@ -94,7 +102,7 @@ end
 #lightcurve==>
 
 """
-    PowerSpectrum(lc::LightCurve{T}; norm::String="frac") where T<:Real
+    Powerspectrum(lc::LightCurve{T}; norm::String="frac") where T<:Real
 
 Create power spectrum from a light curve.
 
@@ -107,10 +115,10 @@ Create power spectrum from a light curve.
 
 # Examples
 ```julia
-ps = PowerSpectrum(lc, norm="leahy")
+ps = Powerspectrum(lc, norm="leahy")
 ```
 """
-function PowerSpectrum(lc::LightCurve{T}; norm::String = "frac") where {T<:Real}
+function Powerspectrum(lc::LightCurve{T}; norm::String = "frac") where {T<:Real}
     bin_size = lc.metadata.bin_size
     n_bins = length(lc.counts)
 
@@ -158,7 +166,7 @@ function PowerSpectrum(lc::LightCurve{T}; norm::String = "frac") where {T<:Real}
 end
 
 """
-    AveragedPowerSpectrum(lc::LightCurve{T}, segment_size::Real; norm::String="frac", epsilon::Real=1e-5) where T<:Real
+    AveragedPowerspectrum(lc::LightCurve{T}, segment_size::Real; norm::String="frac", epsilon::Real=1e-5) where T<:Real
 
 Create averaged power spectrum from a light curve divided into segments.
 
@@ -169,14 +177,14 @@ Create averaged power spectrum from a light curve divided into segments.
 - `epsilon`: Tolerance for segment boundaries
 
 # Returns
-- `AveragedPowerSpectrum` object
+- `AveragedPowerspectrum` object
 
 # Examples
 ```julia
-ps_avg = AveragedPowerSpectrum(lc, 1024.0, norm="leahy")
+ps_avg = AveragedPowerspectrum(lc, 1024.0, norm="leahy")
 ```
 """
-function AveragedPowerSpectrum(
+function AveragedPowerspectrum(
     lc::LightCurve{T},
     segment_size::Real;
     norm::String = "frac",
@@ -274,7 +282,7 @@ function AveragedPowerSpectrum(
         sqrt.(avg_power ./ n_segments_used)
     end
 
-    return AveragedPowerSpectrum{T}(
+    return AveragedPowerspectrum{T}(
         freqs,
         avg_power,
         power_err,
@@ -292,7 +300,7 @@ end
 #Eventlist==>
 
 """
-    PowerSpectrum(events::EventList{Vector{T}, M}; norm::String="frac", dt::Real=1.0) where {T<:Real, M}
+    Powerspectrum(events::EventList{Vector{T}, M}; norm::String="frac", dt::Real=1.0) where {T<:Real, M}
 
 Create power spectrum from an event list by first binning the events.
 
@@ -307,10 +315,10 @@ Create power spectrum from an event list by first binning the events.
 # Examples
 ```julia
 events = readevents("data.fits")
-ps = PowerSpectrum(events, norm="leahy", dt=0.1)
+ps = Powerspectrum(events, norm="leahy", dt=0.1)
 ```
 """
-function PowerSpectrum(
+function Powerspectrum(
     events::EventList{Vector{T},M},
     dt::Real,
     segment_size::Real;
@@ -415,7 +423,7 @@ function PowerSpectrum(
 
     result_metadata = create_powerspectrum_metadata(events, dt, segment_size)
 
-    return AveragedPowerSpectrum{T}(
+    return AveragedPowerspectrum{T}(
         freqs,
         avg_power,
         power_err,
@@ -509,7 +517,7 @@ function create_powerspectrum_metadata(events::EventList, dt::Real, segment_size
     )
 end
 """
-    AveragedPowerSpectrum(events::EventList{Vector{T}, M}, segment_size::Real; 
+    AveragedPowerspectrum(events::EventList{Vector{T}, M}, segment_size::Real; 
                          norm::String="frac", dt::Real=1.0, 
                          epsilon::Real=1e-5) where {T<:Real, M}
 
@@ -524,15 +532,15 @@ Uses direct event binning without creating intermediate LightCurve objects.
 - `epsilon`: Tolerance for segment boundaries
 
 # Returns
-- `AveragedPowerSpectrum` object
+- `AveragedPowerspectrum` object
 
 # Examples
 ```julia
 events = readevents("data.fits")
-ps_avg = AveragedPowerSpectrum(events, 1024.0, norm="leahy", dt=0.1)
+ps_avg = AveragedPowerspectrum(events, 1024.0, norm="leahy", dt=0.1)
 ```
 """
-function AveragedPowerSpectrum(
+function AveragedPowerspectrum(
     events::EventList{Vector{T},M},
     segment_size::Real;
     norm::String = "frac",
@@ -658,7 +666,7 @@ function AveragedPowerSpectrum(
 
     result_metadata = create_powerspectrum_metadata(events, dt, segment_size)
 
-    return AveragedPowerSpectrum{T}(
+    return AveragedPowerspectrum{T}(
         freqs,
         avg_power,
         power_err,
@@ -797,7 +805,7 @@ function rebin(ps::PowerSpectrum{T}, factor::Integer) where {T}
     )
 end
 
-function rebin(ps::AveragedPowerSpectrum{T}, factor::Integer) where {T}
+function rebin(ps::AveragedPowerspectrum{T}, factor::Integer) where {T}
     if factor == 1
         return ps
     end
@@ -819,7 +827,7 @@ function rebin(ps::AveragedPowerSpectrum{T}, factor::Integer) where {T}
         new_err[i] = sqrt(sum_sq_err) / factor
     end
 
-    return AveragedPowerSpectrum{T}(
+    return AveragedPowerspectrum{T}(
         new_freq,
         new_power,
         new_err,
@@ -845,18 +853,7 @@ function logrebin(ps::AbstractPowerSpectrum{T}; f::Real = 0.01) where {T}
     min_freq = ps.freq[1]
     max_freq = ps.freq[end]
     
-    # Create geometric progression of bin edges
-    # start at min_freq - df/2 to capture the first bin properly
-    # but for simplicity in log rebinning often we start at min_freq
-    
-    # Common implementation:
-    # 1. generated log spaced edges
-    # 2. group original bins into these new bins
-    
     min_bin_width = ps.df
-    
-    # We need to find the edges of the new bins
-    # frequency k: freq[k] = freq[0] * (1+f)^k
     
     k = 1
     current_freq = min_freq
@@ -864,25 +861,15 @@ function logrebin(ps::AbstractPowerSpectrum{T}; f::Real = 0.01) where {T}
     new_powers = T[]
     new_errs = T[]
     
-    # Indices in the original arrays
     start_idx = 1
     n = length(ps.freq)
     
     while start_idx <= n
-        # Determine the width of the current bin in the target log grid
-        # The next boundary would be current_freq * (1+f)
-        # But we must ensure it's at least min_bin_width to encompass at least one original bin
-        
         target_next_freq = current_freq * (1+f)
         if target_next_freq - current_freq < min_bin_width
              target_next_freq = current_freq + min_bin_width
         end
         
-        # Find which original bins fall into [current_freq, target_next_freq)
-        # We assume original freqs are bin centers. 
-        # A simple approach: equivalent to rebinning by non-integer factors
-        
-        # accumulate bins until we reach the target frequency
         end_idx = start_idx
         while end_idx <= n && ps.freq[end_idx] < target_next_freq
             end_idx += 1
@@ -893,30 +880,25 @@ function logrebin(ps::AbstractPowerSpectrum{T}; f::Real = 0.01) where {T}
             end_idx = start_idx
         end
         
-        # Average properties in this range
         push!(new_freqs, mean(ps.freq[start_idx:end_idx]))
         push!(new_powers, mean(ps.power[start_idx:end_idx]))
         
-        # Error prop assuming independent errors: sigma_mean = sqrt(sum sigma_i^2) / N
         n_averaged = end_idx - start_idx + 1
         sum_sq_err = sum(abs2, ps.power_err[start_idx:end_idx])
         push!(new_errs, sqrt(sum_sq_err) / n_averaged)
         
-        current_freq = ps.freq[end_idx] # effectively moving to the next available frequency
+        current_freq = ps.freq[end_idx]
         start_idx = end_idx + 1
     end
     
-    # Calculate effective df (median bin width) to avoid df=0.0
     df_eff = if length(new_freqs) > 1
         median(diff(new_freqs))
     elseif length(new_freqs) == 1
-        # For a single bin, estimate based on f or original df
         ps.df * (1 + f)
     else
         zero(T)
     end
     
-    # Construct the new object based on the type of ps
     if ps isa PowerSpectrum
         return PowerSpectrum{T}(
             new_freqs,
@@ -929,8 +911,8 @@ function logrebin(ps::AbstractPowerSpectrum{T}; f::Real = 0.01) where {T}
             length(new_freqs),
             ps.metadata
         )
-    elseif ps isa AveragedPowerSpectrum
-        return AveragedPowerSpectrum{T}(
+    elseif ps isa AveragedPowerspectrum
+        return AveragedPowerspectrum{T}(
             new_freqs,
             new_powers,
             new_errs,

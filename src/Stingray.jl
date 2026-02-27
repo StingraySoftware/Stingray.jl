@@ -90,8 +90,8 @@ export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis, intersect_gtis
 include("powerspectrum.jl")
-export PowerSpectrum
-export AveragedPowerSpectrum, AbstractPowerSpectrum
+export Powerspectrum
+export AveragedPowerspectrum, AbstractPowerSpectrum
 include("crossspectrum.jl")
 export CrossSpectrum, AveragedCrossSpectrum
 export is_averaged, is_single, theoretical_noise_level, fill_errors!
@@ -106,7 +106,5 @@ include("plotting/plots_recipes_gti.jl")
 export BTIAnalysisPlot
 include("plotting/plots_recipes_crossspectrum.jl")
 include("plotting/plots_recipes_powerspectrum.jl")
-
-
 
 end

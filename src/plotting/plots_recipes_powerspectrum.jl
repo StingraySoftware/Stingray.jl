@@ -18,7 +18,7 @@ Recipe for plotting power spectra with comprehensive customization options.
 
 # Examples
 ```julia
-ps = AveragedPowerSpectrum(events, 256.0, norm="frac")
+ps = AveragedPowerspectrum(events, 256.0, norm="frac")
 plot(ps, show_noise=true, freq_mult=true, axis_limits=[0.01, 100, 1e-5, 1e-1])
 ```
 """
@@ -188,7 +188,7 @@ plot(events, segment_size=256.0, norm="frac", show_noise=true, axis_limits=[0.01
 
     isempty(events.times) && error("EventList is empty")
 
-    ps = AveragedPowerSpectrum(events, segment_size; norm = norm, dt = dt)
+    ps = AveragedPowerspectrum(events, segment_size; norm = norm, dt = dt)
 
     @series begin
         show_noise := show_noise
@@ -219,8 +219,8 @@ Recipe for comparing multiple power spectra on the same plot.
 
 # Examples
 ```julia
-ps1 = AveragedPowerSpectrum(events, 128.0, norm="frac")
-ps2 = AveragedPowerSpectrum(events, 256.0, norm="frac")
+ps1 = AveragedPowerspectrum(events, 128.0, norm="frac")
+ps2 = AveragedPowerspectrum(events, 256.0, norm="frac")
 plot([ps1, ps2], labels=["128s", "256s"], axis_limits=[0.01, 100, 1e-5, 1e-1])
 ```
 """
@@ -354,7 +354,7 @@ plot(events_dict, segment_size=256.0, energy_labels=["Soft", "Hard"], axis_limit
         all_powers = Float64[]
 
         for (band_name, events) in events_dict
-            ps = AveragedPowerSpectrum(events, segment_size; norm = norm)
+            ps = AveragedPowerspectrum(events, segment_size; norm = norm)
             power_vec = freq_mult ? ps.power .* ps.freq : ps.power
             append!(all_freqs, ps.freq)
             append!(all_powers, power_vec)
@@ -394,7 +394,7 @@ plot(events_dict, segment_size=256.0, energy_labels=["Soft", "Hard"], axis_limit
     labels = isnothing(energy_labels) ? band_names : energy_labels
 
     for (i, (band_name, events)) in enumerate(events_dict)
-        ps = AveragedPowerSpectrum(events, segment_size; norm = norm)
+        ps = AveragedPowerspectrum(events, segment_size; norm = norm)
         power_vec = freq_mult ? ps.power .* ps.freq : ps.power
 
         @series begin

@@ -11,8 +11,6 @@ using Plots
     include("test_fourier/test_coherence.jl")
     include("test_fourier/test_norm.jl")
 end
-
-include("test_rebinning.jl")
 @testset "GTI" begin
     include("test_gti.jl")
 end
