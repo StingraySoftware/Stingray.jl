@@ -1,6 +1,3 @@
-using Stingray
-using Plots
-using Test
 
 @testset "Plotting Recipes" begin
     # Setup: Create a standard EventList and LightCurve for testing

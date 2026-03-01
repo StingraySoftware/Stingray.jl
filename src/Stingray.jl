@@ -78,6 +78,6 @@ export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
 
-include("plotting_recipes.jl")
+include("plotting/plotting_recipes_lightcurve.jl")
 
 end

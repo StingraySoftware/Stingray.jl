@@ -1,5 +1,3 @@
-using RecipesBase
-using Statistics
 
 @recipe function f(events::EventList, binsize::Real=1.0; 
                   energy_filter=nothing, 
@@ -62,7 +60,6 @@ end
     ylabel --> "Counts"
     seriestype --> :steppre
 
-    # FIX: Use lc.count_error instead of lc.errors
     if show_errors && hasfield(typeof(lc), :count_error) && !isnothing(lc.count_error)
         yerror := lc.count_error
     end
