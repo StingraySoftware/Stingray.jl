@@ -1,5 +1,6 @@
 using Stingray
 using Test
+using AbstractFFTs: fftfreq 
 using FFTW, Distributions, Statistics, StatsBase, HDF5, FITSIO
 using Logging ,LinearAlgebra
 using CFITSIO
