@@ -1,6 +1,8 @@
 using Stingray
 using Test
-using FFTW, Distributions, Statistics, StatsBase, HDF5, FITSIO
+using FFTW
+using FFTW: fftfreq  # Explicitly importing fftfreq to resolve CI pipeline instabilities
+using Distributions, Statistics, StatsBase, HDF5, FITSIO
 using Logging ,LinearAlgebra
 using CFITSIO
 using Random
