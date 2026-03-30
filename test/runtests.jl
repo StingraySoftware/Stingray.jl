@@ -4,8 +4,8 @@ using FFTW, Distributions, Statistics, StatsBase, HDF5, FITSIO
 using Logging ,LinearAlgebra
 using CFITSIO
 using Random
+using Plots
 
-include("test_fourier.jl")
 @testset "GTI" begin
     include("test_gti.jl")
 end
@@ -15,4 +15,8 @@ end
 
 @testset "lightcurve" begin
     include("test_lightcurve.jl")
+end
+
+@testset "Plotting" begin
+    include("test_plotting.jl")
 end
