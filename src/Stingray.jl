@@ -6,6 +6,9 @@ using ProgressBars: tqdm as show_progress
 using DocStringExtensions
 using LinearAlgebra
 using Random
+using CairoMakie
+using Interpolations
+using RecipesBase
 
 include("fourier.jl")
 export positive_fft_bins
