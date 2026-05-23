@@ -88,5 +88,7 @@ export hue_from_logpower_color
 export DEFAULT_COLOR_CONFIGURATION
 export plot_power_colors
 export plot_hues
+export PowerColorPlot
+export HuePlot
 
 end

@@ -433,3 +433,119 @@ function plot_hues(
 
     return fig, ax
 end
+
+# RecipesBase / Plots.jl support
+
+"""
+    PowerColorPlot(pc0, pc0_err, pc1, pc1_err; plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
+
+Wrapper type for plotting power colors via `Plots.jl`.
+
+# Usage
+```julia
+using Plots
+plot(PowerColorPlot(pc0, pc0_err, pc1, pc1_err))
+plot(PowerColorPlot(pc0, pc0_err, pc1, pc1_err; plot_spans=true))
+```
+"""
+struct PowerColorPlot
+    pc0
+    pc0_err
+    pc1
+    pc1_err
+    plot_spans::Bool
+    configuration::Dict{String, Any}
+end
+
+function PowerColorPlot(pc0, pc0_err, pc1, pc1_err;
+    plot_spans::Bool = false,
+    configuration = DEFAULT_COLOR_CONFIGURATION,
+)
+    return PowerColorPlot(pc0, pc0_err, pc1, pc1_err, plot_spans, configuration)
+end
+
+@recipe function f(p::PowerColorPlot)
+    pc0_log = log10(p.pc0)
+    pc1_log = log10(p.pc1)
+    pc0_err_log = (1 / p.pc0) * p.pc0_err
+    pc1_err_log = (1 / p.pc1) * p.pc1_err
+
+    xlabel --> "log₁₀PC1"
+    ylabel --> "log₁₀PC2"
+    aspect_ratio --> :equal
+    legend --> false
+
+    if p.plot_spans
+        center = log10.(p.configuration["center"])
+        xlims --> (center[1] - 2, center[1] + 2)
+        ylims --> (center[2] - 2, center[2] + 2)
+    end
+
+    @series begin
+        seriestype := :scatter
+        markersize --> 5
+        markercolor --> :black
+        xerror := [pc0_err_log]
+        yerror := [pc1_err_log]
+        [pc0_log], [pc1_log]
+    end
+end
+
+"""
+    HuePlot(rms, rms_err, pc0, pc1; polar=false, plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
+
+Wrapper type for plotting hue vs rms via `Plots.jl`.
+
+# Usage
+```julia
+using Plots
+plot(HuePlot(rms, rms_err, pc0, pc1))
+plot(HuePlot(rms, rms_err, pc0, pc1; plot_spans=true))
+```
+"""
+struct HuePlot
+    rms
+    rms_err
+    pc0
+    pc1
+    polar::Bool
+    plot_spans::Bool
+    configuration::Dict{String, Any}
+end
+
+function HuePlot(rms, rms_err, pc0, pc1;
+    polar::Bool = false,
+    plot_spans::Bool = false,
+    configuration = DEFAULT_COLOR_CONFIGURATION,
+)
+    return HuePlot(rms, rms_err, pc0, pc1, polar, plot_spans, configuration)
+end
+
+@recipe function f(h::HuePlot)
+    pc0_arr = h.pc0 isa Real ? [h.pc0] : collect(h.pc0)
+    pc1_arr = h.pc1 isa Real ? [h.pc1] : collect(h.pc1)
+    rms_arr = h.rms isa Real ? [h.rms] : collect(h.rms)
+    rmse_arr = h.rms_err isa Real ? [h.rms_err] : collect(h.rms_err)
+
+    hues = hue_from_power_color(pc0_arr, pc1_arr)
+    hues = mod.(hues, 2π)
+    hue_plot = h.polar ? hues : rad2deg.(hues)
+
+    xlabel --> (h.polar ? "Hue (rad)" : "Hue (degrees)")
+    ylabel --> "Fractional rms"
+    legend --> false
+
+    if !h.polar
+        xlims --> (0, 360)
+        ylims --> (0, 0.7)
+    end
+
+    @series begin
+        seriestype := :scatter
+        markersize --> 5
+        markercolor --> :steelblue
+        markeralpha --> 0.8
+        yerror := rmse_arr
+        hue_plot, rms_arr
+    end
+end
