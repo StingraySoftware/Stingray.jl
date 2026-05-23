@@ -209,3 +209,227 @@ function hue_from_logpower_color(
 end
 
 _limit_angle_to_360(angle) = mod(angle, 360)
+
+function _get_rms_span_functions(configuration = DEFAULT_COLOR_CONFIGURATION)
+    rms_spans = configuration["rms_spans"]
+    x = sort(collect(keys(rms_spans)))
+    ymin = [rms_spans[k][1] for k in x]
+    ymax = [rms_spans[k][2] for k in x]
+
+    x_float = Float64.(x)
+    ymin_func = linear_interpolation(x_float, Float64.(ymin))
+    ymax_func = linear_interpolation(x_float, Float64.(ymax))
+    return ymin_func, ymax_func
+end
+
+function _hue_line_data(center, angle; ref_angle = 3 * π / 4)
+    plot_angle = mod(-angle + ref_angle, 2π)
+    m = tan(plot_angle)
+
+    if isinf(m)
+        x = fill(center[1], 20)
+        y = range(-4, 4; length = 20)
+    else
+        x = range(0, 4; length = 20) .* sign(cos(plot_angle)) .+ center[1]
+        y = center[2] .+ m .* (x .- center[1])
+    end
+    return collect(x), collect(y)
+end
+
+function _create_rms_hue_plot(;
+    polar::Bool = false,
+    plot_spans::Bool = false,
+    configuration = DEFAULT_COLOR_CONFIGURATION,
+)
+    fig = CairoMakie.Figure(size = (600, 500))
+
+    if polar
+        ax = CairoMakie.PolarAxis(fig[1, 1]; rlimits = (0, 0.75),
+            rticks = [0, 0.25, 0.5, 0.75])
+    else
+        ax = CairoMakie.Axis(fig[1, 1];
+            xlabel = "Hue (degrees)", ylabel = "Fractional rms",
+            limits = (0, 360, 0, 0.7))
+    end
+
+    if !plot_spans
+        return fig, ax
+    end
+
+    ymin_func, ymax_func = _get_rms_span_functions(configuration)
+
+    for (state, params) in configuration["state_definitions"]
+        color = params["color"]
+        xmin, xmax = params["hue_limits"]
+
+        x_lin = range(xmin, xmax; length = 20)
+        y_low = [ymin_func(xi) for xi in x_lin]
+        y_high = [ymax_func(xi) for xi in x_lin]
+
+        x_plot = polar ? deg2rad.(collect(x_lin)) : collect(x_lin)
+
+        CairoMakie.band!(ax, x_plot, y_low, y_high; color = (Symbol(color), 0.1))
+
+        if !polar && xmin < 0
+            x_wrap = range(xmin + 360, 360; length = 20)
+            x_orig = range(xmin, 0; length = 20)
+            y_low_w = [ymin_func(xi) for xi in x_orig]
+            y_high_w = [ymax_func(xi) for xi in x_orig]
+            CairoMakie.band!(ax, collect(x_wrap), y_low_w, y_high_w;
+                color = (Symbol(color), 0.1))
+        end
+        if !polar && xmax > 360
+            x_wrap = range(0, xmax - 360; length = 20)
+            x_orig = range(360, xmax; length = 20)
+            y_low_w = [ymin_func(xi) for xi in x_orig]
+            y_high_w = [ymax_func(xi) for xi in x_orig]
+            CairoMakie.band!(ax, collect(x_wrap), y_low_w, y_high_w;
+                color = (Symbol(color), 0.1))
+        end
+    end
+
+    return fig, ax
+end
+
+function _trace_states(ax, configuration = DEFAULT_COLOR_CONFIGURATION; alpha = 0.1)
+    center = log10.(configuration["center"])
+
+    for (state, params) in configuration["state_definitions"]
+        color = params["color"]
+        hue0, hue1 = params["hue_limits"]
+        hue_mean = (hue0 + hue1) / 2
+        hue_angle = mod(-deg2rad(hue_mean) + 3π / 4, 2π)
+
+        radius = 1.4
+        txt_x = radius * cos(hue_angle) + center[1]
+        txt_y = radius * sin(hue_angle) + center[2]
+        CairoMakie.text!(ax, txt_x, txt_y; text = state, align = (:center, :center),
+            color = :black, fontsize = 12)
+
+        next_angle = hue0 + 5.0
+        x0, y0 = _hue_line_data(center, deg2rad(hue0);
+            ref_angle = configuration["ref_angle"])
+
+        while next_angle <= hue1
+            x1, y1 = _hue_line_data(center, deg2rad(next_angle);
+                ref_angle = configuration["ref_angle"])
+            tri_x = [x0[1], x0[end], x1[end], x0[1]]
+            tri_y = [y0[1], y0[end], y1[end], y0[1]]
+            CairoMakie.poly!(ax, CairoMakie.Point2f.(zip(tri_x, tri_y));
+                color = (Symbol(color), alpha), strokewidth = 0)
+            x0, y0 = x1, y1
+            next_angle += 5.0
+        end
+    end
+end
+
+function _create_pc_plot(;
+    xrange = [-2, 2],
+    yrange = [-2, 2],
+    plot_spans::Bool = false,
+    configuration = DEFAULT_COLOR_CONFIGURATION,
+)
+    fig = CairoMakie.Figure(size = (600, 600))
+
+    if !plot_spans
+        ax = CairoMakie.Axis(fig[1, 1];
+            xlabel = "log₁₀PC1", ylabel = "log₁₀PC2", aspect = 1,
+            limits = (xrange[1], xrange[2], yrange[1], yrange[2]))
+        return fig, ax
+    end
+
+    center = log10.(configuration["center"])
+    ax = CairoMakie.Axis(fig[1, 1];
+        xlabel = "log₁₀PC1", ylabel = "log₁₀PC2", aspect = 1,
+        limits = (center[1] + xrange[1], center[1] + xrange[2],
+                  center[2] + yrange[1], center[2] + yrange[2]))
+
+    for angle in 0:20:359
+        x, y = _hue_line_data(center, deg2rad(angle);
+            ref_angle = configuration["ref_angle"])
+        CairoMakie.lines!(ax, x, y; linewidth = 0.2, linestyle = :dot,
+            color = (:black, 0.3))
+    end
+
+    CairoMakie.scatter!(ax, [center[1]], [center[2]]; marker = '+',
+        markersize = 15, color = :black)
+
+    limit_angles = Set{Float64}()
+    for (_, params) in configuration["state_definitions"]
+        for a in params["hue_limits"]
+            push!(limit_angles, _limit_angle_to_360(Float64(a)))
+        end
+    end
+
+    for angle in limit_angles
+        x, y = _hue_line_data(center, deg2rad(angle);
+            ref_angle = configuration["ref_angle"])
+        CairoMakie.lines!(ax, x, y; linewidth = 1, linestyle = :dot,
+            color = (:black, 1.0))
+    end
+
+    _trace_states(ax, configuration; alpha = 0.1)
+
+    return fig, ax
+end
+
+"""
+    plot_power_colors(p1, p1e, p2, p2e; plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
+
+Plot power colors in the log₁₀PC1 vs log₁₀PC2 plane using CairoMakie.
+
+# Returns
+`(fig, ax)` — CairoMakie Figure and Axis objects.
+"""
+function plot_power_colors(
+    p1, p1e, p2, p2e;
+    plot_spans::Bool = false,
+    configuration = DEFAULT_COLOR_CONFIGURATION,
+)
+    p1e_log = (1 / p1) * p1e
+    p2e_log = (1 / p2) * p2e
+    p1_log = log10(p1)
+    p2_log = log10(p2)
+
+    fig, ax = _create_pc_plot(; plot_spans = plot_spans, configuration = configuration)
+    CairoMakie.errorbars!(ax, [p1_log], [p2_log], [p1e_log]; direction = :x,
+        color = (:black, 0.4))
+    CairoMakie.errorbars!(ax, [p1_log], [p2_log], [p2e_log]; direction = :y,
+        color = (:black, 0.4))
+    CairoMakie.scatter!(ax, [p1_log], [p2_log]; color = :black, markersize = 8)
+
+    return fig, ax
+end
+
+"""
+    plot_hues(rms, rmse, pc1, pc2; polar=false, plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
+
+Plot hue angle vs fractional rms using CairoMakie.
+
+# Returns
+`(fig, ax)` — CairoMakie Figure and Axis objects.
+"""
+function plot_hues(
+    rms, rmse, pc1, pc2;
+    polar::Bool = false,
+    plot_spans::Bool = false,
+    configuration = DEFAULT_COLOR_CONFIGURATION,
+)
+    pc1_arr = pc1 isa Real ? [pc1] : collect(pc1)
+    pc2_arr = pc2 isa Real ? [pc2] : collect(pc2)
+    rms_arr = rms isa Real ? [rms] : collect(rms)
+    rmse_arr = rmse isa Real ? [rmse] : collect(rmse)
+
+    hues = hue_from_power_color(pc1_arr, pc2_arr)
+    hues = mod.(hues, 2π)
+
+    fig, ax = _create_rms_hue_plot(; polar = polar, plot_spans = plot_spans,
+        configuration = configuration)
+
+    hue_plot = polar ? hues : rad2deg.(hues)
+
+    CairoMakie.errorbars!(ax, hue_plot, rms_arr, rmse_arr; color = (:black, 0.5))
+    CairoMakie.scatter!(ax, hue_plot, rms_arr; markersize = 8, color = (:steelblue, 0.8))
+
+    return fig, ax
+end
