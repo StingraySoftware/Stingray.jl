@@ -25,6 +25,7 @@ export get_average_ctrate
 export get_flux_iterable_from_segments
 export avg_pds_from_events
 export avg_cs_from_events
+export integrate_power_in_frequency_range
 
 include("events.jl")
 export FITSMetadata,
