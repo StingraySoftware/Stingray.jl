@@ -81,4 +81,10 @@ export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
 
+include("power_colors.jl")
+export power_color
+export hue_from_power_color
+export hue_from_logpower_color
+export DEFAULT_COLOR_CONFIGURATION
+
 end
