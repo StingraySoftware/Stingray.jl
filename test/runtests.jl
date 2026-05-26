@@ -5,6 +5,7 @@ using Logging ,LinearAlgebra
 using CFITSIO
 using Random
 using CairoMakie
+using RecipesBase
 
 include("test_fourier.jl")
 @testset "GTI" begin

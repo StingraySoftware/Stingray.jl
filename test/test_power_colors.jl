@@ -96,4 +96,62 @@ rng = Random.Xoshiro(1259723)
         @test isapprox(val_pois, 1.0 * (5.0 - 1.0); rtol = 0.01)
     end
 
+    rms_val = 0.1
+    rmse_val = 0.01
+    configuration = deepcopy(DEFAULT_COLOR_CONFIGURATION)
+    configuration["state_definitions"]["HSS"]["hue_limits"] = [300, 370]
+
+    @testset "plot_power_colors: data correctness" begin
+        for plot_spans in [true, false]
+            fig, ax = plot_power_colors(pc0, pc0e, pc1, pc1e;
+                plot_spans = plot_spans, configuration = configuration)
+            @test fig isa CairoMakie.Figure
+
+            plots = ax.scene.plots
+            scatter_plots = filter(p -> p isa CairoMakie.Scatter, plots)
+            @test !isempty(scatter_plots)
+
+            last_scatter = scatter_plots[end]
+            positions = last_scatter[1][]
+            @test isapprox(Float64(positions[1][1]), log10(pc0); atol = 1e-6)
+            @test isapprox(Float64(positions[1][2]), log10(pc1); atol = 1e-6)
+        end
+    end
+
+    @testset "plot_hues: computed values" begin
+        for plot_spans in [true, false]
+            for polar in [true, false]
+                fig, ax = plot_hues(rms_val, rmse_val, pc0, pc1;
+                    polar = polar, plot_spans = plot_spans,
+                    configuration = configuration)
+                @test fig isa CairoMakie.Figure
+
+                expected_hue = hue_from_power_color(pc0, pc1)
+                expected_hue_mod = mod(expected_hue, 2π)
+
+                plots = ax.scene.plots
+                scatter_plots = filter(p -> p isa CairoMakie.Scatter, plots)
+                @test !isempty(scatter_plots)
+
+                last_scatter = scatter_plots[end]
+                positions = last_scatter[1][]
+                expected_x = polar ? expected_hue_mod : rad2deg(expected_hue_mod)
+                @test isapprox(Float64(positions[1][1]), expected_x; atol = 1e-3)
+                @test isapprox(Float64(positions[1][2]), rms_val; atol = 1e-6)
+            end
+        end
+    end
+
+    @testset "RecipesBase: PowerColorPlot recipe" begin
+        p = PowerColorPlot(pc0, pc0e, pc1, pc1e)
+        rec = RecipesBase.apply_recipe(Dict{Symbol, Any}(), p)
+        @test length(rec) > 0
+    end
+
+    @testset "RecipesBase: HuePlot recipe" begin
+        h = HuePlot(rms_val, rmse_val, pc0, pc1)
+        rec = RecipesBase.apply_recipe(Dict{Symbol, Any}(), h)
+        @test length(rec) > 0
+    end
+
 end

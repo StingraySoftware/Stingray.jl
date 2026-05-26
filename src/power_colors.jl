@@ -464,7 +464,7 @@ function PowerColorPlot(pc0, pc0_err, pc1, pc1_err;
     return PowerColorPlot(pc0, pc0_err, pc1, pc1_err, plot_spans, configuration)
 end
 
-@recipe function f(p::PowerColorPlot)
+RecipesBase.@recipe function f(p::PowerColorPlot)
     pc0_log = log10(p.pc0)
     pc1_log = log10(p.pc1)
     pc0_err_log = (1 / p.pc0) * p.pc0_err
@@ -481,7 +481,7 @@ end
         ylims --> (center[2] - 2, center[2] + 2)
     end
 
-    @series begin
+    RecipesBase.@series begin
         seriestype := :scatter
         markersize --> 5
         markercolor --> :black
@@ -521,7 +521,7 @@ function HuePlot(rms, rms_err, pc0, pc1;
     return HuePlot(rms, rms_err, pc0, pc1, polar, plot_spans, configuration)
 end
 
-@recipe function f(h::HuePlot)
+RecipesBase.@recipe function f(h::HuePlot)
     pc0_arr = h.pc0 isa Real ? [h.pc0] : collect(h.pc0)
     pc1_arr = h.pc1 isa Real ? [h.pc1] : collect(h.pc1)
     rms_arr = h.rms isa Real ? [h.rms] : collect(h.rms)
@@ -540,7 +540,7 @@ end
         ylims --> (0, 0.7)
     end
 
-    @series begin
+    RecipesBase.@series begin
         seriestype := :scatter
         markersize --> 5
         markercolor --> :steelblue
