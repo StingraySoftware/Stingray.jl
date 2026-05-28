@@ -213,7 +213,8 @@ end
         end
         if !binned
             event_times = @view times[idx0:idx1-1]
-            cts = fit(Histogram,float.(event_times .- s);nbins=n_bin).weights
+            edges = range(0, stop=e - s, length=n_bin + 1)
+            cts = fit(Histogram, float.(event_times .- s), edges).weights
         else
             cts = float.(@view fluxes[idx0+1:idx1])
             if !isnothing(errors)
@@ -275,7 +276,7 @@ function avg_pds_from_iterable(flux_iterable, dt::Real; norm::String="frac",
         # In the first loop, define the frequency and the freq. interval > 0
         if isnothing(cross)
             fgt0 = positive_fft_bins(n_bin)
-            freq = fftfreq(n_bin, dt)[fgt0]
+            freq = fftfreq(n_bin, 1/dt)[fgt0]
         end
 
         # No need for the negative frequencies
@@ -362,7 +363,7 @@ function avg_cs_from_iterables_quick(flux_iterable1 ,flux_iterable2,
         # positive frequency bins (after the first loop, cross will not be
         # nothing anymore)
         if isnothing(unnorm_cross)
-            freq = fftfreq(n_bin, dt)
+            freq = fftfreq(n_bin, 1/dt)
             fgt0 = positive_fft_bins(n_bin)
         end
 
@@ -493,7 +494,7 @@ function avg_cs_from_iterables(
         # positive frequency bins (after the first loop, cross will not be
         # nothing anymore)
         if isnothing(cross)
-            freq = fftfreq(n_bin, dt)
+            freq = fftfreq(n_bin, 1/dt)
             fgt0 = positive_fft_bins(n_bin)
         end
 
