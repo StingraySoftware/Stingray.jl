@@ -241,13 +241,13 @@ function _create_rms_hue_plot(;
     plot_spans::Bool = false,
     configuration = DEFAULT_COLOR_CONFIGURATION,
 )
-    fig = CairoMakie.Figure(size = (600, 500))
+    fig = Makie.Figure(size = (600, 500))
 
     if polar
-        ax = CairoMakie.PolarAxis(fig[1, 1]; rlimits = (0, 0.75),
+        ax = Makie.PolarAxis(fig[1, 1]; rlimits = (0, 0.75),
             rticks = [0, 0.25, 0.5, 0.75])
     else
-        ax = CairoMakie.Axis(fig[1, 1];
+        ax = Makie.Axis(fig[1, 1];
             xlabel = "Hue (degrees)", ylabel = "Fractional rms",
             limits = (0, 360, 0, 0.7))
     end
@@ -268,14 +268,14 @@ function _create_rms_hue_plot(;
 
         x_plot = polar ? deg2rad.(collect(x_lin)) : collect(x_lin)
 
-        CairoMakie.band!(ax, x_plot, y_low, y_high; color = (Symbol(color), 0.1))
+        Makie.band!(ax, x_plot, y_low, y_high; color = (Symbol(color), 0.1))
 
         if !polar && xmin < 0
             x_wrap = range(xmin + 360, 360; length = 20)
             x_orig = range(xmin, 0; length = 20)
             y_low_w = [ymin_func(xi) for xi in x_orig]
             y_high_w = [ymax_func(xi) for xi in x_orig]
-            CairoMakie.band!(ax, collect(x_wrap), y_low_w, y_high_w;
+            Makie.band!(ax, collect(x_wrap), y_low_w, y_high_w;
                 color = (Symbol(color), 0.1))
         end
         if !polar && xmax > 360
@@ -283,7 +283,7 @@ function _create_rms_hue_plot(;
             x_orig = range(360, xmax; length = 20)
             y_low_w = [ymin_func(xi) for xi in x_orig]
             y_high_w = [ymax_func(xi) for xi in x_orig]
-            CairoMakie.band!(ax, collect(x_wrap), y_low_w, y_high_w;
+            Makie.band!(ax, collect(x_wrap), y_low_w, y_high_w;
                 color = (Symbol(color), 0.1))
         end
     end
@@ -303,7 +303,7 @@ function _trace_states(ax, configuration = DEFAULT_COLOR_CONFIGURATION; alpha = 
         radius = 1.4
         txt_x = radius * cos(hue_angle) + center[1]
         txt_y = radius * sin(hue_angle) + center[2]
-        CairoMakie.text!(ax, txt_x, txt_y; text = state, align = (:center, :center),
+        Makie.text!(ax, txt_x, txt_y; text = state, align = (:center, :center),
             color = :black, fontsize = 12)
 
         next_angle = hue0 + 5.0
@@ -315,7 +315,7 @@ function _trace_states(ax, configuration = DEFAULT_COLOR_CONFIGURATION; alpha = 
                 ref_angle = configuration["ref_angle"])
             tri_x = [x0[1], x0[end], x1[end], x0[1]]
             tri_y = [y0[1], y0[end], y1[end], y0[1]]
-            CairoMakie.poly!(ax, CairoMakie.Point2f.(zip(tri_x, tri_y));
+            Makie.poly!(ax, Makie.Point2f.(zip(tri_x, tri_y));
                 color = (Symbol(color), alpha), strokewidth = 0)
             x0, y0 = x1, y1
             next_angle += 5.0
@@ -329,17 +329,17 @@ function _create_pc_plot(;
     plot_spans::Bool = false,
     configuration = DEFAULT_COLOR_CONFIGURATION,
 )
-    fig = CairoMakie.Figure(size = (600, 600))
+    fig = Makie.Figure(size = (600, 600))
 
     if !plot_spans
-        ax = CairoMakie.Axis(fig[1, 1];
+        ax = Makie.Axis(fig[1, 1];
             xlabel = "log₁₀PC1", ylabel = "log₁₀PC2", aspect = 1,
             limits = (xrange[1], xrange[2], yrange[1], yrange[2]))
         return fig, ax
     end
 
     center = log10.(configuration["center"])
-    ax = CairoMakie.Axis(fig[1, 1];
+    ax = Makie.Axis(fig[1, 1];
         xlabel = "log₁₀PC1", ylabel = "log₁₀PC2", aspect = 1,
         limits = (center[1] + xrange[1], center[1] + xrange[2],
                   center[2] + yrange[1], center[2] + yrange[2]))
@@ -347,11 +347,11 @@ function _create_pc_plot(;
     for angle in 0:20:359
         x, y = _hue_line_data(center, deg2rad(angle);
             ref_angle = configuration["ref_angle"])
-        CairoMakie.lines!(ax, x, y; linewidth = 0.2, linestyle = :dot,
+        Makie.lines!(ax, x, y; linewidth = 0.2, linestyle = :dot,
             color = (:black, 0.3))
     end
 
-    CairoMakie.scatter!(ax, [center[1]], [center[2]]; marker = '+',
+    Makie.scatter!(ax, [center[1]], [center[2]]; marker = '+',
         markersize = 15, color = :black)
 
     limit_angles = Set{Float64}()
@@ -364,7 +364,7 @@ function _create_pc_plot(;
     for angle in limit_angles
         x, y = _hue_line_data(center, deg2rad(angle);
             ref_angle = configuration["ref_angle"])
-        CairoMakie.lines!(ax, x, y; linewidth = 1, linestyle = :dot,
+        Makie.lines!(ax, x, y; linewidth = 1, linestyle = :dot,
             color = (:black, 1.0))
     end
 
@@ -376,10 +376,10 @@ end
 """
     plot_power_colors(p1, p1e, p2, p2e; plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
 
-Plot power colors in the log₁₀PC1 vs log₁₀PC2 plane using CairoMakie.
+Plot power colors in the log₁₀PC1 vs log₁₀PC2 plane using Makie.
 
 # Returns
-`(fig, ax)` — CairoMakie Figure and Axis objects.
+`(fig, ax)` — Makie Figure and Axis objects.
 """
 function plot_power_colors(
     p1, p1e, p2, p2e;
@@ -392,11 +392,11 @@ function plot_power_colors(
     p2_log = log10(p2)
 
     fig, ax = _create_pc_plot(; plot_spans = plot_spans, configuration = configuration)
-    CairoMakie.errorbars!(ax, [p1_log], [p2_log], [p1e_log]; direction = :x,
+    Makie.errorbars!(ax, [p1_log], [p2_log], [p1e_log]; direction = :x,
         color = (:black, 0.4))
-    CairoMakie.errorbars!(ax, [p1_log], [p2_log], [p2e_log]; direction = :y,
+    Makie.errorbars!(ax, [p1_log], [p2_log], [p2e_log]; direction = :y,
         color = (:black, 0.4))
-    CairoMakie.scatter!(ax, [p1_log], [p2_log]; color = :black, markersize = 8)
+    Makie.scatter!(ax, [p1_log], [p2_log]; color = :black, markersize = 8)
 
     return fig, ax
 end
@@ -404,10 +404,10 @@ end
 """
     plot_hues(rms, rmse, pc1, pc2; polar=false, plot_spans=false, configuration=DEFAULT_COLOR_CONFIGURATION)
 
-Plot hue angle vs fractional rms using CairoMakie.
+Plot hue angle vs fractional rms using Makie.
 
 # Returns
-`(fig, ax)` — CairoMakie Figure and Axis objects.
+`(fig, ax)` — Makie Figure and Axis objects.
 """
 function plot_hues(
     rms, rmse, pc1, pc2;
@@ -428,8 +428,8 @@ function plot_hues(
 
     hue_plot = polar ? hues : rad2deg.(hues)
 
-    CairoMakie.errorbars!(ax, hue_plot, rms_arr, rmse_arr; color = (:black, 0.5))
-    CairoMakie.scatter!(ax, hue_plot, rms_arr; markersize = 8, color = (:steelblue, 0.8))
+    Makie.errorbars!(ax, hue_plot, rms_arr, rmse_arr; color = (:black, 0.5))
+    Makie.scatter!(ax, hue_plot, rms_arr; markersize = 8, color = (:steelblue, 0.8))
 
     return fig, ax
 end

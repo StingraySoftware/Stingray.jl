@@ -6,7 +6,7 @@ using ProgressBars: tqdm as show_progress
 using DocStringExtensions
 using LinearAlgebra
 using Random
-using CairoMakie
+using Makie
 using Interpolations
 using RecipesBase
 

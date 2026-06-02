@@ -105,10 +105,10 @@ rng = Random.Xoshiro(1259723)
         for plot_spans in [true, false]
             fig, ax = plot_power_colors(pc0, pc0e, pc1, pc1e;
                 plot_spans = plot_spans, configuration = configuration)
-            @test fig isa CairoMakie.Figure
+            @test fig isa Makie.Figure
 
             plots = ax.scene.plots
-            scatter_plots = filter(p -> p isa CairoMakie.Scatter, plots)
+            scatter_plots = filter(p -> p isa Makie.Scatter, plots)
             @test !isempty(scatter_plots)
 
             last_scatter = scatter_plots[end]
@@ -124,13 +124,13 @@ rng = Random.Xoshiro(1259723)
                 fig, ax = plot_hues(rms_val, rmse_val, pc0, pc1;
                     polar = polar, plot_spans = plot_spans,
                     configuration = configuration)
-                @test fig isa CairoMakie.Figure
+                @test fig isa Makie.Figure
 
                 expected_hue = hue_from_power_color(pc0, pc1)
                 expected_hue_mod = mod(expected_hue, 2π)
 
                 plots = ax.scene.plots
-                scatter_plots = filter(p -> p isa CairoMakie.Scatter, plots)
+                scatter_plots = filter(p -> p isa Makie.Scatter, plots)
                 @test !isempty(scatter_plots)
 
                 last_scatter = scatter_plots[end]
