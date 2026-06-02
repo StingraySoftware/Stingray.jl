@@ -52,6 +52,40 @@ end
     @test filter(x -> x >0, freq) == freq[goodbins]
 end
 
+@testset "test_fftfreq_uses_sampling_rate" begin
+    dt = 0.5
+    segment_size = 50.0
+    n_bin = round(Int, segment_size / dt)
+    times = sort(rand(Uniform(0, 100), 10000))
+    gti = [[0 100];;]
+    result = avg_pds_from_events(times, gti, segment_size, dt, silent=true)
+    freqs = result[!, "freq"]
+    df = 1 / segment_size
+    @test freqs[1] ≈ df
+    @test (freqs[2] - freqs[1]) ≈ df
+    @test maximum(freqs) ≈ (n_bin ÷ 2 - 1) * df
+end
+
+@testset "test_histogram_bin_edges_align_with_segment" begin
+    segment_size = 10.0
+    n_bin = 20
+    dt = segment_size / n_bin
+    times = sort(rand(Uniform(0, 100), 5000))
+    gti = [[0 100];;]
+    flux_iter = collect(get_flux_iterable_from_segments(
+        times, gti, segment_size, n_bin=n_bin))
+    n_segments = round(Int, 100 / segment_size)
+    for (i, flux) in enumerate(flux_iter)
+        if !isnothing(flux) && !all(iszero, flux)
+            @test length(flux) == n_bin
+            seg_start = (i - 1) * segment_size
+            seg_end = i * segment_size
+            expected_count = count(t -> seg_start <= t < seg_end, times)
+            @test sum(flux) == expected_count
+        end
+    end
+end
+
 @testset "test_coherence" begin
 
     fid = h5open(joinpath(@__DIR__ ,"data","sample_variable_lc.h5"),"r")
