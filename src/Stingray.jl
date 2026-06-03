@@ -77,4 +77,13 @@ export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
 
+include("missionSupport.jl")
+export MissionSupport,
+       get_mission_support,
+       apply_calibration,
+       patch_mission_info,
+       SIMPLE_CALIBRATION_FUNCS,
+       interpret_fits_data!,
+       AbstractMissionSupport
+
 end

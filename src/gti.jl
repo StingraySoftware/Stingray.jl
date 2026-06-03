@@ -97,13 +97,13 @@ function check_gtis(gti::AbstractMatrix)
     gti_start = @view gti[:, 1]
     gti_end = @view gti[:, 2]
 
-    if any(gti_end < gti_start)
+    if any(gti_end .< gti_start)
         throw(ArgumentError(
             "The GTI end times must be larger than the GTI start times."
         )) 
     end
 
-    if any(@view(gti_start[begin+1:end]) < @view(gti_end[begin:end-1]))
+    if any(@view(gti_start[begin+1:end]) .< @view(gti_end[begin:end-1]))
         throw(ArgumentError(
             "This GTI has overlaps"
         ))
