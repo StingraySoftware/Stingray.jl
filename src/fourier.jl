@@ -760,3 +760,86 @@ function avg_cs_from_events(times1:: AbstractVector{<:Real}, times2:: AbstractVe
     
     return results
 end
+
+"""
+    integrate_power_in_frequency_range(frequency, power, frequency_range;
+        power_err=nothing, df=nothing, m=1, poisson_power=0)
+
+Integrate the power in a given frequency range.
+
+Handles partial bins at the edges of the frequency range by applying fractional
+correction ratios. Subtracts Poisson noise before integration.
+
+# Arguments
+- `frequency::AbstractVector{<:Real}`: The frequencies of the power spectrum
+- `power::AbstractVector`: The power at each frequency
+- `frequency_range`: A 2-element iterable `[f_low, f_high]`
+
+# Keyword Arguments
+- `power_err::Union{Nothing, AbstractVector}`: Power error bars. If `nothing`,
+  defaults to `power / √m`.
+- `df::Union{Nothing, Real, AbstractVector}`: Frequency resolution. If `nothing`,
+  computed from `median(diff(frequency))`.
+- `m::Int`: Number of averaged segments/bins (used for default errors).
+- `poisson_power::Union{Real, AbstractVector}`: Poisson noise level. Scalar or
+  per-frequency array.
+
+# Returns
+- `(power_integrated, power_err_integrated)` — integrated variance and its uncertainty.
+
+# References
+Heil et al. 2015, MNRAS, 448, 3348.
+"""
+function integrate_power_in_frequency_range(
+    frequency::AbstractVector{<:Real},
+    power::AbstractVector,
+    frequency_range;
+    power_err::Union{Nothing, AbstractVector} = nothing,
+    df::Union{Nothing, Real, AbstractVector} = nothing,
+    m::Int = 1,
+    poisson_power::Union{Real, AbstractVector} = 0,
+)
+    n = length(frequency)
+
+    pois = if poisson_power isa Real
+        fill(float(poisson_power), n)
+    else
+        collect(poisson_power)
+    end
+
+    df_arr = if isnothing(df)
+        fill(median(diff(frequency)), n)
+    elseif df isa Real
+        fill(float(df), n)
+    else
+        collect(df)
+    end
+
+    frequency_mask = @. (frequency + df_arr / 2 > frequency_range[1]) &
+                        (frequency - df_arr / 2 < frequency_range[2])
+
+    @views begin
+        freqs_to_integrate = frequency[frequency_mask]
+        pois_to_integrate = pois[frequency_mask]
+        dfs_to_integrate = df_arr[frequency_mask]
+        powers_to_integrate = power[frequency_mask]
+    end
+
+    correction_ratios = ones(eltype(frequency), length(freqs_to_integrate))
+    correction_ratios[1] = (freqs_to_integrate[1] + dfs_to_integrate[1] / 2 -
+                            frequency_range[1]) / dfs_to_integrate[1]
+    correction_ratios[end] = (frequency_range[2] - freqs_to_integrate[end] +
+                              dfs_to_integrate[end] / 2) / dfs_to_integrate[end]
+    effective_dfs = dfs_to_integrate .* correction_ratios
+
+    pow_err = if isnothing(power_err)
+        real.(powers_to_integrate) ./ sqrt(m)
+    else
+        @views power_err[frequency_mask]
+    end
+
+    power_integrated = sum(real.(powers_to_integrate .- pois_to_integrate) .* effective_dfs)
+    power_err_integrated = sqrt(sum((pow_err .* effective_dfs) .^ 2))
+
+    return power_integrated, power_err_integrated
+end

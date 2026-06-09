@@ -6,6 +6,9 @@ using ProgressBars: tqdm as show_progress
 using DocStringExtensions
 using LinearAlgebra
 using Random
+using Makie
+using Interpolations
+using RecipesBase
 
 include("fourier.jl")
 export positive_fft_bins
@@ -22,6 +25,7 @@ export get_average_ctrate
 export get_flux_iterable_from_segments
 export avg_pds_from_events
 export avg_cs_from_events
+export integrate_power_in_frequency_range
 
 include("events.jl")
 export FITSMetadata,
@@ -76,5 +80,15 @@ export fill_bad_time_intervals!
 export create_filtered_lightcurve
 export check_gtis
 export split_by_gtis
+
+include("power_colors.jl")
+export power_color
+export hue_from_power_color
+export hue_from_logpower_color
+export DEFAULT_COLOR_CONFIGURATION
+export plot_power_colors
+export plot_hues
+export PowerColorPlot
+export HuePlot
 
 end

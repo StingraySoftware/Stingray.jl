@@ -4,6 +4,8 @@ using FFTW, Distributions, Statistics, StatsBase, HDF5, FITSIO
 using Logging ,LinearAlgebra
 using CFITSIO
 using Random
+using CairoMakie
+using RecipesBase
 
 include("test_fourier.jl")
 @testset "GTI" begin
@@ -16,3 +18,5 @@ end
 @testset "lightcurve" begin
     include("test_lightcurve.jl")
 end
+
+include("test_power_colors.jl")
