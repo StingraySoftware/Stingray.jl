@@ -34,4 +34,78 @@ using Stingray
         @test eltype(ps.power) <: Real
     end
 
+    @testset "Base.show" begin
+        freq = [1.0, 2.0, 3.0]
+        power = [1.5, 2.0, 1.8]
+        test_gti = [0.0 10.0]
+        ps = Powerspectrum{Float64}(
+            freq, power, power, power, power,
+            1.0, 0.0001, 100000, 1, 1,
+            1000.0, "leahy", test_gti, 10.0, nothing,
+            "poisson", "powerspectrum"
+        )
+        buf = IOBuffer()
+        show(buf, ps)
+        s = String(take!(buf))
+        @test occursin("Powerspectrum", s)
+        @test occursin("leahy", s)
+        @test occursin("1 segments", s)
+    end
+
+    @testset "EventList constructor" begin
+        test_gti = [0.0 10.0]
+        meta = FITSMetadata(
+            "[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(),
+            test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing
+        )
+        rng = MersenneTwister(20150907)
+        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
+        ev = EventList(times1, nothing, meta)
+
+        ps = Powerspectrum(ev, 10.0, 0.001; norm="frac", silent=true)
+
+        @test ps isa Powerspectrum{Float64}
+        @test ps.norm == "frac"
+        @test ps.type == "powerspectrum"
+        @test length(ps.freq) > 0
+        @test ps.df > 0
+        @test ps.m >= 1
+        @test ps.k == 1
+        @test ps.nphots > 0
+        @test ps.err_dist == "poisson"
+        @test eltype(ps.power) <: Real
+    end
+
+    @testset "EventList constructor normalizations" begin
+        test_gti = [0.0 10.0]
+        meta = FITSMetadata(
+            "[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(),
+            test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing
+        )
+        rng = MersenneTwister(42)
+        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
+        ev = EventList(times1, nothing, meta)
+
+        for norm in ["frac", "abs", "leahy", "none"]
+            ps = Powerspectrum(ev, 10.0, 0.001; norm=norm, silent=true)
+            @test ps.norm == norm
+            @test length(ps.freq) > 0
+        end
+    end
+
+    @testset "power_err calculation" begin
+        test_gti = [0.0 10.0]
+        meta = FITSMetadata(
+            "[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(),
+            test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing
+        )
+        rng = MersenneTwister(123)
+        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
+        ev = EventList(times1, nothing, meta)
+
+        ps = Powerspectrum(ev, 10.0, 0.001; norm="frac", silent=true)
+        expected_err = ps.power ./ sqrt(ps.m)
+        @test ps.power_err ≈ expected_err
+    end
+
 end
