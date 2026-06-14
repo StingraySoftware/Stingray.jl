@@ -77,3 +77,11 @@ struct Crossspectrum{T<:Real} <: AbstractCrossspectrum
     err_dist::String
     type::String
 end
+
+function Base.show(io::IO, cs::Crossspectrum{T}) where T
+    print(io, "Crossspectrum($(cs.norm), $(cs.m) segments, ",
+          "$(length(cs.freq)) freq bins, ",
+          "df=$(round(cs.df, sigdigits=4)) Hz, ",
+          "freq range=[$(round(cs.freq[1], sigdigits=4)), ",
+          "$(round(cs.freq[end], sigdigits=4))] Hz)")
+end
