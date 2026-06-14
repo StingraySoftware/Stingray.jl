@@ -108,4 +108,27 @@ using Stingray
         @test ps.power_err ≈ expected_err
     end
 
+    @testset "LightCurve constructor" begin
+        test_gti = [0.0 10.0]
+        meta = FITSMetadata(
+            "[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(),
+            test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing
+        )
+        rng = MersenneTwister(20150907)
+        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
+        ev = EventList(times1, nothing, meta)
+
+        lc = create_lightcurve(ev, 0.001)
+
+        ps = Powerspectrum(lc, 10.0; norm="frac", silent=true)
+
+        @test ps isa Powerspectrum{Float64}
+        @test ps.norm == "frac"
+        @test ps.type == "powerspectrum"
+        @test length(ps.freq) > 0
+        @test ps.m >= 1
+        @test ps.k == 1
+        @test ps.err_dist == "poisson"
+    end
+
 end
