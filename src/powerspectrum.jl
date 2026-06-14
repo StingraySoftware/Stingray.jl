@@ -46,3 +46,11 @@ struct Powerspectrum{T<:Real} <: AbstractPowerspectrum
     err_dist::String
     type::String
 end
+
+function Base.show(io::IO, ps::Powerspectrum{T}) where T
+    print(io, "Powerspectrum($(ps.norm), $(ps.m) segments, ",
+          "$(length(ps.freq)) freq bins, ",
+          "df=$(round(ps.df, sigdigits=4)) Hz, ",
+          "freq range=[$(round(ps.freq[1], sigdigits=4)), ",
+          "$(round(ps.freq[end], sigdigits=4))] Hz)")
+end
