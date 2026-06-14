@@ -187,3 +187,90 @@ function Crossspectrum(ev1::EventList, ev2::EventList,
         "poisson", "crossspectrum"
     )
 end
+
+"""
+    Crossspectrum(lc1::LightCurve, lc2::LightCurve, segment_size::Real; kwargs...)
+
+Construct a `Crossspectrum` from two `LightCurve` objects.
+
+Extracts times, counts, and derives GTIs from the light curves' time ranges.
+The dt is taken from `lc.dt` (the bin size stored on the LightCurve struct).
+
+# Arguments
+- `lc1::LightCurve`: Light curve for the subject band.
+- `lc2::LightCurve`: Light curve for the reference band.
+- `segment_size::Real`: Length of each segment in seconds.
+
+# Keyword Arguments
+Same as the EventList constructor, except `dt` is derived from the light curve.
+"""
+function Crossspectrum(lc1::LightCurve, lc2::LightCurve,
+                       segment_size::Real;
+                       norm::String="frac",
+                       use_common_mean::Bool=true,
+                       silent::Bool=false,
+                       fullspec::Bool=false,
+                       power_type::String="all",
+                       return_auxil::Bool=false)
+
+    # dt is a direct field on LightCurve, handle Union{T,Vector{T}}
+    dt_val = lc1.dt isa AbstractVector ? lc1.dt[1] : lc1.dt
+
+    # Derive GTI from light curve time ranges (LightCurveMetadata has no gti field)
+    lc1_gti = [lc1.metadata.time_range[1] lc1.metadata.time_range[2]]
+    lc2_gti = [lc2.metadata.time_range[1] lc2.metadata.time_range[2]]
+    common_gti = operations_on_gtis([lc1_gti, lc2_gti], intersect)
+
+    result = avg_cs_from_events(
+        lc1.time, lc2.time, common_gti,
+        segment_size, dt_val;
+        norm=norm,
+        use_common_mean=use_common_mean,
+        silent=silent,
+        fullspec=fullspec,
+        power_type=power_type,
+        fluxes1=Float64.(lc1.counts),
+        fluxes2=Float64.(lc2.counts),
+        return_auxil=return_auxil
+    )
+
+    if isnothing(result)
+        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
+    end
+
+    freq = Float64.(result[!, "freq"])
+    power = Complex{Float64}.(result[!, "power"])
+    unnorm_power = Complex{Float64}.(result[!, "unnorm_power"])
+
+    n_bin = round(Int, segment_size / dt_val)
+    dt_adj = segment_size / n_bin
+    df_val = 1.0 / segment_size
+    m_val = _count_valid_segments(common_gti, segment_size)
+
+    power_err = power ./ sqrt(m_val)
+    unnorm_power_err = unnorm_power ./ sqrt(m_val)
+
+    _pds1 = "pds1" in names(result) ? Float64.(real.(result[!, "pds1"])) : nothing
+    _pds2 = "pds2" in names(result) ? Float64.(real.(result[!, "pds2"])) : nothing
+
+    nphots1_val = Float64(sum(lc1.counts)) / m_val
+    nphots2_val = Float64(sum(lc2.counts)) / m_val
+    nphots_val = sqrt(nphots1_val * nphots2_val)
+    countrate1_val = nphots1_val / segment_size
+    countrate2_val = nphots2_val / segment_size
+
+    # Determine error distribution from LightCurve err_method
+    err_dist = lc1.err_method == :gaussian ? "gauss" : "poisson"
+
+    return Crossspectrum{Float64}(
+        freq, power, power_err, unnorm_power, unnorm_power_err,
+        _pds1, _pds2,
+        df_val, dt_adj, n_bin, m_val,
+        1,
+        nphots_val, nphots1_val, nphots2_val,
+        countrate1_val, countrate2_val,
+        norm, power_type, fullspec,
+        common_gti, Float64(segment_size),
+        err_dist, "crossspectrum"
+    )
+end
