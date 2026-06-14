@@ -117,3 +117,72 @@ function Powerspectrum(ev::EventList, segment_size::Real, dt::Real;
         nothing, "poisson", "powerspectrum"
     )
 end
+
+"""
+    Powerspectrum(lc::LightCurve, segment_size::Real; kwargs...)
+
+Construct a `Powerspectrum` from a `LightCurve`.
+
+Extracts times, counts, and derives GTI from the light curve's time range.
+The dt is taken from `lc.dt` (the bin size stored on the LightCurve struct).
+
+# Arguments
+- `lc::LightCurve`: The input light curve.
+- `segment_size::Real`: Length of each segment in seconds.
+
+# Keyword Arguments
+- `norm::String="frac"`: Normalization ("frac", "abs", "leahy", "none").
+- `use_common_mean::Bool=true`: Use the mean from the full light curve.
+- `silent::Bool=false`: Suppress progress bars.
+"""
+function Powerspectrum(lc::LightCurve, segment_size::Real;
+                       norm::String="frac",
+                       use_common_mean::Bool=true,
+                       silent::Bool=false)
+
+    # dt is a direct field on LightCurve, handle Union{T,Vector{T}}
+    dt_val = lc.dt isa AbstractVector ? lc.dt[1] : lc.dt
+
+    # Derive GTI from light curve time range (LightCurveMetadata has no gti field)
+    lc_gti = [lc.metadata.time_range[1] lc.metadata.time_range[2]]
+
+    result = avg_pds_from_events(
+        lc.time, lc_gti,
+        segment_size, dt_val;
+        norm=norm,
+        use_common_mean=use_common_mean,
+        silent=silent,
+        fluxes=Float64.(lc.counts)
+    )
+
+    if isnothing(result)
+        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
+    end
+
+    freq = Float64.(result[!, "freq"])
+    power = Float64.(real.(result[!, "power"]))
+    unnorm_power = Float64.(real.(result[!, "unnorm_power"]))
+
+    n_bin = round(Int, segment_size / dt_val)
+    dt_adj = segment_size / n_bin
+    df_val = 1.0 / segment_size
+    m_val = _count_valid_segments(lc_gti, segment_size)
+
+    power_err = power ./ sqrt(m_val)
+    unnorm_power_err = unnorm_power ./ sqrt(m_val)
+
+    nphots_val = Float64(sum(lc.counts)) / m_val
+
+    # Determine error distribution from LightCurve err_method
+    err_dist = lc.err_method == :gaussian ? "gauss" : "poisson"
+    variance_val = err_dist == "gauss" ? Float64(var(lc.counts)) : nothing
+
+    return Powerspectrum{Float64}(
+        freq, power, power_err, unnorm_power, unnorm_power_err,
+        df_val, dt_adj, n_bin, m_val,
+        1,
+        nphots_val, norm,
+        lc_gti, Float64(segment_size),
+        variance_val, err_dist, "powerspectrum"
+    )
+end
