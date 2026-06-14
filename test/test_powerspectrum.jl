@@ -131,4 +131,26 @@ using Stingray
         @test ps.err_dist == "poisson"
     end
 
+    @testset "Leahy normalization Poisson noise" begin
+        # Simulate Poisson noise
+        rng = MersenneTwister(42)
+        rate = 100.0  # counts/s
+        duration = 100.0
+        dt = 0.01
+        times = sort(rand(rng, Uniform(0.0, duration), round(Int, rate * duration)))
+        
+        test_gti = [0.0 duration]
+        meta = FITSMetadata(
+            "[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(),
+            test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing
+        )
+        ev = EventList(times, nothing, meta)
+
+        ps = Powerspectrum(ev, duration, dt; norm="leahy", silent=true)
+        
+        # In Leahy norm, Poisson noise should have mean power ≈ 2.0
+        # Exclude the DC bin (first bin) if necessary, but here we can check the whole array
+        @test isapprox(mean(ps.power[2:end]), 2.0, atol=0.1)
+    end
+
 end
