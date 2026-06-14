@@ -116,4 +116,24 @@ using Stingray
         @test cs.power_err ≈ expected_err
     end
 
+    @testset "LightCurve constructor" begin
+        rng = MersenneTwister(20150907)
+        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
+        times2 = sort(rand(rng, Uniform(0.0, 10.0), 800))
+        ev1 = make_eventlist_with_gti(times1, test_gti)
+        ev2 = make_eventlist_with_gti(times2, test_gti)
+
+        lc1 = create_lightcurve(ev1, 0.001)
+        lc2 = create_lightcurve(ev2, 0.001)
+
+        cs = Crossspectrum(lc1, lc2, 10.0; norm="frac", silent=true)
+
+        @test cs isa Crossspectrum{Float64}
+        @test cs.norm == "frac"
+        @test cs.type == "crossspectrum"
+        @test length(cs.freq) > 0
+        @test cs.m >= 1
+        @test cs.k == 1
+    end
+
 end
