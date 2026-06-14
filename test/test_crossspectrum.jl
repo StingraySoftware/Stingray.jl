@@ -3,6 +3,18 @@ using Stingray
 
 @testset "Crossspectrum" begin
 
+    test_gti = [0.0 10.0]
+
+    function make_eventlist_with_gti(t, gti_matrix)
+        meta = FITSMetadata(
+            "[test]", 1, nothing,
+            Dict{String,Vector}(), Dict{String,Any}(),
+            gti_matrix, nothing, nothing, nothing,
+            nothing, nothing, nothing, nothing
+        )
+        EventList(t, nothing, meta)
+    end
+
     @testset "Direct struct initialization" begin
         freq = [1.0, 2.0, 3.0]
         power = Complex{Float64}.([1.0+0.5im, 2.0+1.0im, 3.0+0.2im])
@@ -126,7 +138,7 @@ using Stingray
         lc1 = create_lightcurve(ev1, 0.001)
         lc2 = create_lightcurve(ev2, 0.001)
 
-        cs = Crossspectrum(lc1, lc2, 10.0; norm="frac", silent=true)
+        cs = Crossspectrum(lc1, lc2, 5.0; norm="frac", silent=true)
 
         @test cs isa Crossspectrum{Float64}
         @test cs.norm == "frac"

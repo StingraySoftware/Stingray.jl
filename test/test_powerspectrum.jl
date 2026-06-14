@@ -120,7 +120,7 @@ using Stingray
 
         lc = create_lightcurve(ev, 0.001)
 
-        ps = Powerspectrum(lc, 10.0; norm="frac", silent=true)
+        ps = Powerspectrum(lc, 5.0; norm="frac", silent=true)
 
         @test ps isa Powerspectrum{Float64}
         @test ps.norm == "frac"
@@ -151,6 +151,39 @@ using Stingray
         # In Leahy norm, Poisson noise should have mean power ≈ 2.0
         # Exclude the DC bin (first bin) if necessary, but here we can check the whole array
         @test isapprox(mean(ps.power[2:end]), 2.0, atol=0.1)
+    end
+
+    @testset "Fractional RMS and abs normalization" begin
+        rng = MersenneTwister(42)
+        rate = 100.0  # counts/s
+        duration = 100.0
+        dt = 0.01
+        times = sort(rand(rng, Uniform(0.0, duration), round(Int, rate * duration)))
+        times[1] = 0.0
+        times[end] = duration
+        
+        test_gti = [0.0 duration]
+        meta = FITSMetadata(
+            "[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(),
+            test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing
+        )
+        ev = EventList(times, nothing, meta)
+        lc = create_lightcurve(ev, dt)
+
+        # test fractional RMS normalization
+        ps_frac = Powerspectrum(lc, duration; norm="frac", silent=true)
+        # fractional RMS squared should approximately equal var(counts)/mean(counts)^2
+        rms_sq = sum(ps_frac.power[2:end] .* ps_frac.df)
+        expected_rms_sq = var(lc.counts) / mean(lc.counts)^2
+        # Poisson noise has a specific level, we can check if they are of the same order
+        # or exactly equal depending on the implementation details.
+        @test isapprox(rms_sq, expected_rms_sq, rtol=0.2)
+
+        # test abs normalization
+        ps_abs = Powerspectrum(lc, duration; norm="abs", silent=true)
+        # For abs norm, Poisson noise level should be 2 * countrate
+        countrate = ps_abs.nphots / ps_abs.segment_size
+        @test isapprox(mean(ps_abs.power[2:end]), 2.0 * countrate, atol=0.1 * countrate)
     end
 
 end
