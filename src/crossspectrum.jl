@@ -85,3 +85,105 @@ function Base.show(io::IO, cs::Crossspectrum{T}) where T
           "freq range=[$(round(cs.freq[1], sigdigits=4)), ",
           "$(round(cs.freq[end], sigdigits=4))] Hz)")
 end
+
+"""
+    _count_valid_segments(gti::Matrix, segment_size::Real) -> Int
+
+Count the number of valid segments that fit within the GTI intervals.
+Mirrors the segment counting logic in `get_flux_iterable_from_segments`.
+"""
+function _count_valid_segments(gti::Matrix, segment_size::Real)
+    m = 0
+    for i in 1:size(gti, 1)
+        m += floor(Int, (gti[i, 2] - gti[i, 1]) / segment_size)
+    end
+    return max(m, 1)
+end
+
+"""
+    Crossspectrum(ev1::EventList, ev2::EventList, segment_size::Real, dt::Real; kwargs...)
+
+Construct a `Crossspectrum` from two `EventList` objects.
+
+Calls `avg_cs_from_events` and computes metadata from input parameters.
+Error bars are computed as `power / √m`.
+
+# Arguments
+- `ev1::EventList`: Event list for the subject band.
+- `ev2::EventList`: Event list for the reference band.
+- `segment_size::Real`: Length of each segment in seconds.
+- `dt::Real`: Time resolution (sets Nyquist frequency at 0.5/dt Hz).
+
+# Keyword Arguments
+- `norm::String="frac"`: Normalization ("frac", "abs", "leahy", "none").
+- `use_common_mean::Bool=true`: Use the mean from the full light curve.
+- `silent::Bool=false`: Suppress progress bars.
+- `fullspec::Bool=false`: Include negative frequencies.
+- `power_type::String="all"`: Power type ("all", "real", "abs").
+- `return_auxil::Bool=false`: Compute auxiliary PDS for each signal.
+"""
+function Crossspectrum(ev1::EventList, ev2::EventList,
+                       segment_size::Real, dt::Real;
+                       norm::String="frac",
+                       use_common_mean::Bool=true,
+                       silent::Bool=false,
+                       fullspec::Bool=false,
+                       power_type::String="all",
+                       return_auxil::Bool=false)
+
+    common_gti = has_gti(ev1) && has_gti(ev2) ?
+        operations_on_gtis([gti(ev1), gti(ev2)], intersect) :
+        (has_gti(ev1) ? gti(ev1) : gti(ev2))
+
+    result = avg_cs_from_events(
+        times(ev1), times(ev2), common_gti,
+        segment_size, dt;
+        norm=norm,
+        use_common_mean=use_common_mean,
+        silent=silent,
+        fullspec=fullspec,
+        power_type=power_type,
+        return_auxil=return_auxil
+    )
+
+    if isnothing(result)
+        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
+    end
+
+    # Extract spectral data from the DataFrame
+    freq = Float64.(result[!, "freq"])
+    power = Complex{Float64}.(result[!, "power"])
+    unnorm_power = Complex{Float64}.(result[!, "unnorm_power"])
+
+    # Compute metadata from input parameters
+    n_bin = round(Int, segment_size / dt)
+    dt_adj = segment_size / n_bin
+    df_val = 1.0 / segment_size
+    m_val = _count_valid_segments(common_gti, segment_size)
+
+    power_err = power ./ sqrt(m_val)
+    unnorm_power_err = unnorm_power ./ sqrt(m_val)
+
+    # Extract auxiliary PDS if computed
+    _pds1 = "pds1" in names(result) ? Float64.(real.(result[!, "pds1"])) : nothing
+    _pds2 = "pds2" in names(result) ? Float64.(real.(result[!, "pds2"])) : nothing
+
+    # Compute photon statistics
+    nphots1_val = Float64(length(times(ev1))) / m_val
+    nphots2_val = Float64(length(times(ev2))) / m_val
+    nphots_val = sqrt(nphots1_val * nphots2_val)
+    countrate1_val = nphots1_val / segment_size
+    countrate2_val = nphots2_val / segment_size
+
+    return Crossspectrum{Float64}(
+        freq, power, power_err, unnorm_power, unnorm_power_err,
+        _pds1, _pds2,
+        df_val, dt_adj, n_bin, m_val,
+        1,  # k = 1 (not rebinned)
+        nphots_val, nphots1_val, nphots2_val,
+        countrate1_val, countrate2_val,
+        norm, power_type, fullspec,
+        common_gti, Float64(segment_size),
+        "poisson", "crossspectrum"
+    )
+end
