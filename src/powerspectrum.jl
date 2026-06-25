@@ -88,31 +88,18 @@ function Powerspectrum(ev::EventList, segment_size::Real, dt::Real;
         silent=silent
     )
 
-    if isnothing(result)
-        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
-    end
-
-    # Extract spectral data from the DataFrame
-    freq = Float64.(result[!, "freq"])
-    power = Float64.(real.(result[!, "power"]))
-    unnorm_power = Float64.(real.(result[!, "unnorm_power"]))
-
-    # Compute metadata from input parameters
-    n_bin = round(Int, segment_size / dt)
-    dt_adj = segment_size / n_bin
-    df_val = 1.0 / segment_size
-    m_val = _count_valid_segments(ev_gti, segment_size)
-
-    power_err = power ./ sqrt(m_val)
-    unnorm_power_err = unnorm_power ./ sqrt(m_val)
-
-    nphots_val = Float64(length(times(ev))) / m_val
+    spectral = _extract_spectral_result(result; complex_power=false)
+    params = _compute_spectral_params(segment_size, dt, ev_gti)
+    power_err, unnorm_power_err = _compute_power_errors(
+        spectral.power, spectral.unnorm_power, params.m)
+    stats = _compute_photon_stats(length(times(ev)), params.m, segment_size)
 
     return Powerspectrum{Float64}(
-        freq, power, power_err, unnorm_power, unnorm_power_err,
-        df_val, dt_adj, n_bin, m_val,
+        spectral.freq, spectral.power, power_err,
+        spectral.unnorm_power, unnorm_power_err,
+        params.df, params.dt, params.n_bin, params.m,
         1,  # k = 1 (not rebinned)
-        nphots_val, norm,
+        stats.nphots, norm,
         ev_gti, Float64(segment_size),
         nothing, "poisson", "powerspectrum"
     )
@@ -155,33 +142,21 @@ function Powerspectrum(lc::LightCurve, segment_size::Real;
         fluxes=Float64.(lc.counts)
     )
 
-    if isnothing(result)
-        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
-    end
+    spectral = _extract_spectral_result(result; complex_power=false)
+    params = _compute_spectral_params(segment_size, dt_val, lc_gti)
+    power_err, unnorm_power_err = _compute_power_errors(
+        spectral.power, spectral.unnorm_power, params.m)
+    stats = _compute_photon_stats(sum(lc.counts), params.m, segment_size)
 
-    freq = Float64.(result[!, "freq"])
-    power = Float64.(real.(result[!, "power"]))
-    unnorm_power = Float64.(real.(result[!, "unnorm_power"]))
-
-    n_bin = round(Int, segment_size / dt_val)
-    dt_adj = segment_size / n_bin
-    df_val = 1.0 / segment_size
-    m_val = _count_valid_segments(lc_gti, segment_size)
-
-    power_err = power ./ sqrt(m_val)
-    unnorm_power_err = unnorm_power ./ sqrt(m_val)
-
-    nphots_val = Float64(sum(lc.counts)) / m_val
-
-    # Determine error distribution from LightCurve err_method
     err_dist = lc.err_method == :gaussian ? "gauss" : "poisson"
     variance_val = err_dist == "gauss" ? Float64(var(lc.counts)) : nothing
 
     return Powerspectrum{Float64}(
-        freq, power, power_err, unnorm_power, unnorm_power_err,
-        df_val, dt_adj, n_bin, m_val,
+        spectral.freq, spectral.power, power_err,
+        spectral.unnorm_power, unnorm_power_err,
+        params.df, params.dt, params.n_bin, params.m,
         1,
-        nphots_val, norm,
+        stats.nphots, norm,
         lc_gti, Float64(segment_size),
         variance_val, err_dist, "powerspectrum"
     )
