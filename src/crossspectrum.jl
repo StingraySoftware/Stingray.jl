@@ -101,6 +101,77 @@ function _count_valid_segments(gti::Matrix, segment_size::Real)
 end
 
 """
+    _compute_spectral_params(segment_size, dt, gti) -> NamedTuple
+
+Compute shared spectral metadata (n_bin, adjusted dt, df, m) from segment
+parameters and GTIs. Used internally by `Crossspectrum` and `Powerspectrum`
+constructors.
+"""
+function _compute_spectral_params(segment_size::Real, dt::Real, gti::Matrix)
+    n_bin = round(Int, segment_size / dt)
+    dt_adj = segment_size / n_bin
+    df = 1.0 / segment_size
+    m = _count_valid_segments(gti, segment_size)
+    return (; n_bin, dt=dt_adj, df, m)
+end
+
+"""
+    _extract_spectral_result(result; complex_power=true) -> NamedTuple
+
+Extract freq, power, unnorm_power, and auxiliary PDS columns from a DataFrame
+returned by `avg_cs_from_events` or `avg_pds_from_events`. Throws if `result`
+is `nothing`.  Set `complex_power=false` for real-valued power (Powerspectrum).
+"""
+function _extract_spectral_result(result; complex_power::Bool=true)
+    if isnothing(result)
+        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
+    end
+
+    freq = Float64.(result[!, "freq"])
+    if complex_power
+        power = Complex{Float64}.(result[!, "power"])
+        unnorm_power = Complex{Float64}.(result[!, "unnorm_power"])
+    else
+        power = Float64.(real.(result[!, "power"]))
+        unnorm_power = Float64.(real.(result[!, "unnorm_power"]))
+    end
+
+    pds1 = "pds1" in names(result) ? Float64.(real.(result[!, "pds1"])) : nothing
+    pds2 = "pds2" in names(result) ? Float64.(real.(result[!, "pds2"])) : nothing
+
+    return (; freq, power, unnorm_power, pds1, pds2)
+end
+
+"""
+    _compute_power_errors(power, unnorm_power, m) -> (power_err, unnorm_power_err)
+
+Estimate spectral uncertainties as `power / √m`.
+"""
+_compute_power_errors(power, unnorm_power, m::Int) =
+    (power ./ sqrt(m), unnorm_power ./ sqrt(m))
+
+"""
+    _compute_photon_stats(nphots1, nphots2, m, segment_size) -> NamedTuple
+
+Compute per-segment photon statistics for a cross-spectrum (two signals).
+"""
+function _compute_photon_stats(nphots1::Real, nphots2::Real, m::Int, segment_size::Real)
+    n1 = Float64(nphots1) / m
+    n2 = Float64(nphots2) / m
+    return (; nphots=sqrt(n1 * n2), nphots1=n1, nphots2=n2,
+              countrate1=n1 / segment_size, countrate2=n2 / segment_size)
+end
+
+"""
+    _compute_photon_stats(nphots_total, m, segment_size) -> NamedTuple
+
+Compute per-segment photon statistics for a power spectrum (single signal).
+"""
+function _compute_photon_stats(nphots_total::Real, m::Int, segment_size::Real)
+    return (; nphots=Float64(nphots_total) / m)
+end
+
+"""
     Crossspectrum(ev1::EventList, ev2::EventList, segment_size::Real, dt::Real; kwargs...)
 
 Construct a `Crossspectrum` from two `EventList` objects.
@@ -146,42 +217,21 @@ function Crossspectrum(ev1::EventList, ev2::EventList,
         return_auxil=return_auxil
     )
 
-    if isnothing(result)
-        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
-    end
-
-    # Extract spectral data from the DataFrame
-    freq = Float64.(result[!, "freq"])
-    power = Complex{Float64}.(result[!, "power"])
-    unnorm_power = Complex{Float64}.(result[!, "unnorm_power"])
-
-    # Compute metadata from input parameters
-    n_bin = round(Int, segment_size / dt)
-    dt_adj = segment_size / n_bin
-    df_val = 1.0 / segment_size
-    m_val = _count_valid_segments(common_gti, segment_size)
-
-    power_err = power ./ sqrt(m_val)
-    unnorm_power_err = unnorm_power ./ sqrt(m_val)
-
-    # Extract auxiliary PDS if computed
-    _pds1 = "pds1" in names(result) ? Float64.(real.(result[!, "pds1"])) : nothing
-    _pds2 = "pds2" in names(result) ? Float64.(real.(result[!, "pds2"])) : nothing
-
-    # Compute photon statistics
-    nphots1_val = Float64(length(times(ev1))) / m_val
-    nphots2_val = Float64(length(times(ev2))) / m_val
-    nphots_val = sqrt(nphots1_val * nphots2_val)
-    countrate1_val = nphots1_val / segment_size
-    countrate2_val = nphots2_val / segment_size
+    spectral = _extract_spectral_result(result; complex_power=true)
+    params = _compute_spectral_params(segment_size, dt, common_gti)
+    power_err, unnorm_power_err = _compute_power_errors(
+        spectral.power, spectral.unnorm_power, params.m)
+    stats = _compute_photon_stats(
+        length(times(ev1)), length(times(ev2)), params.m, segment_size)
 
     return Crossspectrum{Float64}(
-        freq, power, power_err, unnorm_power, unnorm_power_err,
-        _pds1, _pds2,
-        df_val, dt_adj, n_bin, m_val,
+        spectral.freq, spectral.power, power_err,
+        spectral.unnorm_power, unnorm_power_err,
+        spectral.pds1, spectral.pds2,
+        params.df, params.dt, params.n_bin, params.m,
         1,  # k = 1 (not rebinned)
-        nphots_val, nphots1_val, nphots2_val,
-        countrate1_val, countrate2_val,
+        stats.nphots, stats.nphots1, stats.nphots2,
+        stats.countrate1, stats.countrate2,
         norm, power_type, fullspec,
         common_gti, Float64(segment_size),
         "poisson", "crossspectrum"
@@ -234,41 +284,23 @@ function Crossspectrum(lc1::LightCurve, lc2::LightCurve,
         return_auxil=return_auxil
     )
 
-    if isnothing(result)
-        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
-    end
+    spectral = _extract_spectral_result(result; complex_power=true)
+    params = _compute_spectral_params(segment_size, dt_val, common_gti)
+    power_err, unnorm_power_err = _compute_power_errors(
+        spectral.power, spectral.unnorm_power, params.m)
+    stats = _compute_photon_stats(
+        sum(lc1.counts), sum(lc2.counts), params.m, segment_size)
 
-    freq = Float64.(result[!, "freq"])
-    power = Complex{Float64}.(result[!, "power"])
-    unnorm_power = Complex{Float64}.(result[!, "unnorm_power"])
-
-    n_bin = round(Int, segment_size / dt_val)
-    dt_adj = segment_size / n_bin
-    df_val = 1.0 / segment_size
-    m_val = _count_valid_segments(common_gti, segment_size)
-
-    power_err = power ./ sqrt(m_val)
-    unnorm_power_err = unnorm_power ./ sqrt(m_val)
-
-    _pds1 = "pds1" in names(result) ? Float64.(real.(result[!, "pds1"])) : nothing
-    _pds2 = "pds2" in names(result) ? Float64.(real.(result[!, "pds2"])) : nothing
-
-    nphots1_val = Float64(sum(lc1.counts)) / m_val
-    nphots2_val = Float64(sum(lc2.counts)) / m_val
-    nphots_val = sqrt(nphots1_val * nphots2_val)
-    countrate1_val = nphots1_val / segment_size
-    countrate2_val = nphots2_val / segment_size
-
-    # Determine error distribution from LightCurve err_method
     err_dist = lc1.err_method == :gaussian ? "gauss" : "poisson"
 
     return Crossspectrum{Float64}(
-        freq, power, power_err, unnorm_power, unnorm_power_err,
-        _pds1, _pds2,
-        df_val, dt_adj, n_bin, m_val,
+        spectral.freq, spectral.power, power_err,
+        spectral.unnorm_power, unnorm_power_err,
+        spectral.pds1, spectral.pds2,
+        params.df, params.dt, params.n_bin, params.m,
         1,
-        nphots_val, nphots1_val, nphots2_val,
-        countrate1_val, countrate2_val,
+        stats.nphots, stats.nphots1, stats.nphots2,
+        stats.countrate1, stats.countrate2,
         norm, power_type, fullspec,
         common_gti, Float64(segment_size),
         err_dist, "crossspectrum"
