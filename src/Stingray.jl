@@ -91,4 +91,12 @@ export plot_hues
 export PowerColorPlot
 export HuePlot
 
+include("crossspectrum.jl")
+export AbstractCrossspectrum
+export Crossspectrum
+
+include("powerspectrum.jl")
+export AbstractPowerspectrum
+export Powerspectrum
+
 end
