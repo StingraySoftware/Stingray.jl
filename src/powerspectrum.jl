@@ -17,7 +17,7 @@ signal crossed with itself is always zero).
 - `df::T`: Frequency resolution (Hz).
 - `dt::T`: Time resolution of the input data (s).
 - `n::Int`: Number of bins per segment.
-- `m::Int`: Number of averaged power spectra.
+- `m::Union{Int, Vector{Int}}`: Number of averaged power spectra.
 - `k::Union{Int, Vector{Int}}`: Rebinning factor (1 if not rebinned).
 - `nphots::T`: Total number of photons in the light curve.
 - `norm::String`: Normalization applied: "frac", "abs", "leahy", or "none".
@@ -48,7 +48,8 @@ struct Powerspectrum{T<:Real} <: AbstractPowerspectrum
 end
 
 function Base.show(io::IO, ps::Powerspectrum{T}) where T
-    print(io, "Powerspectrum($(ps.norm), $(ps.m) segments, ",
+    m_display = ps.m isa Int ? ps.m : "$(length(ps.m))-element"
+    print(io, "Powerspectrum($(ps.norm), $(m_display) segments, ",
           "$(length(ps.freq)) freq bins, ",
           "df=$(round(ps.df, sigdigits=4)) Hz, ",
           "freq range=[$(round(ps.freq[1], sigdigits=4)), ",
@@ -159,5 +160,118 @@ function Powerspectrum(lc::LightCurve, segment_size::Real;
         stats.nphots, norm,
         lc_gti, Float64(segment_size),
         variance_val, err_dist, "powerspectrum"
+    )
+end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Powerspectrum rebinning methods
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+"""
+    rebin(ps::Powerspectrum{T}, df_new::Real; f=nothing, method=:mean)
+
+Rebin the power spectrum to a new frequency resolution `df_new`.
+
+Mirrors Python Stingray's `Powerspectrum.rebin()`, which delegates to
+`Crossspectrum.rebin()` and sets `nphots = nphots1`.
+
+# Arguments
+- `ps::Powerspectrum{T}`: The power spectrum to rebin.
+- `df_new::Real`: The new frequency resolution.
+
+# Keyword Arguments
+- `f::Union{Nothing, Real}`: Rebin factor. If specified, `df_new = f * ps.df`.
+- `method::Symbol`: `:mean` or `:sum`. Default `:mean`.
+
+# Returns
+A new `Powerspectrum` with updated `freq`, `power`, `df`, `m`, and `k`.
+"""
+function rebin(ps::Powerspectrum{T}, df_new::Real;
+               f::Union{Nothing, Real}=nothing,
+               method::Symbol=:mean) where T
+
+    if !isnothing(f)
+        df_new = f * ps.df
+    end
+
+    # Rebin normalized power
+    binfreq, binpower, binerr, step_size = rebin_data(
+        ps.freq, ps.power, df_new;
+        yerr=ps.power_err, method=method, dx=ps.df
+    )
+
+    # Rebin unnormalized power
+    _, binpower_unnorm, binpower_err_unnorm, _ = rebin_data(
+        ps.freq, ps.unnorm_power, df_new;
+        yerr=ps.unnorm_power_err, method=method, dx=ps.df
+    )
+
+    # Update m: m_new = round(Int, step_size * m_old)
+    m_old = ps.m isa Int ? ps.m : round(Int, mean(ps.m))
+    new_m = [round(Int, s * m_old) for s in step_size]
+    new_m_val = length(unique(new_m)) == 1 ? new_m[1] : new_m
+
+    return Powerspectrum{Float64}(
+        Float64.(binfreq),
+        Float64.(real.(binpower)),
+        Float64.(real.(binerr)),
+        Float64.(real.(binpower_unnorm)),
+        Float64.(real.(binpower_err_unnorm)),
+        Float64(df_new), ps.dt, ps.n, new_m_val,
+        round(Int, mean(step_size)),  # k = rebinning factor
+        ps.nphots, ps.norm,
+        ps.gti, ps.segment_size,
+        ps.variance, ps.err_dist, ps.type
+    )
+end
+
+"""
+    rebin_log(ps::Powerspectrum{T}, f::Real=0.01)
+
+Logarithmically rebin the power spectrum. Each new frequency bin grows as
+`dν_j = dν_{j-1} * (1+f)`.
+
+Mirrors Python Stingray's `Powerspectrum.rebin_log()` via `Crossspectrum.rebin_log()`.
+
+# Arguments
+- `ps::Powerspectrum{T}`: The power spectrum to rebin.
+- `f::Real`: Growth factor for frequency bins. Default `0.01`.
+
+# Returns
+A new `Powerspectrum` with updated `freq`, `power`, `m` (vector), `k` (vector).
+"""
+function rebin_log(ps::Powerspectrum{T}, f::Real=0.01) where T
+
+    # Rebin normalized power
+    binfreq, binpower, binpower_err, nsamples = rebin_data_log(
+        ps.freq, ps.power, f;
+        y_err=ps.power_err, dx=ps.df
+    )
+
+    # Rebin unnormalized power
+    _, binpower_unnorm, binpower_err_unnorm, _ = rebin_data_log(
+        ps.freq, ps.unnorm_power, f;
+        y_err=ps.unnorm_power_err, dx=ps.df
+    )
+
+    # m = nsamples * original_m
+    m_old = ps.m isa Int ? ps.m : round(Int, mean(ps.m))
+    new_m = nsamples .* m_old
+
+    # df = median of new frequency spacing
+    new_df = length(binfreq) > 1 ? Float64(median(diff(binfreq))) : ps.df
+
+    return Powerspectrum{Float64}(
+        Float64.(binfreq),
+        Float64.(real.(binpower)),
+        Float64.(real.(binpower_err)),
+        Float64.(real.(binpower_unnorm)),
+        Float64.(real.(binpower_err_unnorm)),
+        new_df, ps.dt, ps.n, new_m,
+        nsamples,  # k = nsamples (Vector{Int})
+        ps.nphots, ps.norm,
+        ps.gti, ps.segment_size,
+        ps.variance, ps.err_dist, ps.type
     )
 end
