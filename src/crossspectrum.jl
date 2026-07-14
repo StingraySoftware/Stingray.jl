@@ -567,3 +567,33 @@ function rebin_data_log(x::AbstractVector, y::AbstractVector, f::Real;
     return xbin, ybin_out, ybin_err_out, nsamples
 end
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Crossspectrum rebinning methods
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    rebin(cs::Crossspectrum{T}, df_new::Real; f=nothing, method=:mean)
+
+Rebin the cross spectrum to a new frequency resolution `df_new`.
+
+Mirrors Python Stingray's `Crossspectrum.rebin()`.
+
+# Arguments
+- `cs::Crossspectrum{T}`: The cross spectrum to rebin.
+- `df_new::Real`: The new frequency resolution.
+
+# Keyword Arguments
+- `f::Union{Nothing, Real}`: Rebin factor. If specified, `df_new = f * cs.df`.
+- `method::Symbol`: `:mean` or `:sum`. Default `:mean`.
+
+# Returns
+A new `Crossspectrum` with updated `freq`, `power`, `df`, `m`, and `k`.
+"""
+function rebin(cs::Crossspectrum{T}, df_new::Real;
+               f::Union{Nothing, Real}=nothing,
+               method::Symbol=:mean) where T
+
+    if !isnothing(f)
+        df_new = f * cs.df
+    end
