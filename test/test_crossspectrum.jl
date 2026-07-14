@@ -148,4 +148,44 @@ using Stingray
         @test cs.k == 1
     end
 
+    @testset "rebin - linear" begin
+        test_gti = [0.0 10.0]
+        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
+        rng = MersenneTwister(42)
+        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
+        times2 = sort(rand(rng, Uniform(0.0, 10.0), 800))
+        ev1 = EventList(times1, nothing, meta)
+        ev2 = EventList(times2, nothing, meta)
+        cs = Crossspectrum(ev1, ev2, 10.0, 0.001; norm="frac", silent=true)
+
+        # Test df_new
+        cs_rb = rebin(cs, 5 * cs.df; method=:mean)
+        @test length(cs_rb.freq) < length(cs.freq)
+        @test cs_rb.df ≈ 5 * cs.df
+        @test eltype(cs_rb.power) <: Complex
+        @test cs_rb.m isa Int
+        @test cs_rb.k == 5
+
+        # Test f
+        cs_rb2 = rebin(cs, 1.0; f=5.0)
+        @test cs_rb2.df ≈ 5 * cs.df
+    end
+
+    @testset "rebin_log" begin
+        test_gti = [0.0 10.0]
+        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
+        rng = MersenneTwister(42)
+        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
+        times2 = sort(rand(rng, Uniform(0.0, 10.0), 800))
+        ev1 = EventList(times1, nothing, meta)
+        ev2 = EventList(times2, nothing, meta)
+        cs = Crossspectrum(ev1, ev2, 10.0, 0.001; norm="frac", silent=true)
+
+        cs_log = rebin_log(cs, 0.01)
+        @test length(cs_log.freq) < length(cs.freq)
+        @test cs_log.k isa Vector{Int}
+        @test cs_log.m isa Vector{Int}
+        @test eltype(cs_log.power) <: Complex
+    end
+
 end
