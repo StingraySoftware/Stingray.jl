@@ -597,3 +597,40 @@ function rebin(cs::Crossspectrum{T}, df_new::Real;
     if !isnothing(f)
         df_new = f * cs.df
     end
+
+"""
+    rebin_log(cs::Crossspectrum{T}, f::Real=0.01)
+
+Logarithmically rebin the cross spectrum. Each new frequency bin grows as
+`dν_j = dν_{j-1} * (1+f)`.
+
+Mirrors Python Stingray's `Crossspectrum.rebin_log()`.
+
+# Arguments
+- `cs::Crossspectrum{T}`: The cross spectrum to rebin.
+- `f::Real`: Growth factor for frequency bins. Default `0.01`.
+
+# Returns
+A new `Crossspectrum` with updated `freq`, `power`, `m` (vector), `k` (vector),
+and `dt` preserved.
+"""
+function rebin_log(cs::Crossspectrum{T}, f::Real=0.01) where T
+
+    # Rebin normalized power
+    binfreq, binpower, binpower_err, nsamples = rebin_data_log(
+        cs.freq, cs.power, f;
+        y_err=cs.power_err, dx=cs.df
+    )
+
+    # Rebin unnormalized power
+    _, binpower_unnorm, binpower_err_unnorm, _ = rebin_data_log(
+        cs.freq, cs.unnorm_power, f;
+        y_err=cs.unnorm_power_err, dx=cs.df
+    )
+
+    # Rebin auxiliary PDS arrays if present
+    new_pds1 = if !isnothing(cs.pds1)
+        rebin_data_log(cs.freq, cs.pds1, f; dx=cs.df)[2]
+    else
+        nothing
+    end
