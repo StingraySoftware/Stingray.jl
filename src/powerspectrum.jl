@@ -17,7 +17,8 @@ signal crossed with itself is always zero).
 - `df::T`: Frequency resolution (Hz).
 - `dt::T`: Time resolution of the input data (s).
 - `n::Int`: Number of bins per segment.
-- `m::Union{Int, Vector{Int}}`: Number of averaged power spectra.
+- `m::Union{Int, Vector{Int}}`: Number of averaged power spectra (scalar initially,
+  vector after log rebinning where each bin may average a different number).
 - `k::Union{Int, Vector{Int}}`: Rebinning factor (1 if not rebinned).
 - `nphots::T`: Total number of photons in the light curve.
 - `norm::String`: Normalization applied: "frac", "abs", "leahy", or "none".
@@ -36,7 +37,7 @@ struct Powerspectrum{T<:Real} <: AbstractPowerspectrum
     df::T
     dt::T
     n::Int
-    m::Int
+    m::Union{Int, Vector{Int}}
     k::Union{Int, Vector{Int}}
     nphots::T
     norm::String
@@ -166,7 +167,6 @@ end
 # ──────────────────────────────────────────────────────────────────────────────
 # Powerspectrum rebinning methods
 # ──────────────────────────────────────────────────────────────────────────────
-
 
 """
     rebin(ps::Powerspectrum{T}, df_new::Real; f=nothing, method=:mean)

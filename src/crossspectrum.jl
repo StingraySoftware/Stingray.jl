@@ -36,7 +36,8 @@ two signals at each Fourier frequency.
 - `df::T`: Frequency resolution (Hz).
 - `dt::T`: Time resolution of the input data (s).
 - `n::Int`: Number of bins per segment.
-- `m::Union{Int, Vector{Int}}`: Number of averaged cross-spectra.
+- `m::Union{Int, Vector{Int}}`: Number of averaged cross-spectra (scalar initially,
+  vector after log rebinning where each bin may average a different number of segments).
 - `k::Union{Int, Vector{Int}}`: Rebinning factor (1 if not rebinned, vector after log rebinning).
 - `nphots::T`: Geometric mean of total photons: √(nphots1 * nphots2).
 - `nphots1::T`: Total number of photons in signal 1.
@@ -62,7 +63,7 @@ struct Crossspectrum{T<:Real} <: AbstractCrossspectrum
     df::T
     dt::T
     n::Int
-    m::Int
+    m::Union{Int, Vector{Int}}
     k::Union{Int, Vector{Int}}
     nphots::T
     nphots1::T
@@ -315,7 +316,6 @@ end
 # Rebinning utilities
 # ──────────────────────────────────────────────────────────────────────────────
 
-
 """
     rebin_data(x, y, dx_new; yerr=nothing, method=:mean, dx=nothing)
 
@@ -567,7 +567,6 @@ function rebin_data_log(x::AbstractVector, y::AbstractVector, f::Real;
     return xbin, ybin_out, ybin_err_out, nsamples
 end
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Crossspectrum rebinning methods
 # ──────────────────────────────────────────────────────────────────────────────
@@ -597,6 +596,55 @@ function rebin(cs::Crossspectrum{T}, df_new::Real;
     if !isnothing(f)
         df_new = f * cs.df
     end
+
+    # Rebin normalized power
+    binfreq, bincs, binerr, step_size = rebin_data(
+        cs.freq, cs.power, df_new;
+        yerr=cs.power_err, method=method, dx=cs.df
+    )
+
+    # Rebin unnormalized power
+    _, binpower_unnorm, binpower_err_unnorm, _ = rebin_data(
+        cs.freq, cs.unnorm_power, df_new;
+        yerr=cs.unnorm_power_err, method=method, dx=cs.df
+    )
+
+    # Rebin auxiliary PDS arrays if present
+    new_pds1 = if !isnothing(cs.pds1)
+        rebin_data(cs.freq, cs.pds1, df_new; method=method, dx=cs.df)[2]
+    else
+        nothing
+    end
+
+    new_pds2 = if !isnothing(cs.pds2)
+        rebin_data(cs.freq, cs.pds2, df_new; method=method, dx=cs.df)[2]
+    else
+        nothing
+    end
+
+    # Update m: m_new = round(Int, step_size * m_old) — matches Python exactly
+    m_old = cs.m isa Int ? cs.m : round(Int, mean(cs.m))
+    new_m = [round(Int, s * m_old) for s in step_size]
+    # If all m values are the same, keep as scalar
+    new_m_val = length(unique(new_m)) == 1 ? new_m[1] : new_m
+
+    return Crossspectrum{Float64}(
+        Float64.(binfreq),
+        Complex{Float64}.(bincs),
+        Complex{Float64}.(binerr),
+        Complex{Float64}.(binpower_unnorm),
+        Complex{Float64}.(binpower_err_unnorm),
+        isnothing(new_pds1) ? nothing : Float64.(new_pds1),
+        isnothing(new_pds2) ? nothing : Float64.(new_pds2),
+        Float64(df_new), cs.dt, cs.n, new_m_val,
+        round(Int, mean(step_size)),  # k = rebinning factor
+        cs.nphots, cs.nphots1, cs.nphots2,
+        cs.countrate1, cs.countrate2,
+        cs.norm, cs.power_type, cs.fullspec,
+        cs.gti, cs.segment_size,
+        cs.err_dist, cs.type
+    )
+end
 
 """
     rebin_log(cs::Crossspectrum{T}, f::Real=0.01)
@@ -634,3 +682,34 @@ function rebin_log(cs::Crossspectrum{T}, f::Real=0.01) where T
     else
         nothing
     end
+
+    new_pds2 = if !isnothing(cs.pds2)
+        rebin_data_log(cs.freq, cs.pds2, f; dx=cs.df)[2]
+    else
+        nothing
+    end
+
+    # m = nsamples * original_m (Python: new_spec.m = nsamples * self.m)
+    m_old = cs.m isa Int ? cs.m : round(Int, mean(cs.m))
+    new_m = nsamples .* m_old
+
+    # df = median of new frequency spacing
+    new_df = length(binfreq) > 1 ? Float64(median(diff(binfreq))) : cs.df
+
+    return Crossspectrum{Float64}(
+        Float64.(binfreq),
+        Complex{Float64}.(binpower),
+        Complex{Float64}.(binpower_err),
+        Complex{Float64}.(binpower_unnorm),
+        Complex{Float64}.(binpower_err_unnorm),
+        isnothing(new_pds1) ? nothing : Float64.(new_pds1),
+        isnothing(new_pds2) ? nothing : Float64.(new_pds2),
+        new_df, cs.dt, cs.n, new_m,
+        nsamples,  # k = nsamples (Vector{Int})
+        cs.nphots, cs.nphots1, cs.nphots2,
+        cs.countrate1, cs.countrate2,
+        cs.norm, cs.power_type, cs.fullspec,
+        cs.gti, cs.segment_size,
+        cs.err_dist, cs.type
+    )
+end

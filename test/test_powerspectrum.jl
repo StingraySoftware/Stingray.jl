@@ -32,39 +32,7 @@ using Stingray
         @test isnothing(ps.variance)
         @test ps.err_dist == "poisson"
         @test eltype(ps.power) <: Real
-    
-    @testset "rebin - linear" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_rb = rebin(ps, 5 * ps.df; method=:mean)
-        @test length(ps_rb.freq) < length(ps.freq)
-        @test ps_rb.df ≈ 5 * ps.df
-        @test eltype(ps_rb.power) <: Real
-        @test ps_rb.m isa Int
-        @test ps_rb.k == 5
     end
-
-    @testset "rebin_log" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_log = rebin_log(ps, 0.01)
-        @test length(ps_log.freq) < length(ps.freq)
-        @test ps_log.k isa Vector{Int}
-        @test ps_log.m isa Vector{Int}
-        @test eltype(ps_log.power) <: Real
-    end
-
-end
 
     @testset "Base.show" begin
         freq = [1.0, 2.0, 3.0]
@@ -82,39 +50,7 @@ end
         @test occursin("Powerspectrum", s)
         @test occursin("leahy", s)
         @test occursin("1 segments", s)
-    
-    @testset "rebin - linear" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_rb = rebin(ps, 5 * ps.df; method=:mean)
-        @test length(ps_rb.freq) < length(ps.freq)
-        @test ps_rb.df ≈ 5 * ps.df
-        @test eltype(ps_rb.power) <: Real
-        @test ps_rb.m isa Int
-        @test ps_rb.k == 5
     end
-
-    @testset "rebin_log" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_log = rebin_log(ps, 0.01)
-        @test length(ps_log.freq) < length(ps.freq)
-        @test ps_log.k isa Vector{Int}
-        @test ps_log.m isa Vector{Int}
-        @test eltype(ps_log.power) <: Real
-    end
-
-end
 
     @testset "EventList constructor" begin
         test_gti = [0.0 10.0]
@@ -138,39 +74,7 @@ end
         @test ps.nphots > 0
         @test ps.err_dist == "poisson"
         @test eltype(ps.power) <: Real
-    
-    @testset "rebin - linear" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_rb = rebin(ps, 5 * ps.df; method=:mean)
-        @test length(ps_rb.freq) < length(ps.freq)
-        @test ps_rb.df ≈ 5 * ps.df
-        @test eltype(ps_rb.power) <: Real
-        @test ps_rb.m isa Int
-        @test ps_rb.k == 5
     end
-
-    @testset "rebin_log" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_log = rebin_log(ps, 0.01)
-        @test length(ps_log.freq) < length(ps.freq)
-        @test ps_log.k isa Vector{Int}
-        @test ps_log.m isa Vector{Int}
-        @test eltype(ps_log.power) <: Real
-    end
-
-end
 
     @testset "EventList constructor normalizations" begin
         test_gti = [0.0 10.0]
@@ -186,72 +90,8 @@ end
             ps = Powerspectrum(ev, 10.0, 0.001; norm=norm, silent=true)
             @test ps.norm == norm
             @test length(ps.freq) > 0
-        
-    @testset "rebin - linear" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_rb = rebin(ps, 5 * ps.df; method=:mean)
-        @test length(ps_rb.freq) < length(ps.freq)
-        @test ps_rb.df ≈ 5 * ps.df
-        @test eltype(ps_rb.power) <: Real
-        @test ps_rb.m isa Int
-        @test ps_rb.k == 5
+        end
     end
-
-    @testset "rebin_log" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_log = rebin_log(ps, 0.01)
-        @test length(ps_log.freq) < length(ps.freq)
-        @test ps_log.k isa Vector{Int}
-        @test ps_log.m isa Vector{Int}
-        @test eltype(ps_log.power) <: Real
-    end
-
-end
-    
-    @testset "rebin - linear" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_rb = rebin(ps, 5 * ps.df; method=:mean)
-        @test length(ps_rb.freq) < length(ps.freq)
-        @test ps_rb.df ≈ 5 * ps.df
-        @test eltype(ps_rb.power) <: Real
-        @test ps_rb.m isa Int
-        @test ps_rb.k == 5
-    end
-
-    @testset "rebin_log" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_log = rebin_log(ps, 0.01)
-        @test length(ps_log.freq) < length(ps.freq)
-        @test ps_log.k isa Vector{Int}
-        @test ps_log.m isa Vector{Int}
-        @test eltype(ps_log.power) <: Real
-    end
-
-end
 
     @testset "power_err calculation" begin
         test_gti = [0.0 10.0]
@@ -266,39 +106,7 @@ end
         ps = Powerspectrum(ev, 10.0, 0.001; norm="frac", silent=true)
         expected_err = ps.power ./ sqrt(ps.m)
         @test ps.power_err ≈ expected_err
-    
-    @testset "rebin - linear" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_rb = rebin(ps, 5 * ps.df; method=:mean)
-        @test length(ps_rb.freq) < length(ps.freq)
-        @test ps_rb.df ≈ 5 * ps.df
-        @test eltype(ps_rb.power) <: Real
-        @test ps_rb.m isa Int
-        @test ps_rb.k == 5
     end
-
-    @testset "rebin_log" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_log = rebin_log(ps, 0.01)
-        @test length(ps_log.freq) < length(ps.freq)
-        @test ps_log.k isa Vector{Int}
-        @test ps_log.m isa Vector{Int}
-        @test eltype(ps_log.power) <: Real
-    end
-
-end
 
     @testset "LightCurve constructor" begin
         test_gti = [0.0 10.0]
@@ -321,39 +129,7 @@ end
         @test ps.m >= 1
         @test ps.k == 1
         @test ps.err_dist == "poisson"
-    
-    @testset "rebin - linear" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_rb = rebin(ps, 5 * ps.df; method=:mean)
-        @test length(ps_rb.freq) < length(ps.freq)
-        @test ps_rb.df ≈ 5 * ps.df
-        @test eltype(ps_rb.power) <: Real
-        @test ps_rb.m isa Int
-        @test ps_rb.k == 5
     end
-
-    @testset "rebin_log" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_log = rebin_log(ps, 0.01)
-        @test length(ps_log.freq) < length(ps.freq)
-        @test ps_log.k isa Vector{Int}
-        @test ps_log.m isa Vector{Int}
-        @test eltype(ps_log.power) <: Real
-    end
-
-end
 
     @testset "Leahy normalization Poisson noise" begin
         # Simulate Poisson noise
@@ -375,39 +151,7 @@ end
         # In Leahy norm, Poisson noise should have mean power ≈ 2.0
         # Exclude the DC bin (first bin) if necessary, but here we can check the whole array
         @test isapprox(mean(ps.power[2:end]), 2.0, atol=0.1)
-    
-    @testset "rebin - linear" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_rb = rebin(ps, 5 * ps.df; method=:mean)
-        @test length(ps_rb.freq) < length(ps.freq)
-        @test ps_rb.df ≈ 5 * ps.df
-        @test eltype(ps_rb.power) <: Real
-        @test ps_rb.m isa Int
-        @test ps_rb.k == 5
     end
-
-    @testset "rebin_log" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_log = rebin_log(ps, 0.01)
-        @test length(ps_log.freq) < length(ps.freq)
-        @test ps_log.k isa Vector{Int}
-        @test ps_log.m isa Vector{Int}
-        @test eltype(ps_log.power) <: Real
-    end
-
-end
 
     @testset "Fractional RMS and abs normalization" begin
         rng = MersenneTwister(42)
@@ -440,40 +184,7 @@ end
         # For abs norm, Poisson noise level should be 2 * countrate
         countrate = ps_abs.nphots / ps_abs.segment_size
         @test isapprox(mean(ps_abs.power[2:end]), 2.0 * countrate, atol=0.1 * countrate)
-    
-    @testset "rebin - linear" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_rb = rebin(ps, 5 * ps.df; method=:mean)
-        @test length(ps_rb.freq) < length(ps.freq)
-        @test ps_rb.df ≈ 5 * ps.df
-        @test eltype(ps_rb.power) <: Real
-        @test ps_rb.m isa Int
-        @test ps_rb.k == 5
     end
-
-    @testset "rebin_log" begin
-        test_gti = [0.0 10.0]
-        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
-        rng = MersenneTwister(42)
-        times1 = sort(rand(rng, Uniform(0.0, 10.0), 1000))
-        ev1 = EventList(times1, nothing, meta)
-        ps = Powerspectrum(ev1, 10.0, 0.001; norm="frac", silent=true)
-
-        ps_log = rebin_log(ps, 0.01)
-        @test length(ps_log.freq) < length(ps.freq)
-        @test ps_log.k isa Vector{Int}
-        @test ps_log.m isa Vector{Int}
-        @test eltype(ps_log.power) <: Real
-    end
-
-end
-
 
     @testset "rebin - linear" begin
         test_gti = [0.0 10.0]
@@ -505,7 +216,6 @@ end
         @test ps_log.m isa Vector{Int}
         @test eltype(ps_log.power) <: Real
     end
-
 
     @testset "compute_rms" begin
         rng = MersenneTwister(42)
