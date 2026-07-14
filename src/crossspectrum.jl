@@ -306,3 +306,260 @@ function Crossspectrum(lc1::LightCurve, lc2::LightCurve,
         err_dist, "crossspectrum"
     )
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Rebinning utilities
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+"""
+    rebin_data(x, y, dx_new; yerr=nothing, method=:mean, dx=nothing)
+
+Rebin data to a new resolution `dx_new`. Either sum or average the data points
+in the new bins. Handles partial bins at edges using fractional overlap.
+
+Mirrors Python Stingray's `stingray.utils.rebin_data`.
+
+# Arguments
+- `x::AbstractVector`: The dependent variable (e.g., frequencies).
+- `y::AbstractVector`: The independent variable to be binned (real or complex).
+- `dx_new::Real`: The new resolution of `x`.
+
+# Keyword Arguments
+- `yerr::Union{Nothing, AbstractVector}`: Uncertainties on `y`. Propagated via
+  quadrature during binning.
+- `method::Symbol`: `:mean` (average) or `:sum`. Default `:mean`.
+- `dx::Union{Nothing, Real}`: The old resolution. If `nothing`, computed from
+  `diff(x)`.
+
+# Returns
+- `(xbin, ybin, ybinerr, step_size)` — rebinned x midpoints, rebinned y values,
+  propagated errors, and the number of old bins per new bin.
+"""
+function rebin_data(x::AbstractVector, y::AbstractVector, dx_new::Real;
+                    yerr::Union{Nothing, AbstractVector}=nothing,
+                    method::Symbol=:mean,
+                    dx::Union{Nothing, Real}=nothing)
+
+    y = collect(y)
+    if isnothing(yerr)
+        yerr_arr = zeros(Float64, length(y))
+    else
+        yerr_arr = collect(yerr)
+    end
+
+    # Determine old resolution
+    if isnothing(dx) || dx == 0
+        dx_old = diff(x)
+    else
+        dx_old = [float(dx)]
+    end
+
+    if any(dx_new .< dx_old)
+        throw(ArgumentError(
+            "New frequency resolution must be larger than old frequency resolution."))
+    end
+
+    # Left and right bin edges — assumes x values are left bin edges
+    xedges = vcat(collect(Float64, x), [Float64(x[end]) + dx_old[end]])
+
+    # New regularly-binned edges
+    # Match Python's np.arange(xedges[0], xedges[-1] + dx_new, dx_new)
+    xbin_edges = collect(xedges[1]:dx_new:(xedges[end] + dx_new))
+
+    n_new = length(xbin_edges) - 1
+    T_out = eltype(y)
+
+    output = zeros(T_out, n_new)
+    outputvar = zeros(Float64, n_new)
+    step_size = zeros(Float64, n_new)
+
+    # searchsortedfirst matches Python's np.searchsorted (side='left')
+    all_x = [searchsortedfirst(xedges, xb) for xb in xbin_edges]
+
+    for i in 1:n_new
+        min_ind = all_x[i]
+        max_ind = all_x[i + 1]
+        xmin = xbin_edges[i]
+        xmax = xbin_edges[i + 1]
+
+        # Sum full bins: y[min_ind : max_ind-2] in Julia (matches Python y[min_ind:max_ind-1])
+        for j in min_ind:(max_ind - 2)
+            if 1 <= j <= length(y)
+                output[i] += y[j]
+                outputvar[i] += abs(yerr_arr[j])^2
+                step_size[i] += 1.0
+            end
+        end
+
+        # Fractional contribution from the bin straddling the left edge
+        if min_ind >= 2 && min_ind - 1 <= length(y)
+            prev_dx = xedges[min_ind] - xedges[min_ind - 1]
+            prev_frac = (xedges[min_ind] - xmin) / prev_dx
+            output[i] += y[min_ind - 1] * prev_frac
+            outputvar[i] += (abs(yerr_arr[min_ind - 1]) * prev_frac)^2
+            step_size[i] += prev_frac
+        end
+
+        # Fractional contribution from the bin straddling the right edge
+        if max_ind <= length(xedges) && max_ind - 1 >= 1 && max_ind - 1 <= length(y)
+            dx_post = xedges[max_ind] - xedges[max_ind - 1]
+            post_frac = (xmax - xedges[max_ind - 1]) / dx_post
+            output[i] += y[max_ind - 1] * post_frac
+            outputvar[i] += (abs(yerr_arr[max_ind - 1]) * post_frac)^2
+            step_size[i] += post_frac
+        end
+    end
+
+    # Apply method
+    if method in (:mean, :avg, :average)
+        ybin = output ./ step_size
+        ybinerr = sqrt.(outputvar) ./ step_size
+    elseif method == :sum
+        ybin = output
+        ybinerr = sqrt.(outputvar)
+    else
+        throw(ArgumentError(
+            "Method not recognized. Please use :sum or :mean."))
+    end
+
+    # Handle non-evenly-divisible segments (matches Python trim logic)
+    tseg = length(dx_old) == 1 ?
+        Float64(x[end]) - Float64(x[1]) + dx_old[1] :
+        Float64(x[end]) - Float64(x[1]) + dx_old[end]
+
+    if (tseg / dx_new) % 1 > 0
+        ybin = ybin[1:end-1]
+        ybinerr = ybinerr[1:end-1]
+        step_size = step_size[1:end-1]
+    end
+
+    # Also trim any trailing bins with zero samples (floating-point edge artifacts)
+    while length(step_size) > 0 && step_size[end] <= 0
+        ybin = ybin[1:end-1]
+        ybinerr = ybinerr[1:end-1]
+        step_size = step_size[1:end-1]
+    end
+
+    # Compute bin midpoints
+    n_out = length(ybin)
+    xbin = [xbin_edges[i] + dx_new / 2 for i in 1:n_out]
+
+    return xbin, ybin, ybinerr, step_size
+end
+
+"""
+    _root_squared_mean(x)
+
+Compute √(mean(x²)) — the root-mean-square statistic used for error
+propagation during logarithmic rebinning.
+"""
+_root_squared_mean(x) = sqrt(mean(x .^ 2))
+
+"""
+    rebin_data_log(x, y, f; y_err=nothing, dx=nothing)
+
+Logarithmic re-bin of data. Each new bin width grows as `dν_j = dν_{j-1} * (1+f)`.
+
+Mirrors Python Stingray's `stingray.utils.rebin_data_log`.
+
+# Arguments
+- `x::AbstractVector`: The dependent variable (e.g., frequencies).
+- `y::AbstractVector`: The independent variable to be binned (real or complex).
+- `f::Real`: The factor of increase of each bin width relative to the previous one.
+
+# Keyword Arguments
+- `y_err::Union{Nothing, AbstractVector}`: Uncertainties on `y`.
+- `dx::Union{Nothing, Real}`: Initial bin width. If `nothing`, computed as `median(diff(x))`.
+
+# Returns
+- `(xbin, ybin, ybin_err, nsamples)` — rebinned midpoints, rebinned values,
+  propagated errors, and number of original samples per bin.
+"""
+function rebin_data_log(x::AbstractVector, y::AbstractVector, f::Real;
+                        y_err::Union{Nothing, AbstractVector}=nothing,
+                        dx::Union{Nothing, Real}=nothing)
+
+    x = Float64.(collect(x))
+    y = collect(y)
+    y_err_arr = isnothing(y_err) ? zeros(Float64, length(y)) : collect(y_err)
+
+    if length(x) != length(y)
+        throw(ArgumentError("x and y must be of the same length!"))
+    end
+    if length(y) != length(y_err_arr)
+        throw(ArgumentError("y and y_err must be of the same length!"))
+    end
+
+    dx_init = isnothing(dx) ? median(diff(x)) : Float64(dx)
+
+    # Build logarithmically-growing bin edges
+    minx = x[1] * 0.5    # frequency to start from
+    maxx = x[end]         # maximum frequency to end
+    binx = [minx, minx + dx_init]
+    dx_curr = dx_init
+
+    while binx[end] <= maxx
+        push!(binx, binx[end] + dx_curr * (1.0 + f))
+        dx_curr = binx[end] - binx[end-1]
+    end
+
+    binx_edges = Float64.(binx)
+    n_bins = length(binx_edges) - 1
+
+    # Assign each x value to a bin
+    bin_indices = zeros(Int, length(x))
+    for (j, xv) in enumerate(x)
+        idx = searchsortedlast(binx_edges, xv)
+        if idx >= 1 && idx <= n_bins
+            bin_indices[j] = idx
+        end
+    end
+
+    # Compute binned statistics
+    xbin = Vector{Float64}()
+    ybin_real = Vector{Float64}()
+    ybin_imag = Vector{Float64}()
+    ybin_err_real = Vector{Float64}()
+    ybin_err_imag = Vector{Float64}()
+    nsamples = Vector{Int}()
+
+    is_complex = eltype(y) <: Complex
+
+    for i in 1:n_bins
+        mask = bin_indices .== i
+        count = sum(mask)
+        count == 0 && continue
+
+        # Mean of x values in this bin
+        push!(xbin, mean(x[mask]))
+
+        # Mean of y values (handle complex)
+        vals = y[mask]
+        push!(ybin_real, mean(real.(vals)))
+        if is_complex
+            push!(ybin_imag, mean(imag.(vals)))
+        end
+
+        # RMS error propagation
+        errs = y_err_arr[mask]
+        push!(ybin_err_real, _root_squared_mean(real.(errs)))
+        if is_complex
+            push!(ybin_err_imag, _root_squared_mean(imag.(errs)))
+        end
+
+        push!(nsamples, count)
+    end
+
+    # Reconstruct output
+    if is_complex
+        ybin_out = ybin_real .+ im .* ybin_imag
+        ybin_err_out = ybin_err_real .+ im .* ybin_err_imag
+    else
+        ybin_out = ybin_real
+        ybin_err_out = ybin_err_real
+    end
+
+    return xbin, ybin_out, ybin_err_out, nsamples
+end
+
