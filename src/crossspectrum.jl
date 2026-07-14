@@ -36,7 +36,7 @@ two signals at each Fourier frequency.
 - `df::T`: Frequency resolution (Hz).
 - `dt::T`: Time resolution of the input data (s).
 - `n::Int`: Number of bins per segment.
-- `m::Int`: Number of averaged cross-spectra.
+- `m::Union{Int, Vector{Int}}`: Number of averaged cross-spectra.
 - `k::Union{Int, Vector{Int}}`: Rebinning factor (1 if not rebinned, vector after log rebinning).
 - `nphots::T`: Geometric mean of total photons: √(nphots1 * nphots2).
 - `nphots1::T`: Total number of photons in signal 1.
@@ -79,7 +79,8 @@ struct Crossspectrum{T<:Real} <: AbstractCrossspectrum
 end
 
 function Base.show(io::IO, cs::Crossspectrum{T}) where T
-    print(io, "Crossspectrum($(cs.norm), $(cs.m) segments, ",
+    m_display = cs.m isa Int ? cs.m : "$(length(cs.m))-element"
+    print(io, "Crossspectrum($(cs.norm), $(m_display) segments, ",
           "$(length(cs.freq)) freq bins, ",
           "df=$(round(cs.df, sigdigits=4)) Hz, ",
           "freq range=[$(round(cs.freq[1], sigdigits=4)), ",
@@ -145,10 +146,13 @@ end
 """
     _compute_power_errors(power, unnorm_power, m) -> (power_err, unnorm_power_err)
 
-Estimate spectral uncertainties as `power / √m`.
+Estimate spectral uncertainties as `power / √m`. Supports both scalar `m`
+(uniform averaging) and vector `m` (variable averaging after log rebinning).
 """
 _compute_power_errors(power, unnorm_power, m::Int) =
     (power ./ sqrt(m), unnorm_power ./ sqrt(m))
+_compute_power_errors(power, unnorm_power, m::Vector{Int}) =
+    (power ./ sqrt.(m), unnorm_power ./ sqrt.(m))
 
 """
     _compute_photon_stats(nphots1, nphots2, m, segment_size) -> NamedTuple
