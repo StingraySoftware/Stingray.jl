@@ -506,4 +506,27 @@ end
         @test eltype(ps_log.power) <: Real
     end
 
+
+    @testset "compute_rms" begin
+        rng = MersenneTwister(42)
+        rate = 100.0  # counts/s
+        duration = 100.0
+        dt = 0.01
+        times = sort(rand(rng, Uniform(0.0, duration), round(Int, rate * duration)))
+        
+        test_gti = [0.0 duration]
+        meta = FITSMetadata("[test]", 1, nothing, Dict{String,Vector}(), Dict{String,Any}(), test_gti, nothing, nothing, nothing, nothing, nothing, nothing, nothing)
+        ev_rms = EventList(times, nothing, meta)
+        ps_rms = Powerspectrum(ev_rms, duration, dt; norm="frac", silent=true)
+        
+        rms, rms_err = compute_rms(ps_rms, ps_rms.freq[2], ps_rms.freq[end])
+        @test rms >= 0
+        @test rms_err >= 0
+
+        # compute_rms on rebinned spectrum
+        ps_rb2 = rebin(ps_rms, 5 * ps_rms.df)
+        rms2, rms_err2 = compute_rms(ps_rb2, ps_rb2.freq[2], ps_rb2.freq[end])
+        @test rms2 >= 0
+    end
+
 end
