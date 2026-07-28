@@ -148,4 +148,55 @@ using Stingray
         @test cs.k == 1
     end
 
+    @testset "rebin - linear snapshot" begin
+        # Build a Crossspectrum with known values (10 bins) for exact checks
+        freq = collect(1.0:1.0:10.0)
+        power = Complex{Float64}[1+0.5im, 2+1im, 3+0.5im, 4+1im, 5+0.5im,
+                                  6+1im, 7+0.5im, 8+1im, 9+0.5im, 10+1im]
+        power_err = power ./ sqrt(1)
+        test_gti = [0.0 10.0]
+        cs = Crossspectrum{Float64}(
+            freq, power, power_err, power .* 100, power_err .* 100,
+            nothing, nothing,
+            1.0, 0.001, 10000, 1, 1,
+            1000.0, 500.0, 500.0, 50.0, 50.0,
+            "frac", "all", false,
+            test_gti, 10.0, "poisson", "crossspectrum"
+        )
+
+        # Rebin by factor 2 (10 → 5 bins)
+        cs_rb = rebin(cs, 2.0; method=:mean)
+        @test cs_rb.freq ≈ [2.0, 4.0, 6.0, 8.0, 10.0]
+        @test cs_rb.power ≈ [1.5+0.75im, 3.5+0.75im, 5.5+0.75im, 7.5+0.75im, 9.5+0.75im]
+        @test cs_rb.df ≈ 2.0
+        @test cs_rb.k == 2
+        @test cs_rb.m == 2
+        @test eltype(cs_rb.power) <: Complex
+    end
+
+    @testset "rebin_log - snapshot" begin
+        freq = collect(1.0:1.0:10.0)
+        power = Complex{Float64}[1+0.5im, 2+1im, 3+0.5im, 4+1im, 5+0.5im,
+                                  6+1im, 7+0.5im, 8+1im, 9+0.5im, 10+1im]
+        power_err = power ./ sqrt(1)
+        test_gti = [0.0 10.0]
+        cs = Crossspectrum{Float64}(
+            freq, power, power_err, power .* 100, power_err .* 100,
+            nothing, nothing,
+            1.0, 0.001, 10000, 1, 1,
+            1000.0, 500.0, 500.0, 50.0, 50.0,
+            "frac", "all", false,
+            test_gti, 10.0, "poisson", "crossspectrum"
+        )
+
+        cs_log = rebin_log(cs, 0.3)
+        @test cs_log.freq ≈ [1.0, 2.0, 3.5, 5.5, 8.0, 10.0]
+        @test cs_log.power ≈ [1+0.5im, 2+1im, 3.5+0.75im, 5.5+0.75im,
+                               8.0+2/3*im, 10+1im]  atol=1e-10
+        @test cs_log.k == [1, 1, 2, 2, 3, 1]
+        @test cs_log.m == [1, 1, 2, 2, 3, 1]
+        @test eltype(cs_log.power) <: Complex
+    end
+
 end
+
