@@ -1081,3 +1081,50 @@ function impose_symmetry_lsft(ft::AbstractVector{<:Complex},
 
     return ft_full, freqs_full
 end
+
+"""
+    unnormalize_periodograms(power, dt, n_bin, nphots; norm="frac", mean_flux=nothing)
+
+Invert the normalization applied to a periodogram, converting normalized
+power values back to unnormalized form.
+
+This is the inverse of `normalize_periodograms` and is needed for computing
+RMS amplitudes from normalized power spectra (e.g., in Lomb-Scargle context).
+
+Mirrors Python Stingray's `fourier.unnormalize_periodograms`.
+
+# Arguments
+- `power::AbstractVector{<:Number}`: Normalized power values.
+- `dt::Real`: Time resolution of the data.
+- `n_bin::Int`: Number of bins per segment.
+- `nphots::Real`: Total number of photons (or geometric mean for cross-spectra).
+
+# Keyword Arguments
+- `norm::String="frac"`: The normalization that was applied.
+  Must be one of `"frac"`, `"abs"`, `"leahy"`, `"none"`.
+- `mean_flux::Union{Nothing, Real}=nothing`: Mean count rate. If `nothing`,
+  computed as `nphots / n_bin`.
+
+# Returns
+- `Vector`: Unnormalized power values.
+"""
+function unnormalize_periodograms(power::AbstractVector{<:Number},
+                                  dt::Real, n_bin::Int, nphots::Real;
+                                  norm::String="frac",
+                                  mean_flux::Union{Nothing, Real}=nothing)
+    if isnothing(mean_flux)
+        mean_flux = nphots / n_bin
+    end
+
+    if norm == "leahy"
+        return @. power * nphots / 2.0
+    elseif norm == "frac"
+        return @. power * mean_flux^2 * n_bin / (2.0 * dt)
+    elseif norm == "abs"
+        return @. power * n_bin * dt / 2.0
+    elseif norm == "none"
+        return collect(power)
+    else
+        throw(ArgumentError("Unknown value for norm: $norm"))
+    end
+end
