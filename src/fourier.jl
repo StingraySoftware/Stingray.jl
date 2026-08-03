@@ -1031,3 +1031,53 @@ function lsft_fast(y::AbstractVector{<:Real},
 
     return ft
 end
+
+"""
+    impose_symmetry_lsft(ft, sum_y, n, freqs)
+
+Create the full (positive + negative frequency) spectrum from a one-sided
+Lomb-Scargle Fourier Transform by imposing Hermitian symmetry.
+
+For a real-valued signal, the Fourier transform satisfies `F(-ν) = conj(F(ν))`.
+This function constructs the full spectrum by:
+1. Computing the DC component as `sum_y` (total signal).
+2. Prepending the negative frequencies as conjugates of the positive ones (reversed).
+3. Prepending the corresponding negative frequency values.
+
+Mirrors Python Stingray's `fourier.impose_symmetry_lsft`.
+
+# Arguments
+- `ft::AbstractVector{<:Complex}`: One-sided (positive frequency) Fourier amplitudes.
+- `sum_y::Real`: Sum of the signal values (DC component).
+- `n::Int`: Number of data points in the original signal.
+- `freqs::AbstractVector{<:Real}`: Positive frequency grid.
+
+# Returns
+- `(ft_full, freqs_full)`: Tuple of the full spectrum and full frequency grid.
+  - `ft_full` has length `2 * length(ft) + 1` (negative freqs + DC + positive freqs).
+  - `freqs_full` is symmetric around 0.
+
+# Examples
+```julia
+freqs = [0.1, 0.2, 0.3, 0.4, 0.5]
+ft = lsft_slow(y, t, freqs)
+ft_full, freqs_full = impose_symmetry_lsft(ft, sum(y), length(y), freqs)
+```
+"""
+function impose_symmetry_lsft(ft::AbstractVector{<:Complex},
+                               sum_y::Real,
+                               n::Int,
+                               freqs::AbstractVector{<:Real})
+    # Negative frequency part: reversed conjugate of positive frequencies
+    ft_neg = conj.(reverse(ft))
+    freqs_neg = -reverse(freqs)
+
+    # DC component
+    dc = ComplexF64(sum_y)
+
+    # Full spectrum: [negative freqs | DC | positive freqs]
+    ft_full = vcat(ft_neg, [dc], ComplexF64.(ft))
+    freqs_full = vcat(freqs_neg, [0.0], Float64.(freqs))
+
+    return ft_full, freqs_full
+end
