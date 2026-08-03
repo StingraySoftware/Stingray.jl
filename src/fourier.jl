@@ -903,3 +903,131 @@ function lsft_slow(y::AbstractVector{<:Real},
 
     return ft
 end
+
+"""
+    _extirpolate!(result, y, t, freqs, oversampling)
+
+Internal helper for `lsft_fast`. Grids (extirpolates) unevenly sampled data
+onto a regular oversampled grid using a triangle-window spreading kernel.
+
+Each sample `y[j]` at time `t[j]` is spread to the two nearest grid points
+with weights proportional to the distance to each point (linear interpolation
+in reverse, i.e., "extirpolation").
+
+# Arguments
+- `result::Vector{ComplexF64}`: Pre-allocated output grid (zeroed).
+- `y::AbstractVector{<:Real}`: Signal values.
+- `t::AbstractVector{<:Real}`: Time stamps.
+- `freqs::AbstractVector{<:Real}`: Frequency grid (used to determine grid spacing).
+- `oversampling::Int`: Oversampling factor for the regular grid.
+"""
+function _extirpolate!(result::Vector{ComplexF64},
+                       y::AbstractVector{<:Real},
+                       t::AbstractVector{<:Real},
+                       freqs::AbstractVector{<:Real},
+                       oversampling::Int)
+    n_grid = length(result)
+    df = length(freqs) > 1 ? freqs[2] - freqs[1] : freqs[1]
+    dt_grid = 1.0 / (n_grid * df)
+
+    for j in eachindex(y)
+        # Map time to grid index (0-based fractional position)
+        pos = t[j] / dt_grid
+        # Wrap into [0, n_grid)
+        pos = mod(pos, n_grid)
+
+        # Two nearest grid points
+        idx_lo = floor(Int, pos)
+        frac = pos - idx_lo
+
+        # Julia 1-indexed, with wrapping
+        i_lo = mod(idx_lo, n_grid) + 1
+        i_hi = mod(idx_lo + 1, n_grid) + 1
+
+        # Triangle-window weights
+        result[i_lo] += y[j] * (1.0 - frac)
+        result[i_hi] += y[j] * frac
+    end
+end
+
+"""
+    lsft_fast(y, t, freqs; oversampling=5)
+
+Compute the Lomb-Scargle Fourier Transform using the fast O(n·log n)
+Press & Rybicki algorithm.
+
+The method works by:
+1. Gridding ("extirpolating") the unevenly sampled data onto a regular
+   oversampled grid via triangle-window spreading.
+2. Computing an FFT of the gridded data.
+3. Interpolating the FFT result back to the requested frequency grid.
+
+Mirrors Python Stingray's `fourier.lsft_fast`.
+
+# Arguments
+- `y::AbstractVector{<:Real}`: Signal values at each time sample.
+- `t::AbstractVector{<:Real}`: Time stamps (may be unevenly spaced).
+- `freqs::AbstractVector{<:Real}`: Frequency grid at which to evaluate the transform.
+
+# Keyword Arguments
+- `oversampling::Int=5`: Oversampling factor for the internal regular grid.
+  Higher values improve accuracy at the cost of memory and speed.
+
+# Returns
+- `Vector{ComplexF64}`: The Fourier amplitudes at each frequency.
+
+# Examples
+```julia
+t = collect(0.0:0.1:10.0) .+ 0.01 .* randn(101)
+y = sin.(2π .* 0.5 .* t)
+freqs = collect(0.01:0.01:5.0)
+ft = lsft_fast(y, t, freqs; oversampling=5)
+```
+
+# References
+- Press, W. H. & Rybicki, G. B. (1989), "Fast algorithm for spectral analysis
+  of unevenly sampled data", ApJ 338, 277.
+"""
+function lsft_fast(y::AbstractVector{<:Real},
+                   t::AbstractVector{<:Real},
+                   freqs::AbstractVector{<:Real};
+                   oversampling::Int=5)
+    n = length(y)
+    if length(t) != n
+        throw(ArgumentError("y and t must have the same length (got $(length(y)) and $(length(t)))"))
+    end
+    if oversampling < 1
+        throw(ArgumentError("oversampling must be ≥ 1 (got $oversampling)"))
+    end
+
+    nf = length(freqs)
+    # Size of the oversampled grid
+    n_grid = nf * oversampling
+
+    # Step 1: Extirpolate onto the regular grid
+    gridded = zeros(ComplexF64, n_grid)
+    _extirpolate!(gridded, y, t, freqs, oversampling)
+
+    # Step 2: FFT the gridded data
+    ft_grid = fft(gridded)
+
+    # Step 3: Interpolate to the requested frequencies
+    df = nf > 1 ? freqs[2] - freqs[1] : freqs[1]
+    ft = zeros(ComplexF64, nf)
+
+    @inbounds for k in 1:nf
+        # Map the requested frequency to a grid index
+        grid_idx = freqs[k] / df
+        idx_lo = floor(Int, grid_idx)
+        frac = grid_idx - idx_lo
+
+        # 1-indexed with wrapping
+        i_lo = mod(idx_lo, n_grid) + 1
+        i_hi = mod(idx_lo + 1, n_grid) + 1
+
+        # Linear interpolation between neighboring FFT bins
+        ft[k] = ft_grid[i_lo] * (1.0 - frac) + ft_grid[i_hi] * frac
+    end
+
+    return ft
+end
