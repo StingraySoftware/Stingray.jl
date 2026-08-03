@@ -843,3 +843,63 @@ function integrate_power_in_frequency_range(
 
     return power_integrated, power_err_integrated
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Lomb-Scargle Fourier Transform algorithms
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    lsft_slow(y, t, freqs)
+
+Compute the Lomb-Scargle Fourier Transform of unevenly sampled data using
+the direct O(n²) summation method.
+
+Mirrors Python Stingray's `fourier.lsft_slow`.
+
+# Arguments
+- `y::AbstractVector{<:Real}`: Signal values at each time sample.
+- `t::AbstractVector{<:Real}`: Time stamps of each sample (may be unevenly spaced).
+- `freqs::AbstractVector{<:Real}`: Frequency grid at which to evaluate the transform.
+
+# Returns
+- `Vector{ComplexF64}`: The Fourier amplitudes at each frequency.
+
+# Mathematical Definition
+```math
+F(\\nu_k) = \\sum_{j=1}^{N} y_j \\, e^{-2\\pi i \\, \\nu_k \\, t_j}
+```
+
+# Examples
+```julia
+t = [0.0, 1.0, 2.0, 3.0, 4.0]
+y = [1.0, 0.0, -1.0, 0.0, 1.0]
+freqs = [0.1, 0.2, 0.3, 0.4, 0.5]
+ft = lsft_slow(y, t, freqs)
+```
+
+# References
+- Scargle, J. D. (1989), "Studies in astronomical time series analysis. III",
+  ApJ 343, 874–887.
+"""
+function lsft_slow(y::AbstractVector{<:Real},
+                   t::AbstractVector{<:Real},
+                   freqs::AbstractVector{<:Real})
+    n = length(y)
+    if length(t) != n
+        throw(ArgumentError("y and t must have the same length (got $(length(y)) and $(length(t)))"))
+    end
+
+    nf = length(freqs)
+    ft = zeros(ComplexF64, nf)
+
+    @inbounds for k in 1:nf
+        ν = freqs[k]
+        s = zero(ComplexF64)
+        for j in 1:n
+            s += y[j] * exp(-2π * im * ν * t[j])
+        end
+        ft[k] = s
+    end
+
+    return ft
+end
