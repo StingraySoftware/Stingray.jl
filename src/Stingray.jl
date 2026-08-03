@@ -94,9 +94,22 @@ export HuePlot
 include("crossspectrum.jl")
 export AbstractCrossspectrum
 export Crossspectrum
+export rebin_data
+export rebin_data_log
+export rebin_log
 
 include("powerspectrum.jl")
 export AbstractPowerspectrum
 export Powerspectrum
+export compute_rms
+
+include("lombscargle.jl")
+export LombScargleCrossspectrum
+export LombScarglePowerspectrum
+export autofrequency
+export lsft_slow, lsft_fast
+export impose_symmetry_lsft
+export unnormalize_periodograms
+export phase_lag, time_lag
 
 end
