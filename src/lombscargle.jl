@@ -432,3 +432,135 @@ function LombScargleCrossspectrum(ev1::EventList, ev2::EventList;
         min_freq=min_freq, max_freq=max_freq, df=df,
         method=method, oversampling=oversampling)
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# LombScarglePowerspectrum
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    LombScarglePowerspectrum{T<:Real} <: AbstractPowerspectrum
+
+A power spectrum (periodogram) computed from an unevenly sampled time series
+using the Lomb-Scargle Fourier Transform.
+
+Mathematically equivalent to a `LombScargleCrossspectrum` of a signal with
+itself. The `nphots` field stores the total number of photons (same as
+`nphots1` in the cross-spectrum).
+
+Mirrors Python Stingray's `LombScarglePowerspectrum`.
+
+# Fields
+Same as `LombScargleCrossspectrum`, plus:
+- `nphots::T`: Total number of photons (equals `nphots1`).
+"""
+struct LombScarglePowerspectrum{T<:Real} <: AbstractPowerspectrum
+    freq::Vector{T}
+    power::Union{Vector{T}, Vector{Complex{T}}}
+    power_err::Union{Vector{T}, Vector{Complex{T}}}
+    unnorm_power::Vector{Complex{T}}
+    unnorm_power_err::Vector{Complex{T}}
+    df::T
+    dt::T
+    n::Int
+    m::Int
+    k::Int
+    nphots::T
+    nphots1::T
+    nphots2::T
+    norm::String
+    power_type::String
+    fullspec::Bool
+    method::String
+    oversampling::Int
+    variance1::T
+    variance2::T
+    err_dist::String
+    type::String
+end
+
+function Base.show(io::IO, lsps::LombScarglePowerspectrum{T}) where T
+    print(io, "LombScarglePowerspectrum($(lsps.norm), $(lsps.method), ",
+          "$(length(lsps.freq)) freq bins, ",
+          "df=$(round(lsps.df, sigdigits=4)) Hz, ",
+          "freq range=[$(round(lsps.freq[1], sigdigits=4)), ",
+          "$(round(lsps.freq[end], sigdigits=4))] Hz)")
+end
+
+"""
+    LombScarglePowerspectrum(lc::LightCurve; kwargs...)
+
+Construct a `LombScarglePowerspectrum` from a `LightCurve` object.
+
+Internally computes the cross-spectrum of the light curve with itself,
+then wraps the result as a power spectrum.
+
+# Keyword Arguments
+- `norm::String="frac"`: Normalization ("frac", "abs", "leahy", "none").
+- `power_type::String="all"`: Power type ("all", "real", "absolute").
+- `fullspec::Bool=false`: Include negative frequencies.
+- `min_freq::Union{Nothing, Real}=nothing`: Minimum frequency.
+- `max_freq::Union{Nothing, Real}=nothing`: Maximum frequency.
+- `df::Union{Nothing, Real}=nothing`: Frequency resolution.
+- `method::String="fast"`: LSFT method ("fast" or "slow").
+- `oversampling::Int=5`: Oversampling factor.
+"""
+function LombScarglePowerspectrum(lc::LightCurve;
+                                   norm::String="frac",
+                                   power_type::String="all",
+                                   fullspec::Bool=false,
+                                   min_freq::Union{Nothing, Real}=nothing,
+                                   max_freq::Union{Nothing, Real}=nothing,
+                                   df::Union{Nothing, Real}=nothing,
+                                   method::String="fast",
+                                   oversampling::Int=5)
+    _validate_ls_inputs(norm, power_type, method, oversampling, fullspec,
+                         min_freq, max_freq)
+
+    # Compute as cross-spectrum of signal with itself
+    cs = lscrossspectrum_from_lightcurve(lc, lc;
+        norm=norm, power_type=power_type, fullspec=fullspec,
+        min_freq=min_freq, max_freq=max_freq, df=df,
+        method=method, oversampling=oversampling)
+
+    return LombScarglePowerspectrum{Float64}(
+        cs.freq, cs.power, cs.power_err,
+        cs.unnorm_power, cs.unnorm_power_err,
+        cs.df, cs.dt, cs.n, cs.m, cs.k,
+        cs.nphots1,  # nphots = nphots1 for auto-spectrum
+        cs.nphots1, cs.nphots2,
+        cs.norm, cs.power_type, cs.fullspec,
+        cs.method, cs.oversampling,
+        cs.variance1, cs.variance2,
+        cs.err_dist, "powerspectrum"
+    )
+end
+
+"""
+    LombScarglePowerspectrum(ev::EventList; dt, kwargs...)
+
+Construct a `LombScarglePowerspectrum` from an `EventList` object.
+
+Converts the event list to a light curve, then delegates to the
+`LightCurve` constructor.
+
+# Keyword Arguments
+- `dt::Real`: Time resolution for binning. **Required.**
+- All other kwargs are passed to the `LightCurve` constructor.
+"""
+function LombScarglePowerspectrum(ev::EventList;
+                                   dt::Real,
+                                   norm::String="frac",
+                                   power_type::String="all",
+                                   fullspec::Bool=false,
+                                   min_freq::Union{Nothing, Real}=nothing,
+                                   max_freq::Union{Nothing, Real}=nothing,
+                                   df::Union{Nothing, Real}=nothing,
+                                   method::String="fast",
+                                   oversampling::Int=5)
+    lc = create_lightcurve(ev, dt)
+
+    return LombScarglePowerspectrum(lc;
+        norm=norm, power_type=power_type, fullspec=fullspec,
+        min_freq=min_freq, max_freq=max_freq, df=df,
+        method=method, oversampling=oversampling)
+end
