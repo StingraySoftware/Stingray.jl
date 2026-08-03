@@ -147,3 +147,288 @@ function Base.show(io::IO, lscs::LombScargleCrossspectrum{T}) where T
           "freq range=[$(round(lscs.freq[1], sigdigits=4)), ",
           "$(round(lscs.freq[end], sigdigits=4))] Hz)")
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Internal: LSFT cross-spectrum computation
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    _ls_cross(lc1, lc2, freq; fullspec=false, method="fast", oversampling=5)
+
+Compute the unnormalized Lomb-Scargle cross spectrum of two light curves.
+
+Returns `(freq, cross)` where `cross = F₁ × conj(F₂)`.
+
+# Arguments
+- `lc1::LightCurve`: Light curve from channel 1.
+- `lc2::LightCurve`: Light curve from channel 2.
+- `freq::AbstractVector{<:Real}`: Frequency grid.
+
+# Keyword Arguments
+- `fullspec::Bool=false`: Include negative frequencies via Hermitian symmetry.
+- `method::String="fast"`: LSFT method ("fast" or "slow").
+- `oversampling::Int=5`: Oversampling factor (fast method only).
+"""
+function _ls_cross(lc1::LightCurve, lc2::LightCurve,
+                   freq::AbstractVector{<:Real};
+                   fullspec::Bool=false,
+                   method::String="fast",
+                   oversampling::Int=5)
+    y1 = Float64.(lc1.counts)
+    y2 = Float64.(lc2.counts)
+    t1 = Float64.(lc1.time)
+    t2 = Float64.(lc2.time)
+
+    if method == "slow"
+        lsft1 = lsft_slow(y1, t1, freq)
+        lsft2 = lsft_slow(y2, t2, freq)
+    elseif method == "fast"
+        lsft1 = lsft_fast(y1, t1, freq; oversampling=oversampling)
+        lsft2 = lsft_fast(y2, t2, freq; oversampling=oversampling)
+    else
+        throw(ValueError("method must be one of ['fast','slow']"))
+    end
+
+    if fullspec
+        lsft1, _ = impose_symmetry_lsft(lsft1, sum(y1), Base.length(y1), freq)
+        lsft2, freq = impose_symmetry_lsft(lsft2, sum(y2), Base.length(y2), freq)
+    end
+
+    cross = lsft1 .* conj.(lsft2)
+    return Float64.(freq), cross
+end
+
+"""
+    _normalize_crossspectrum(unnorm_power, lc1, lc2, norm, n)
+
+Normalize the cross spectrum using `normalize_periodograms` from fourier.jl.
+
+Computes the mean flux as the geometric mean of the two light curves'
+mean count rates, matching Python Stingray's normalization approach.
+"""
+function _normalize_crossspectrum(unnorm_power::AbstractVector{<:Complex},
+                                   lc1::LightCurve, lc2::LightCurve,
+                                   norm::String, n::Int)
+    dt_val = lc1.dt isa AbstractVector ? lc1.dt[1] : lc1.dt
+    nphots1 = Float64(sum(lc1.counts))
+    nphots2 = Float64(sum(lc2.counts))
+    nphots = sqrt(nphots1 * nphots2)
+
+    mean1 = nphots1 / n
+    mean2 = nphots2 / n
+    mean_flux = sqrt(mean1 * mean2)
+
+    # Determine variance for Leahy normalization
+    variance = nothing
+    if lc1.err_method == :gaussian
+        variance = sqrt(Statistics.var(Float64.(lc1.counts)) *
+                        Statistics.var(Float64.(lc2.counts)))
+    end
+
+    normalized = normalize_periodograms(
+        unnorm_power, Float64(dt_val), n;
+        mean_flux=mean_flux, n_ph=nphots,
+        norm=norm, variance=variance, power_type="all"
+    )
+
+    return normalized
+end
+
+"""
+    lscrossspectrum_from_lightcurve(lc1, lc2; kwargs...)
+
+Core function that orchestrates the full Lomb-Scargle cross-spectrum pipeline.
+
+1. Builds the frequency grid via `autofrequency`
+2. Computes the unnormalized cross spectrum via `_ls_cross`
+3. Normalizes the power
+4. Applies `power_type` filtering
+5. Constructs and returns a `LombScargleCrossspectrum`
+
+Mirrors Python Stingray's `lscrossspectrum_from_lightcurve`.
+"""
+function lscrossspectrum_from_lightcurve(lc1::LightCurve, lc2::LightCurve;
+                                         norm::String="none",
+                                         power_type::String="all",
+                                         fullspec::Bool=false,
+                                         min_freq::Union{Nothing, Real}=nothing,
+                                         max_freq::Union{Nothing, Real}=nothing,
+                                         df::Union{Nothing, Real}=nothing,
+                                         method::String="fast",
+                                         oversampling::Int=5,
+                                         nyquist_factor::Real=1)
+    # Compute time span and dt
+    t_length = max(lc1.time[end], lc2.time[end]) - min(lc1.time[1], lc2.time[1])
+    dt_val1 = lc1.dt isa AbstractVector ? lc1.dt[1] : lc1.dt
+    dt_val2 = lc2.dt isa AbstractVector ? lc2.dt[1] : lc2.dt
+    dt_val = min(dt_val1, dt_val2)
+
+    # Build frequency grid
+    freq = autofrequency(;
+        min_freq=min_freq, max_freq=max_freq, df=df,
+        dt=dt_val, length=t_length, nyquist_factor=nyquist_factor
+    )
+
+    # Compute unnormalized cross spectrum
+    freq, cross = _ls_cross(lc1, lc2, freq;
+                             fullspec=fullspec, method=method,
+                             oversampling=oversampling)
+
+    n = Base.length(lc1.time)
+
+    # Normalize
+    power = _normalize_crossspectrum(cross, lc1, lc2, norm, n)
+
+    # Apply power_type
+    if power_type == "real"
+        power = real.(power)
+        unnorm_display = real.(cross)
+    elseif power_type == "absolute"
+        power = abs.(power)
+        unnorm_display = abs.(cross)
+    else
+        unnorm_display = cross
+    end
+
+    # Compute metadata
+    nphots1 = Float64(sum(lc1.counts))
+    nphots2 = Float64(sum(lc2.counts))
+    freq_df = Base.length(freq) > 1 ? Float64(freq[2] - freq[1]) : 1.0 / t_length
+
+    # Variance
+    if lc1.err_method == :gaussian
+        variance1 = Float64(Statistics.mean(lc1.count_error))^2
+        variance2 = Float64(Statistics.mean(lc2.count_error))^2
+        err_dist = "gauss"
+    else
+        variance1 = Float64(Statistics.mean(Float64.(lc1.counts)))
+        variance2 = Float64(Statistics.mean(Float64.(lc2.counts)))
+        err_dist = "poisson"
+    end
+
+    # Error estimation: power / sqrt(m), m=1 for single-segment LS
+    m = 1
+    power_err = power ./ sqrt(m)
+    unnorm_power_err = cross ./ sqrt(m)
+
+    return LombScargleCrossspectrum{Float64}(
+        Float64.(freq),
+        power_type == "all" ? Complex{Float64}.(power) :
+            (power_type == "real" ? Float64.(power) : Float64.(power)),
+        power_type == "all" ? Complex{Float64}.(power_err) :
+            (power_type == "real" ? Float64.(power_err) : Float64.(power_err)),
+        Complex{Float64}.(cross),
+        Complex{Float64}.(unnorm_power_err),
+        freq_df, Float64(dt_val), n, m, 1,
+        nphots1, nphots2,
+        norm, power_type, fullspec,
+        method, oversampling,
+        variance1, variance2,
+        err_dist, "crossspectrum"
+    )
+end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Public constructors
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    _validate_ls_inputs(norm, power_type, method, oversampling, fullspec,
+                        min_freq, max_freq)
+
+Validate inputs for Lomb-Scargle cross-spectrum / power-spectrum constructors.
+Mirrors Python Stingray's `LombScargleCrossspectrum.initial_checks`.
+"""
+function _validate_ls_inputs(norm::String, power_type::String, method::String,
+                              oversampling::Int, fullspec::Bool,
+                              min_freq, max_freq)
+    if !(norm in ["frac", "abs", "leahy", "none"])
+        throw(ValueError("norm must be one of ['frac','abs','leahy','none']"))
+    end
+    if !(power_type in ["all", "absolute", "real"])
+        throw(ValueError("power_type must be one of ['all','absolute','real']"))
+    end
+    if !(method in ["fast", "slow"])
+        throw(ValueError("method must be one of ['fast','slow']"))
+    end
+    if oversampling < 1
+        throw(ArgumentError("oversampling must be ≥ 1"))
+    end
+    if !isnothing(min_freq) && min_freq < 0
+        throw(ValueError("min_freq must be non-negative"))
+    end
+    if !isnothing(max_freq) && max_freq < 0
+        throw(ValueError("max_freq must be non-negative"))
+    end
+    if !isnothing(max_freq) && !isnothing(min_freq) && max_freq <= min_freq
+        throw(ValueError("max_freq must be greater than min_freq"))
+    end
+end
+
+"""
+    LombScargleCrossspectrum(lc1::LightCurve, lc2::LightCurve; kwargs...)
+
+Construct a `LombScargleCrossspectrum` from two `LightCurve` objects.
+
+# Keyword Arguments
+- `norm::String="none"`: Normalization ("frac", "abs", "leahy", "none").
+- `power_type::String="all"`: Power type ("all", "real", "absolute").
+- `fullspec::Bool=false`: Include negative frequencies.
+- `min_freq::Union{Nothing, Real}=nothing`: Minimum frequency.
+- `max_freq::Union{Nothing, Real}=nothing`: Maximum frequency.
+- `df::Union{Nothing, Real}=nothing`: Frequency resolution.
+- `method::String="fast"`: LSFT method ("fast" or "slow").
+- `oversampling::Int=5`: Oversampling factor.
+"""
+function LombScargleCrossspectrum(lc1::LightCurve, lc2::LightCurve;
+                                   norm::String="none",
+                                   power_type::String="all",
+                                   fullspec::Bool=false,
+                                   min_freq::Union{Nothing, Real}=nothing,
+                                   max_freq::Union{Nothing, Real}=nothing,
+                                   df::Union{Nothing, Real}=nothing,
+                                   method::String="fast",
+                                   oversampling::Int=5)
+    _validate_ls_inputs(norm, power_type, method, oversampling, fullspec,
+                         min_freq, max_freq)
+
+    return lscrossspectrum_from_lightcurve(lc1, lc2;
+        norm=norm, power_type=power_type, fullspec=fullspec,
+        min_freq=min_freq, max_freq=max_freq, df=df,
+        method=method, oversampling=oversampling)
+end
+
+"""
+    LombScargleCrossspectrum(ev1::EventList, ev2::EventList; dt, kwargs...)
+
+Construct a `LombScargleCrossspectrum` from two `EventList` objects.
+
+Converts event lists to light curves using `create_lightcurve`, then
+delegates to the `LightCurve` constructor.
+
+# Arguments
+- `ev1::EventList`: Event list for channel 1.
+- `ev2::EventList`: Event list for channel 2.
+
+# Keyword Arguments
+- `dt::Real`: Time resolution for binning events into light curves. **Required.**
+- All other kwargs are passed to the `LightCurve` constructor.
+"""
+function LombScargleCrossspectrum(ev1::EventList, ev2::EventList;
+                                   dt::Real,
+                                   norm::String="none",
+                                   power_type::String="all",
+                                   fullspec::Bool=false,
+                                   min_freq::Union{Nothing, Real}=nothing,
+                                   max_freq::Union{Nothing, Real}=nothing,
+                                   df::Union{Nothing, Real}=nothing,
+                                   method::String="fast",
+                                   oversampling::Int=5)
+    lc1 = create_lightcurve(ev1, dt)
+    lc2 = create_lightcurve(ev2, dt)
+
+    return LombScargleCrossspectrum(lc1, lc2;
+        norm=norm, power_type=power_type, fullspec=fullspec,
+        min_freq=min_freq, max_freq=max_freq, df=df,
+        method=method, oversampling=oversampling)
+end
