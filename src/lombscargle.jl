@@ -564,3 +564,106 @@ function LombScarglePowerspectrum(ev::EventList;
         min_freq=min_freq, max_freq=max_freq, df=df,
         method=method, oversampling=oversampling)
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Analysis methods
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    phase_lag(lscs::LombScargleCrossspectrum)
+
+Compute the phase lag (in radians) at each frequency from the cross spectrum.
+
+The phase lag is the argument (angle) of the complex cross-spectral power.
+
+# Returns
+- `Vector{Float64}`: Phase lags in radians.
+"""
+function phase_lag(lscs::LombScargleCrossspectrum)
+    return angle.(Complex{Float64}.(lscs.unnorm_power))
+end
+
+"""
+    time_lag(lscs::LombScargleCrossspectrum)
+
+Compute the time lag at each frequency from the cross spectrum.
+
+Defined as `time_lag = phase_lag / (2π · freq)`.
+
+Mirrors Python Stingray's `LombScargleCrossspectrum.time_lag()`.
+
+# Returns
+- `Vector{Float64}`: Time lags in seconds.
+
+# Examples
+```julia
+lscs = LombScargleCrossspectrum(lc1, lc2)
+lags = time_lag(lscs)
+```
+"""
+function time_lag(lscs::LombScargleCrossspectrum)
+    ϕ = phase_lag(lscs)
+    return ϕ ./ (2π .* lscs.freq)
+end
+
+"""
+    compute_rms(ls::LombScarglePowerspectrum, min_freq::Real, max_freq::Real;
+                poisson_noise_level=nothing)
+
+Compute the fractional rms amplitude in the power spectrum between two
+frequencies.
+
+Mirrors Python Stingray's `LombScargleCrossspectrum.compute_rms()`.
+
+# Arguments
+- `ls::LombScarglePowerspectrum`: The power spectrum.
+- `min_freq::Real`: Lower frequency bound.
+- `max_freq::Real`: Upper frequency bound.
+
+# Keyword Arguments
+- `poisson_noise_level::Union{Nothing, Real}=nothing`: Poisson noise level
+  in the same normalization as the power spectrum. If `nothing`, computed
+  from the ideal Poisson level.
+
+# Returns
+- `(rms, rms_err)` — fractional rms amplitude and its uncertainty.
+
+# Examples
+```julia
+lsps = LombScarglePowerspectrum(lc; norm="frac")
+rms, rms_err = compute_rms(lsps, 0.01, 0.5)
+```
+"""
+function compute_rms(ls::LombScarglePowerspectrum, min_freq::Real, max_freq::Real;
+                     poisson_noise_level::Union{Nothing, Real}=nothing)
+
+    good = (ls.freq .>= min_freq) .& (ls.freq .<= max_freq)
+
+    K_freq = ls.k isa AbstractVector ? ls.k[good] : ls.k
+    M_freq = ls.m isa AbstractVector ? ls.m[good] : ls.m
+
+    # Compute Poisson noise in unnormalized units
+    if isnothing(poisson_noise_level)
+        poisson_noise_unnorm = poisson_level("none"; n_ph=ls.nphots)
+    else
+        poisson_noise_unnorm = unnormalize_periodograms(
+            [poisson_noise_level], ls.dt, ls.n, ls.nphots;
+            norm=ls.norm
+        )[1]
+    end
+
+    # Compute df for each frequency bin
+    df_per_bin = if K_freq isa AbstractVector
+        ls.df .* Float64.(K_freq)
+    else
+        ls.df * Float64(K_freq)
+    end
+
+    rms, rms_err = _get_rms_from_unnorm_periodogram(
+        real.(ls.unnorm_power[good]), ls.nphots, df_per_bin;
+        M=M_freq, poisson_noise_unnorm=poisson_noise_unnorm,
+        segment_size=nothing
+    )
+
+    return rms, rms_err
+end
