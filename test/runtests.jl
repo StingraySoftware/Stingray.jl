@@ -21,6 +21,7 @@ end
 
 include("test_power_colors.jl")
 
+include("test_rebinning.jl")
 include("test_crossspectrum.jl")
 include("test_powerspectrum.jl")
 include("test_lombscargle.jl")
