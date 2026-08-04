@@ -844,6 +844,55 @@ function integrate_power_in_frequency_range(
     return power_integrated, power_err_integrated
 end
 
+"""
+    _get_rms_from_unnorm_periodogram(unnorm_power, nphots, df;
+        M=1, poisson_noise_unnorm=0, segment_size=nothing)
+
+Internal function to compute the fractional rms amplitude from an unnormalized periodogram.
+
+# Arguments
+- `unnorm_power::AbstractVector{<:Real}`: Unnormalized power spectrum (real part).
+- `nphots::Real`: Total number of photons (or mean count rate if segment_size is nothing).
+- `df::Union{Real, AbstractVector{<:Real}}`: Frequency resolution.
+
+# Keyword Arguments
+- `M::Union{Real, AbstractVector{<:Real}}=1`: Number of averaged segments.
+- `poisson_noise_unnorm::Real=0`: Poisson noise level in unnormalized units.
+- `segment_size::Union{Nothing, Real}=nothing`: Length of the light curve segment.
+
+# Returns
+- `(rms, rms_err)` — fractional rms amplitude and its uncertainty.
+"""
+function _get_rms_from_unnorm_periodogram(
+    unnorm_power::AbstractVector{<:Real},
+    nphots::Real,
+    df::Union{Real, AbstractVector{<:Real}};
+    M::Union{Real, AbstractVector{<:Real}}=1,
+    poisson_noise_unnorm::Real=0,
+    segment_size::Union{Nothing, Real}=nothing
+)
+    pow_err = unnorm_power ./ sqrt.(M)
+
+    power_integrated = sum((unnorm_power .- poisson_noise_unnorm) .* df)
+    power_err_integrated = sqrt(sum((pow_err .* df) .^ 2))
+
+    mean_rate = isnothing(segment_size) ? float(nphots) : float(nphots / segment_size)
+
+    if power_integrated < 0
+        rms = 0.0
+    else
+        rms = sqrt(power_integrated / (mean_rate^2))
+    end
+
+    if rms > 0
+        rms_err = power_err_integrated / (2 * rms * (mean_rate^2))
+    else
+        rms_err = sqrt(power_err_integrated / (mean_rate^2))
+    end
+
+    return rms, rms_err
+end
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Lomb-Scargle Fourier Transform algorithms
 # ──────────────────────────────────────────────────────────────────────────────
