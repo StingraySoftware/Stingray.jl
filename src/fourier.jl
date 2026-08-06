@@ -843,3 +843,277 @@ function integrate_power_in_frequency_range(
 
     return power_integrated, power_err_integrated
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Per-segment spectral collection (for Dynamical Powerspectrum/Crossspectrum)
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    _pds_all_segments(times, gti, segment_size, dt; norm, use_common_mean, silent, fluxes)
+
+Compute the power spectrum for **each** segment individually and return them all
+(instead of averaging). Used by `DynamicalPowerspectrum`.
+
+Mirrors the logic of `avg_pds_from_iterable` / `avg_pds_from_events`, but
+collects per-segment results into vectors.
+
+# Returns
+A NamedTuple with fields:
+- `all_pds::Vector{Vector{Float64}}`: Normalized PDS for each segment.
+- `all_unnorm_pds::Vector{Vector{Float64}}`: Unnormalized PDS for each segment.
+- `freq::Vector{Float64}`: Frequency array (shared across segments).
+- `nphots::Float64`: Mean photon count per segment.
+- `n_bin::Int`: Number of bins per segment.
+- `df::Float64`: Frequency resolution.
+- `n_ave::Int`: Number of valid segments.
+"""
+function _pds_all_segments(times::AbstractVector{<:Real}, gti::AbstractMatrix{<:Real},
+                           segment_size::Real, dt::Real;
+                           norm::String="frac",
+                           use_common_mean::Bool=true,
+                           silent::Bool=false,
+                           fluxes=nothing, errors=nothing)
+    n_bin = round(Int, segment_size / dt)
+    dt = segment_size / n_bin
+
+    flux_iterable = get_flux_iterable_from_segments(times, gti, segment_size;
+                                                     n_bin, fluxes=fluxes,
+                                                     errors=errors)
+
+    local_show_progress = silent ? identity : show_progress
+
+    all_pds = Vector{Float64}[]
+    all_unnorm_pds = Vector{Float64}[]
+    freq = nothing
+    fgt0 = nothing
+    sum_of_photons = 0.0
+    common_variance = nothing
+    n_ave = 0
+
+    for flux in local_show_progress(flux_iterable)
+        if isnothing(flux) || all(iszero, flux)
+            continue
+        end
+
+        variance = nothing
+        if flux isa Tuple
+            flux, err = flux
+            variance = Statistics.mean(err)^2
+        end
+
+        n_bin_seg = length(flux)
+        ft = fft(flux)
+        n_ph = sum(flux)
+        unnorm_power = real.(ft .* conj.(ft))
+
+        sum_of_photons += n_ph
+
+        if !isnothing(variance)
+            common_variance = sum_if_not_none_or_initialize(common_variance, variance)
+        end
+
+        if isnothing(freq)
+            fgt0 = positive_fft_bins(n_bin_seg)
+            freq = fftfreq(n_bin_seg, 1 / dt)[fgt0]
+        end
+
+        keepat!(unnorm_power, fgt0)
+
+        # Normalize per-segment if not using common mean
+        cs_seg = if !use_common_mean
+            mean_flux = n_ph / n_bin_seg
+            normalize_periodograms(
+                unnorm_power, dt, n_bin_seg;
+                mean_flux=mean_flux, n_ph=n_ph,
+                norm=norm, variance=variance,
+            )
+        else
+            copy(unnorm_power)  # placeholder; will normalize after collecting all
+        end
+
+        push!(all_pds, cs_seg)
+        push!(all_unnorm_pds, copy(unnorm_power))
+        n_ave += 1
+    end
+
+    if n_ave == 0
+        return nothing
+    end
+
+    n_ph = sum_of_photons / n_ave
+    common_mean = n_ph / n_bin
+
+    if !isnothing(common_variance)
+        common_variance /= n_ave
+    end
+
+    # If using common mean, normalize all segments now
+    if use_common_mean
+        for i in 1:n_ave
+            all_pds[i] = normalize_periodograms(
+                all_unnorm_pds[i], dt, n_bin;
+                mean_flux=common_mean, n_ph=n_ph,
+                norm=norm, variance=common_variance,
+            )
+        end
+    end
+
+    return (;
+        all_pds, all_unnorm_pds,
+        freq=Float64.(freq),
+        nphots=Float64(n_ph),
+        n_bin, df=1.0 / (dt * n_bin),
+        n_ave,
+    )
+end
+
+"""
+    _cs_all_segments(times1, times2, gti, segment_size, dt; norm, use_common_mean,
+                     silent, fluxes1, fluxes2, power_type)
+
+Compute the cross spectrum for **each** segment individually and return them all
+(instead of averaging). Used by `DynamicalCrossspectrum`.
+
+Mirrors the logic of `avg_cs_from_iterables_quick`, but collects per-segment
+results into vectors.
+
+# Returns
+A NamedTuple with fields:
+- `all_cs::Vector{Vector{Complex{Float64}}}`: Normalized cross spectra per segment.
+- `all_unnorm_cs::Vector{Vector{Complex{Float64}}}`: Unnormalized cross spectra per segment.
+- `freq::Vector{Float64}`: Frequency array (shared across segments).
+- `nphots1::Float64`: Mean photon count per segment (signal 1).
+- `nphots2::Float64`: Mean photon count per segment (signal 2).
+- `n_bin::Int`: Number of bins per segment.
+- `df::Float64`: Frequency resolution.
+- `n_ave::Int`: Number of valid segments.
+"""
+function _cs_all_segments(times1::AbstractVector{<:Real}, times2::AbstractVector{<:Real},
+                          gti::AbstractMatrix{<:Real},
+                          segment_size::Real, dt::Real;
+                          norm::String="frac",
+                          use_common_mean::Bool=true,
+                          silent::Bool=false,
+                          fluxes1=nothing, fluxes2=nothing,
+                          errors1=nothing, errors2=nothing,
+                          power_type::String="all")
+    n_bin = round(Int, segment_size / dt)
+    dt = segment_size / n_bin
+
+    flux_iterable1 = get_flux_iterable_from_segments(
+        times1, gti, segment_size; n_bin, fluxes=fluxes1, errors=errors1
+    )
+    flux_iterable2 = get_flux_iterable_from_segments(
+        times2, gti, segment_size; n_bin, fluxes=fluxes2, errors=errors2
+    )
+
+    local_show_progress = silent ? identity : show_progress
+
+    all_cs = Vector{Complex{Float64}}[]
+    all_unnorm_cs = Vector{Complex{Float64}}[]
+    freq = nothing
+    fgt0 = nothing
+    sum_of_photons1 = 0.0
+    sum_of_photons2 = 0.0
+    common_variance1 = common_variance2 = common_variance = nothing
+    n_ave = 0
+
+    for (flux1, flux2) in local_show_progress(zip(flux_iterable1, flux_iterable2))
+        if isnothing(flux1) || isnothing(flux2) || all(iszero, flux1) || all(iszero, flux2)
+            continue
+        end
+
+        variance1 = variance2 = nothing
+        if flux1 isa Tuple
+            flux1, err1 = flux1
+            variance1 = Statistics.mean(err1)^2
+        end
+        if flux2 isa Tuple
+            flux2, err2 = flux2
+            variance2 = Statistics.mean(err2)^2
+        end
+
+        if isnothing(variance1) || isnothing(variance2)
+            variance1 = variance2 = nothing
+        else
+            common_variance1 = sum_if_not_none_or_initialize(common_variance1, variance1)
+            common_variance2 = sum_if_not_none_or_initialize(common_variance2, variance2)
+        end
+
+        n_bin_seg = length(flux1)
+        ft1 = fft(flux1)
+        ft2 = fft(flux2)
+
+        n_ph1 = sum(flux1)
+        n_ph2 = sum(flux2)
+        n_ph = sqrt(n_ph1 * n_ph2)
+
+        unnorm_power = ft1 .* conj.(ft2)
+
+        sum_of_photons1 += n_ph1
+        sum_of_photons2 += n_ph2
+
+        if isnothing(freq)
+            fgt0 = positive_fft_bins(n_bin_seg)
+            freq = fftfreq(n_bin_seg, 1 / dt)[fgt0]
+        end
+
+        keepat!(unnorm_power, fgt0)
+
+        cs_seg = if !use_common_mean
+            mean_flux = n_ph / n_bin_seg
+            variance = if !isnothing(variance1)
+                sqrt(variance1 * variance2)
+            else
+                nothing
+            end
+            normalize_periodograms(
+                unnorm_power, dt, n_bin_seg;
+                mean_flux=mean_flux, n_ph=n_ph,
+                norm=norm, power_type=power_type, variance=variance,
+            )
+        else
+            Complex{Float64}.(unnorm_power)
+        end
+
+        push!(all_cs, Complex{Float64}.(cs_seg))
+        push!(all_unnorm_cs, Complex{Float64}.(unnorm_power))
+        n_ave += 1
+    end
+
+    if n_ave == 0
+        return nothing
+    end
+
+    n_ph1 = sum_of_photons1 / n_ave
+    n_ph2 = sum_of_photons2 / n_ave
+    n_ph = sqrt(n_ph1 * n_ph2)
+    common_mean = n_ph / n_bin
+
+    if !isnothing(common_variance1)
+        common_variance1 /= n_ave
+        common_variance2 /= n_ave
+        common_variance = sqrt(common_variance1 * common_variance2)
+    end
+
+    # If using common mean, normalize all segments now
+    if use_common_mean
+        for i in 1:n_ave
+            all_cs[i] = Complex{Float64}.(normalize_periodograms(
+                all_unnorm_cs[i], dt, n_bin;
+                mean_flux=common_mean, n_ph=n_ph,
+                norm=norm, power_type=power_type,
+                variance=common_variance,
+            ))
+        end
+    end
+
+    return (;
+        all_cs, all_unnorm_cs,
+        freq=Float64.(freq),
+        nphots1=Float64(n_ph1),
+        nphots2=Float64(n_ph2),
+        n_bin, df=1.0 / (dt * n_bin),
+        n_ave,
+    )
+end
