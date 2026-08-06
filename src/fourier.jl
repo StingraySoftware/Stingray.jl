@@ -1117,3 +1117,172 @@ function _cs_all_segments(times1::AbstractVector{<:Real}, times2::AbstractVector
         n_ave,
     )
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Shift-and-add (for tracking kHz QPOs)
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    _safe_array_slice_indices(input_size, center_idx, nbins)
+
+Calculate indices to extract an `nbins`-wide slice centered at `center_idx`
+from an array of size `input_size`, handling edge cases where the slice extends
+beyond the array boundaries.
+
+Mirrors Python Stingray's `fourier._safe_array_slice_indices`.
+
+# Returns
+- `(input_range, output_range)` — UnitRange pairs for indexing the input and output arrays.
+
+# Examples
+```jldoctest
+julia> _safe_array_slice_indices(10, 5, 3)
+(4:6, 1:3)
+
+julia> _safe_array_slice_indices(6, 6, 3)  # slice goes past right edge
+(5:6, 1:2)
+```
+"""
+function _safe_array_slice_indices(input_size::Int, center_idx::Int, nbins::Int)
+    minbin = center_idx - nbins ÷ 2
+    maxbin = minbin + nbins
+
+    if minbin < 1
+        output_range = (1 - minbin + 1):min(nbins, input_size - minbin + 1)
+        input_range = 1:(minbin + nbins)
+    elseif maxbin > input_size + 1
+        output_range = 1:(nbins - (maxbin - input_size - 1))
+        input_range = minbin:input_size
+    else
+        output_range = 1:nbins
+        input_range = minbin:(maxbin - 1)
+    end
+
+    return input_range, output_range
+end
+
+"""
+    _shift_and_average_core(power_list, weight_list, center_indices, nbins)
+
+Core function for shift-and-add: shift each power spectrum to a common center
+and compute the weighted average.
+
+Mirrors Python Stingray's `fourier._shift_and_average_core`.
+
+# Arguments
+- `power_list`: Vector of power spectrum vectors.
+- `weight_list`: Vector of weights for each spectrum.
+- `center_indices`: Vector of center frequency indices for each spectrum.
+- `nbins::Int`: Number of output bins.
+
+# Returns
+- `(output_array, sum_of_weights)` — Weighted average powers and weight sums.
+"""
+function _shift_and_average_core(power_list, weight_list, center_indices, nbins::Int)
+    output_array = zeros(Float64, nbins)
+    sum_of_weights = zeros(Float64, nbins)
+    input_size = length(power_list[1])
+
+    for (idx, array, weight) in zip(center_indices, power_list, weight_list)
+        input_range, output_range = _safe_array_slice_indices(input_size, idx, nbins)
+
+        for (oi, ii) in zip(output_range, input_range)
+            output_array[oi] += real(array[ii]) * weight
+            sum_of_weights[oi] += weight
+        end
+    end
+
+    # Avoid division by zero
+    good = sum_of_weights .> 0
+    output_array[good] ./= sum_of_weights[good]
+
+    return output_array, sum_of_weights
+end
+
+"""
+    shift_and_add(freqs, power_list, f0_list; nbins=100, rebin=nothing, df=nothing, M=nothing)
+
+Shift and add a list of power spectra, centered on different frequencies.
+
+This is the basic operation for the shift-and-add technique used to track
+kHz QPOs in X-ray binaries (e.g. Méndez et al. 1998, ApJ, 494, 65).
+
+Mirrors Python Stingray's `fourier.shift_and_add`.
+
+# Arguments
+- `freqs::AbstractVector`: Frequency array (uniform grid, same for all spectra).
+- `power_list`: Vector of power spectrum vectors, or a matrix with columns as spectra.
+- `f0_list::AbstractVector`: Central frequencies for each spectrum.
+
+# Keyword Arguments
+- `nbins::Int=100`: Number of output frequency bins.
+- `rebin::Union{Nothing, Int}=nothing`: Rebin factor for the output spectrum.
+- `df::Union{Nothing, Real}=nothing`: Frequency resolution. Computed from `freqs` if `nothing`.
+- `M::Union{Nothing, Int, AbstractVector}=nothing`: Number of averaged segments.
+
+# Returns
+- `(final_freqs, final_powers, count)` — Output frequencies, averaged powers, and contributing counts.
+
+# Examples
+```jldoctest
+julia> power_list = [[2, 5, 2, 2, 2], [1, 1, 5, 1, 1], [3, 3, 3, 5, 3]];
+
+julia> freqs = collect(0:4) .* 0.1;
+
+julia> f0_list = [0.1, 0.2, 0.3, 0.4];
+
+julia> f, p, n = shift_and_add(freqs, power_list, f0_list; nbins=5);
+
+julia> n
+5-element Vector{Float64}:
+ 2.0
+ 3.0
+ 3.0
+ 3.0
+ 2.0
+```
+"""
+function shift_and_add(freqs::AbstractVector, power_list, f0_list::AbstractVector;
+                       nbins::Int=100,
+                       rebin::Union{Nothing, Int}=nothing,
+                       df::Union{Nothing, Real}=nothing,
+                       M::Union{Nothing, Int, AbstractVector}=nothing)
+    freqs = Float64.(freqs)
+
+    # Convert matrix columns to list of vectors if needed
+    if power_list isa AbstractMatrix
+        power_list = [power_list[:, j] for j in 1:size(power_list, 2)]
+    end
+
+    if isnothing(M)
+        M = 1
+    end
+    weights = if M isa Int
+        fill(Float64(M), length(power_list))
+    else
+        Float64.(M)
+    end
+
+    # Find the center frequency indices (1-based)
+    center_f_indices = [searchsortedfirst(freqs, f0) for f0 in f0_list]
+
+    final_powers, count = _shift_and_average_core(power_list, weights, center_f_indices, nbins)
+
+    if isnothing(df)
+        df = freqs[2] - freqs[1]
+    end
+
+    # Build output frequency axis centered on mean(f0_list)
+    half = nbins ÷ 2
+    final_freqs = collect((-half):((-half) + nbins - 1)) .* df
+    final_freqs .= final_freqs .- (final_freqs[1] + final_freqs[end]) / 2 .+ Statistics.mean(f0_list)
+
+    if !isnothing(rebin)
+        _, count, _, _ = rebin_data(final_freqs, count, rebin * df)
+        final_freqs, final_powers, _, _ = rebin_data(final_freqs, final_powers, rebin * df)
+        final_powers ./= rebin
+    end
+
+    return final_freqs, final_powers, count
+end
+
