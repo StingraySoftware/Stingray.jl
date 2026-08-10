@@ -382,3 +382,86 @@ function rebin_frequency(dps::DynamicalPowerspectrum, df_new::Real; method::Symb
         dps.type
     )
 end
+
+"""
+    rebin_time(dps::DynamicalPowerspectrum, dt_new; method=:mean)
+
+Rebin the time axis of the dynamical power spectrum to a new resolution.
+
+# Arguments
+- `dps::DynamicalPowerspectrum`: The dynamical power spectrum.
+- `dt_new::Real`: New time resolution (must be >= current `dt`).
+
+# Keyword Arguments
+- `method::Symbol=:mean`: Rebinning method (`:mean` or `:sum`).
+
+# Returns
+A new `DynamicalPowerspectrum` with the rebinned time axis.
+"""
+function rebin_time(dps::DynamicalPowerspectrum, dt_new::Real; method::Symbol=:mean)
+    n_freq = size(dps.dyn_ps, 1)
+
+    new_time, row1, _, _ = rebin_data(dps.time, dps.dyn_ps[1, :], dt_new; method=method)
+    n_time_new = length(row1)
+
+    new_dyn = Matrix{Float64}(undef, n_freq, n_time_new)
+    for i in 1:n_freq
+        _, ybin, _, _ = rebin_data(dps.time, dps.dyn_ps[i, :], dt_new; method=method)
+        new_dyn[i, :] = ybin
+    end
+
+    return DynamicalPowerspectrum{Float64}(
+        new_dyn, dps.freq, Float64.(new_time),
+        dps.df, Float64(dt_new), dps.segment_size,
+        dps.norm, dps.gti, dps.m,
+        dps.nphots, dps.meanrate, dps.unnorm_conversion,
+        dps.type
+    )
+end
+
+"""
+    rebin_by_n_intervals(dps::DynamicalPowerspectrum, n; method=:mean)
+
+Average `n` consecutive time segments of the dynamical power spectrum.
+
+# Arguments
+- `dps::DynamicalPowerspectrum`: The dynamical power spectrum.
+- `n::Int`: Number of consecutive segments to average.
+
+# Keyword Arguments
+- `method::Symbol=:mean`: `:mean` (average) or `:sum`.
+
+# Returns
+A new `DynamicalPowerspectrum` with fewer time columns and updated `m` and `dt`.
+"""
+function rebin_by_n_intervals(dps::DynamicalPowerspectrum, n::Int; method::Symbol=:mean)
+    n_freq, n_time = size(dps.dyn_ps)
+    n_new = n_time ÷ n
+
+    if n_new < 1
+        throw(ArgumentError("n=$n is larger than the number of time segments ($n_time)"))
+    end
+
+    new_dyn = Matrix{Float64}(undef, n_freq, n_new)
+    new_time = Vector{Float64}(undef, n_new)
+
+    for j in 1:n_new
+        cols = ((j-1)*n + 1):(j*n)
+        if method == :mean
+            new_dyn[:, j] = Statistics.mean(dps.dyn_ps[:, cols], dims=2)
+        else
+            new_dyn[:, j] = sum(dps.dyn_ps[:, cols], dims=2)
+        end
+        new_time[j] = Statistics.mean(dps.time[cols])
+    end
+
+    new_m = dps.m * n
+
+    return DynamicalPowerspectrum{Float64}(
+        new_dyn, dps.freq, new_time,
+        dps.df, dps.dt * n, dps.segment_size,
+        dps.norm, dps.gti, new_m,
+        dps.nphots, dps.meanrate, dps.unnorm_conversion,
+        dps.type
+    )
+end

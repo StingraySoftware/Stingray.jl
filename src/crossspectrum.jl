@@ -771,3 +771,87 @@ function rebin_frequency(dcs::DynamicalCrossspectrum, df_new::Real; method::Symb
         dcs.type
     )
 end
+
+"""
+    rebin_time(dcs::DynamicalCrossspectrum, dt_new; method=:mean)
+
+Rebin the time axis of the dynamical cross spectrum to a new resolution.
+
+# Arguments
+- `dcs::DynamicalCrossspectrum`: The dynamical cross spectrum.
+- `dt_new::Real`: New time resolution (must be >= current `dt`).
+
+# Keyword Arguments
+- `method::Symbol=:mean`: Rebinning method (`:mean` or `:sum`).
+
+# Returns
+A new `DynamicalCrossspectrum` with the rebinned time axis.
+"""
+function rebin_time(dcs::DynamicalCrossspectrum, dt_new::Real; method::Symbol=:mean)
+    n_freq = size(dcs.dyn_ps, 1)
+
+    new_time, row1, _, _ = rebin_data(dcs.time, real.(dcs.dyn_ps[1, :]), dt_new; method=method)
+    n_time_new = length(row1)
+
+    new_dyn = Matrix{Complex{Float64}}(undef, n_freq, n_time_new)
+    for i in 1:n_freq
+        _, re, _, _ = rebin_data(dcs.time, real.(dcs.dyn_ps[i, :]), dt_new; method=method)
+        _, im_part, _, _ = rebin_data(dcs.time, imag.(dcs.dyn_ps[i, :]), dt_new; method=method)
+        new_dyn[i, :] = re .+ im .* im_part
+    end
+
+    return DynamicalCrossspectrum{Float64}(
+        new_dyn, dcs.freq, Float64.(new_time),
+        dcs.df, Float64(dt_new), dcs.segment_size,
+        dcs.norm, dcs.gti, dcs.m,
+        dcs.nphots1, dcs.nphots2, dcs.unnorm_conversion,
+        dcs.type
+    )
+end
+
+"""
+    rebin_by_n_intervals(dcs::DynamicalCrossspectrum, n; method=:mean)
+
+Average `n` consecutive time segments of the dynamical cross spectrum.
+
+# Arguments
+- `dcs::DynamicalCrossspectrum`: The dynamical cross spectrum.
+- `n::Int`: Number of consecutive segments to average.
+
+# Keyword Arguments
+- `method::Symbol=:mean`: `:mean` (average) or `:sum`.
+
+# Returns
+A new `DynamicalCrossspectrum` with fewer time columns and updated `m` and `dt`.
+"""
+function rebin_by_n_intervals(dcs::DynamicalCrossspectrum, n::Int; method::Symbol=:mean)
+    n_freq, n_time = size(dcs.dyn_ps)
+    n_new = n_time ÷ n
+
+    if n_new < 1
+        throw(ArgumentError("n=$n is larger than the number of time segments ($n_time)"))
+    end
+
+    new_dyn = Matrix{Complex{Float64}}(undef, n_freq, n_new)
+    new_time = Vector{Float64}(undef, n_new)
+
+    for j in 1:n_new
+        cols = ((j-1)*n + 1):(j*n)
+        if method == :mean
+            new_dyn[:, j] = Statistics.mean(dcs.dyn_ps[:, cols], dims=2)
+        else
+            new_dyn[:, j] = sum(dcs.dyn_ps[:, cols], dims=2)
+        end
+        new_time[j] = Statistics.mean(dcs.time[cols])
+    end
+
+    new_m = dcs.m * n
+
+    return DynamicalCrossspectrum{Float64}(
+        new_dyn, dcs.freq, new_time,
+        dcs.df, dcs.dt * n, dcs.segment_size,
+        dcs.norm, dcs.gti, new_m,
+        dcs.nphots1, dcs.nphots2, dcs.unnorm_conversion,
+        dcs.type
+    )
+end
