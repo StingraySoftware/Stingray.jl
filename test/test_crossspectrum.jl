@@ -149,3 +149,147 @@ using Stingray
     end
 
 end
+
+@testset "DynamicalCrossspectrum" begin
+
+    test_gti = [0.0 100.0]
+
+    function make_eventlist_with_gti(t, gti_matrix)
+        meta = FITSMetadata(
+            "[test]", 1, nothing,
+            Dict{String,Vector}(), Dict{String,Any}(),
+            gti_matrix, nothing, nothing, nothing,
+            nothing, nothing, nothing, nothing
+        )
+        EventList(t, nothing, meta)
+    end
+
+    # Create test data: 100s of events, ~100 counts/s
+    rng = MersenneTwister(20240101)
+    times1 = sort(rand(rng, Uniform(0.0, 100.0), 10000))
+    times2 = sort(rand(rng, Uniform(0.0, 100.0), 8000))
+    ev1 = make_eventlist_with_gti(times1, test_gti)
+    ev2 = make_eventlist_with_gti(times2, test_gti)
+    dt = 0.01
+    segment_size = 10.0
+
+    @testset "EventList constructor" begin
+        dcs = DynamicalCrossspectrum(ev1, ev2, segment_size, dt; norm="frac", silent=true)
+
+        @test dcs isa DynamicalCrossspectrum{Float64}
+        @test dcs isa AbstractCrossspectrum
+        @test dcs.type == "dynamical_crossspectrum"
+        @test dcs.norm == "frac"
+        @test length(dcs.freq) > 0
+        @test length(dcs.time) > 0
+        @test dcs.df > 0
+        @test dcs.dt == segment_size
+        @test dcs.m == 1
+        @test dcs.nphots1 > 0
+        @test dcs.nphots2 > 0
+        @test eltype(dcs.dyn_ps) <: Complex
+    end
+
+    @testset "Matrix shape" begin
+        dcs = DynamicalCrossspectrum(ev1, ev2, segment_size, dt; norm="frac", silent=true)
+
+        n_freq, n_time = size(dcs.dyn_ps)
+        @test n_freq == length(dcs.freq)
+        @test n_time == length(dcs.time)
+        # 100s / 10s = 10 segments
+        @test n_time == 10
+    end
+
+    @testset "Bad args - short segment" begin
+        @test_throws ArgumentError DynamicalCrossspectrum(
+            ev1, ev2, 0.001, dt; silent=true)
+    end
+
+    @testset "LightCurve constructor" begin
+        lc1 = create_lightcurve(ev1, dt)
+        lc2 = create_lightcurve(ev2, dt)
+
+        dcs = DynamicalCrossspectrum(lc1, lc2, segment_size; norm="frac", silent=true)
+
+        @test dcs isa DynamicalCrossspectrum{Float64}
+        @test dcs.type == "dynamical_crossspectrum"
+        @test size(dcs.dyn_ps, 2) == length(dcs.time)
+    end
+
+    @testset "LightCurve bad args - long segment" begin
+        lc1 = create_lightcurve(ev1, dt)
+        lc2 = create_lightcurve(ev2, dt)
+
+        @test_throws ArgumentError DynamicalCrossspectrum(
+            lc1, lc2, 200.0; silent=true)
+    end
+
+    @testset "Base.show" begin
+        dcs = DynamicalCrossspectrum(ev1, ev2, segment_size, dt; norm="frac", silent=true)
+        buf = IOBuffer()
+        show(buf, dcs)
+        s = String(take!(buf))
+        @test occursin("DynamicalCrossspectrum", s)
+        @test occursin("frac", s)
+        @test occursin("freq bins", s)
+        @test occursin("time segments", s)
+    end
+
+    # Method tests
+    dcs = DynamicalCrossspectrum(ev1, ev2, segment_size, dt; norm="frac", silent=true)
+
+    @testset "rebin_frequency" begin
+        df_new = dcs.df * 5
+        dcs_rb = rebin_frequency(dcs, df_new)
+        @test dcs_rb isa DynamicalCrossspectrum{Float64}
+        @test length(dcs_rb.freq) < length(dcs.freq)
+        @test size(dcs_rb.dyn_ps, 2) == size(dcs.dyn_ps, 2)  # time unchanged
+    end
+
+    @testset "rebin_time" begin
+        dt_new = dcs.dt * 2
+        dcs_rb = rebin_time(dcs, dt_new)
+        @test dcs_rb isa DynamicalCrossspectrum{Float64}
+        @test length(dcs_rb.time) < length(dcs.time)
+        @test size(dcs_rb.dyn_ps, 1) == size(dcs.dyn_ps, 1)  # freq unchanged
+    end
+
+    @testset "rebin_by_n_intervals" begin
+        dcs_rb = rebin_by_n_intervals(dcs, 2)
+        @test dcs_rb isa DynamicalCrossspectrum{Float64}
+        @test size(dcs_rb.dyn_ps, 2) == size(dcs.dyn_ps, 2) ÷ 2
+        @test dcs_rb.m == dcs.m * 2
+    end
+
+    @testset "trace_maximum" begin
+        idx = trace_maximum(dcs)
+        @test length(idx) == size(dcs.dyn_ps, 2)
+        @test all(1 .<= idx .<= length(dcs.freq))
+    end
+
+    @testset "trace_maximum with bounds" begin
+        mid_freq = dcs.freq[length(dcs.freq) ÷ 2]
+        idx = trace_maximum(dcs; min_freq=mid_freq)
+        @test all(dcs.freq[idx] .>= mid_freq)
+    end
+
+    @testset "shift_and_add" begin
+        f0_list = dcs.freq[argmax(abs.(dcs.dyn_ps[:, j])) for j in 1:size(dcs.dyn_ps, 2)]
+        result = shift_and_add(dcs, f0_list; nbins=50)
+        @test haskey(result, :freq)
+        @test haskey(result, :power)
+        @test haskey(result, :m)
+        @test length(result.freq) == 50
+        @test length(result.power) == 50
+    end
+
+    @testset "compute_rms" begin
+        fmin = dcs.freq[2]
+        fmax = dcs.freq[end-1]
+        result = compute_rms(dcs, fmin, fmax)
+        @test length(result.rms) == size(dcs.dyn_ps, 2)
+        @test length(result.rms_err) == size(dcs.dyn_ps, 2)
+        @test all(result.rms .>= 0)
+    end
+
+end

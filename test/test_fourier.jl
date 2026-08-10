@@ -457,3 +457,49 @@ end
         @test Statistics.mean(pdsnorm)≈Statistics.mean(pds) rtol=0.01
     end
 end
+
+@testset "shift_and_add" begin
+
+    @testset "_safe_array_slice_indices basic" begin
+        ir, or = Stingray._safe_array_slice_indices(10, 5, 3)
+        @test ir == 4:6
+        @test or == 1:3
+    end
+
+    @testset "_safe_array_slice_indices right edge" begin
+        ir, or = Stingray._safe_array_slice_indices(6, 6, 3)
+        @test ir == 5:6
+        @test or == 1:2
+    end
+
+    @testset "_safe_array_slice_indices left edge" begin
+        ir, or = Stingray._safe_array_slice_indices(10, 1, 4)
+        # center_idx=1, nbins=4 => minbin = 1 - 2 = -1
+        @test length(ir) == length(or)
+    end
+
+    @testset "basic shift and add" begin
+        power_list = [[2, 5, 2, 2, 2], [1, 1, 5, 1, 1], [3, 3, 3, 5, 3]]
+        freqs = collect(0:4) .* 0.1
+        f0_list = [0.1, 0.2, 0.3, 0.4]
+
+        f, p, n = shift_and_add(freqs, power_list, f0_list; nbins=5)
+
+        @test length(f) == 5
+        @test length(p) == 5
+        @test length(n) == 5
+        @test n ≈ [2.0, 3.0, 3.0, 3.0, 2.0]
+        @test p ≈ [2.0, 2.0, 5.0, 2.0, 1.5]
+    end
+
+    @testset "shift and add with matrix input" begin
+        power_matrix = Float64[2 1 3; 5 1 3; 2 5 3; 2 1 5; 2 1 3]
+        freqs = collect(0:4) .* 0.1
+        f0_list = [0.1, 0.2, 0.3, 0.4]
+
+        f, p, n = shift_and_add(freqs, power_matrix, f0_list; nbins=5)
+        @test length(f) == 5
+        @test length(p) == 5
+    end
+
+end
