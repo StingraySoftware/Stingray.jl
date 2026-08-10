@@ -161,3 +161,184 @@ function Powerspectrum(lc::LightCurve, segment_size::Real;
         variance_val, err_dist, "powerspectrum"
     )
 end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DynamicalPowerspectrum
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    DynamicalPowerspectrum{T<:Real} <: AbstractPowerspectrum
+
+A dynamical power spectrum (spectrogram) computed by dividing a single time
+series into segments and computing the power spectrum for each.
+
+The `dyn_ps` matrix has rows indexed by frequency and columns indexed by time
+(segment midpoints). All values are real since it's an auto-spectrum.
+
+Mirrors Python Stingray's `DynamicalPowerspectrum`.
+
+# Fields
+- `dyn_ps::Matrix{T}`: Frequency × time matrix of power spectral density.
+- `freq::Vector{T}`: Mid-bin frequencies (Hz).
+- `time::Vector{T}`: Mid-point time of each segment (s).
+- `df::T`: Frequency resolution (Hz).
+- `dt::T`: Time resolution of the spectrogram (= `segment_size` initially).
+- `segment_size::T`: Length of each segment (s).
+- `norm::String`: Normalization applied.
+- `gti::Matrix{T}`: Good Time Intervals.
+- `m::Int`: Number of averaged spectra per bin (1 initially).
+- `nphots::T`: Mean photon count per segment.
+- `meanrate::T`: Mean count rate (counts/s).
+- `unnorm_conversion::T`: Mean ratio of normalized to unnormalized power.
+- `type::String`: Always "dynamical_powerspectrum".
+"""
+struct DynamicalPowerspectrum{T<:Real} <: AbstractPowerspectrum
+    dyn_ps::Matrix{T}
+    freq::Vector{T}
+    time::Vector{T}
+    df::T
+    dt::T
+    segment_size::T
+    norm::String
+    gti::Matrix{T}
+    m::Int
+    nphots::T
+    meanrate::T
+    unnorm_conversion::T
+    type::String
+end
+
+"""
+    DynamicalPowerspectrum(ev::EventList, segment_size, dt; kwargs...)
+
+Construct a `DynamicalPowerspectrum` from an `EventList`.
+
+# Arguments
+- `ev::EventList`: Event list containing photon arrival times.
+- `segment_size::Real`: Length of each segment in seconds.
+- `dt::Real`: Time resolution (sets Nyquist at 0.5/dt Hz).
+
+# Keyword Arguments
+- `norm::String="frac"`: Normalization ("frac", "abs", "leahy", "none").
+- `silent::Bool=false`: Suppress progress bars.
+"""
+function DynamicalPowerspectrum(ev::EventList, segment_size::Real, dt::Real;
+                                norm::String="frac",
+                                silent::Bool=false)
+    if segment_size < 2 * dt
+        throw(ArgumentError("segment_size must be >= 2 * dt"))
+    end
+
+    ev_gti = has_gti(ev) ? gti(ev) : error("EventList must have GTIs")
+
+    result = _pds_all_segments(
+        times(ev), ev_gti,
+        segment_size, dt;
+        norm=norm, silent=silent
+    )
+
+    if isnothing(result)
+        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
+    end
+
+    # Stack per-segment spectra into freq × time matrix
+    dyn_ps = hcat(result.all_pds...)
+    dyn_unnorm = hcat(result.all_unnorm_pds...)
+
+    # Compute unnorm_conversion: mean(normalized / unnormalized)
+    conv = dyn_ps ./ dyn_unnorm
+    unnorm_conv = Float64(Statistics.mean(filter(!isnan, conv)))
+
+    # Compute segment midpoints
+    tstart, _ = time_intervals_from_gtis(ev_gti, segment_size)
+    seg_times = Float64.(tstart .+ 0.5 * segment_size)
+
+    n_bin = result.n_bin
+    meanrate = result.nphots / n_bin / (segment_size / n_bin)
+
+    return DynamicalPowerspectrum{Float64}(
+        Float64.(dyn_ps),
+        result.freq,
+        seg_times,
+        result.df,
+        Float64(segment_size),
+        Float64(segment_size),
+        norm,
+        ev_gti,
+        1,
+        result.nphots,
+        meanrate,
+        unnorm_conv,
+        "dynamical_powerspectrum"
+    )
+end
+
+"""
+    DynamicalPowerspectrum(lc::LightCurve, segment_size; kwargs...)
+
+Construct a `DynamicalPowerspectrum` from a `LightCurve`.
+
+# Arguments
+- `lc::LightCurve`: The input light curve.
+- `segment_size::Real`: Length of each segment in seconds.
+
+# Keyword Arguments
+- `norm::String="frac"`: Normalization ("frac", "abs", "leahy", "none").
+- `silent::Bool=false`: Suppress progress bars.
+"""
+function DynamicalPowerspectrum(lc::LightCurve, segment_size::Real;
+                                norm::String="frac",
+                                silent::Bool=false)
+    dt_val = lc.dt isa AbstractVector ? lc.dt[1] : lc.dt
+
+    if segment_size < 2 * dt_val
+        throw(ArgumentError("segment_size must be >= 2 * dt"))
+    end
+
+    lc_gti = [lc.metadata.time_range[1] lc.metadata.time_range[2]]
+
+    total_duration = lc_gti[1, 2] - lc_gti[1, 1]
+    if segment_size > total_duration
+        throw(ArgumentError(
+            "segment_size ($segment_size s) is longer than total duration ($total_duration s)"))
+    end
+
+    result = _pds_all_segments(
+        lc.time, lc_gti,
+        segment_size, dt_val;
+        norm=norm, silent=silent,
+        fluxes=Float64.(lc.counts)
+    )
+
+    if isnothing(result)
+        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
+    end
+
+    dyn_ps = hcat(result.all_pds...)
+    dyn_unnorm = hcat(result.all_unnorm_pds...)
+    conv = dyn_ps ./ dyn_unnorm
+    unnorm_conv = Float64(Statistics.mean(filter(!isnan, conv)))
+
+    tstart, _ = time_intervals_from_gtis(lc_gti, segment_size)
+    seg_times = Float64.(tstart .+ 0.5 * segment_size)
+
+    n_bin = result.n_bin
+    meanrate = result.nphots / n_bin / dt_val
+
+    return DynamicalPowerspectrum{Float64}(
+        Float64.(dyn_ps),
+        result.freq,
+        seg_times,
+        result.df,
+        Float64(segment_size),
+        Float64(segment_size),
+        norm,
+        lc_gti,
+        1,
+        result.nphots,
+        meanrate,
+        unnorm_conv,
+        "dynamical_powerspectrum"
+    )
+end
+
