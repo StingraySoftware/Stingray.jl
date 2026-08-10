@@ -631,3 +631,11 @@ function compute_rms(dps::DynamicalPowerspectrum, min_freq::Real, max_freq::Real
 
     return (rms=rms, rms_err=rms_err)
 end
+
+function Base.show(io::IO, dps::DynamicalPowerspectrum)
+    n_freq, n_time = size(dps.dyn_ps)
+    print(io, "DynamicalPowerspectrum ($(dps.norm)-normalized, " *
+              "$n_freq freq bins × $n_time time segments, " *
+              "df=$(round(dps.df, sigdigits=4)) Hz, " *
+              "dt=$(round(dps.dt, sigdigits=4)) s)")
+end

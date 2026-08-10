@@ -1019,3 +1019,11 @@ function compute_rms(dcs::DynamicalCrossspectrum, min_freq::Real, max_freq::Real
 
     return (rms=rms, rms_err=rms_err)
 end
+
+function Base.show(io::IO, dcs::DynamicalCrossspectrum)
+    n_freq, n_time = size(dcs.dyn_ps)
+    print(io, "DynamicalCrossspectrum ($(dcs.norm)-normalized, " *
+              "$n_freq freq bins × $n_time time segments, " *
+              "df=$(round(dcs.df, sigdigits=4)) Hz, " *
+              "dt=$(round(dcs.dt, sigdigits=4)) s)")
+end
