@@ -504,3 +504,38 @@ function trace_maximum(dps::DynamicalPowerspectrum;
     end
     return result
 end
+
+"""
+    shift_and_add(dps::DynamicalPowerspectrum, f0_list; nbins=100, rebin=nothing)
+
+Shift and add the dynamical power spectrum, centering each segment's
+spectrum on the corresponding frequency in `f0_list`.
+
+Uses the shift-and-add technique for tracking kHz QPOs.
+
+# Arguments
+- `dps::DynamicalPowerspectrum`: The dynamical power spectrum.
+- `f0_list::AbstractVector`: Central frequencies, one per time segment.
+
+# Keyword Arguments
+- `nbins::Int=100`: Number of output frequency bins.
+- `rebin::Union{Nothing, Int}=nothing`: Rebin factor for the output.
+
+# Returns
+A NamedTuple `(freq, power, m, df, norm)`.
+"""
+function shift_and_add(dps::DynamicalPowerspectrum, f0_list::AbstractVector;
+                       nbins::Int=100,
+                       rebin::Union{Nothing, Int}=nothing)
+    n_time = size(dps.dyn_ps, 2)
+    power_list = [dps.dyn_ps[:, j] for j in 1:n_time]
+
+    final_freqs, final_powers, count = Stingray.shift_and_add(
+        dps.freq, power_list, f0_list;
+        nbins=nbins, rebin=rebin, df=dps.df,
+        M=fill(dps.m, n_time)
+    )
+
+    return (freq=final_freqs, power=final_powers, m=count,
+            df=dps.df, norm=dps.norm)
+end

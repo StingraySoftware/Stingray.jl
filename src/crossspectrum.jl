@@ -894,3 +894,39 @@ function trace_maximum(dcs::DynamicalCrossspectrum;
     end
     return result
 end
+
+"""
+    shift_and_add(dcs::DynamicalCrossspectrum, f0_list; nbins=100, rebin=nothing)
+
+Shift and add the dynamical cross spectrum, centering each segment's
+spectrum on the corresponding frequency in `f0_list`.
+
+Uses the shift-and-add technique for tracking kHz QPOs.
+
+# Arguments
+- `dcs::DynamicalCrossspectrum`: The dynamical cross spectrum.
+- `f0_list::AbstractVector`: Central frequencies, one per time segment.
+
+# Keyword Arguments
+- `nbins::Int=100`: Number of output frequency bins.
+- `rebin::Union{Nothing, Int}=nothing`: Rebin factor for the output.
+
+# Returns
+A NamedTuple `(freq, power, m, df, norm)`.
+"""
+function shift_and_add(dcs::DynamicalCrossspectrum, f0_list::AbstractVector;
+                       nbins::Int=100,
+                       rebin::Union{Nothing, Int}=nothing)
+    n_time = size(dcs.dyn_ps, 2)
+    # Extract power columns as a vector of vectors
+    power_list = [real.(dcs.dyn_ps[:, j]) for j in 1:n_time]
+
+    final_freqs, final_powers, count = Stingray.shift_and_add(
+        dcs.freq, power_list, f0_list;
+        nbins=nbins, rebin=rebin, df=dcs.df,
+        M=fill(dcs.m, n_time)
+    )
+
+    return (freq=final_freqs, power=final_powers, m=count,
+            df=dcs.df, norm=dcs.norm)
+end
