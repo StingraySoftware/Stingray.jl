@@ -546,3 +546,187 @@ function rebin_data_log(x::AbstractVector, y::AbstractVector, f::Real;
     return xbin, ybin_out, ybin_err_out, nsamples
 end
 
+# ──────────────────────────────────────────────────────────────────────────────
+# DynamicalCrossspectrum
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    DynamicalCrossspectrum{T<:Real} <: AbstractCrossspectrum
+
+A dynamical cross spectrum (spectrogram) computed by dividing two time series
+into segments and computing the cross spectrum for each.
+
+The `dyn_ps` matrix has rows indexed by frequency and columns indexed by time
+(segment midpoints).
+
+Mirrors Python Stingray's `DynamicalCrossspectrum`.
+
+# Fields
+- `dyn_ps::Matrix{Complex{T}}`: Frequency × time matrix of cross-spectral powers.
+- `freq::Vector{T}`: Mid-bin frequencies (Hz).
+- `time::Vector{T}`: Mid-point time of each segment (s).
+- `df::T`: Frequency resolution (Hz).
+- `dt::T`: Time resolution of the spectrogram (= `segment_size` initially).
+- `segment_size::T`: Length of each segment (s).
+- `norm::String`: Normalization applied.
+- `gti::Matrix{T}`: Good Time Intervals.
+- `m::Int`: Number of averaged spectra per bin (1 initially).
+- `nphots1::T`: Mean photon count per segment (signal 1).
+- `nphots2::T`: Mean photon count per segment (signal 2).
+- `unnorm_conversion::T`: Mean ratio of normalized to unnormalized power.
+- `type::String`: Always "dynamical_crossspectrum".
+"""
+struct DynamicalCrossspectrum{T<:Real} <: AbstractCrossspectrum
+    dyn_ps::Matrix{Complex{T}}
+    freq::Vector{T}
+    time::Vector{T}
+    df::T
+    dt::T
+    segment_size::T
+    norm::String
+    gti::Matrix{T}
+    m::Int
+    nphots1::T
+    nphots2::T
+    unnorm_conversion::T
+    type::String
+end
+
+"""
+    DynamicalCrossspectrum(ev1::EventList, ev2::EventList, segment_size, dt; kwargs...)
+
+Construct a `DynamicalCrossspectrum` from two `EventList` objects.
+
+# Arguments
+- `ev1::EventList`: Event list for the subject band.
+- `ev2::EventList`: Event list for the reference band.
+- `segment_size::Real`: Length of each segment in seconds.
+- `dt::Real`: Time resolution (sets Nyquist at 0.5/dt Hz).
+
+# Keyword Arguments
+- `norm::String="frac"`: Normalization ("frac", "abs", "leahy", "none").
+- `silent::Bool=false`: Suppress progress bars.
+"""
+function DynamicalCrossspectrum(ev1::EventList, ev2::EventList,
+                                segment_size::Real, dt::Real;
+                                norm::String="frac",
+                                silent::Bool=false)
+    if segment_size < 2 * dt
+        throw(ArgumentError("segment_size must be >= 2 * dt"))
+    end
+
+    common_gti = has_gti(ev1) && has_gti(ev2) ?
+        operations_on_gtis([gti(ev1), gti(ev2)], intersect) :
+        (has_gti(ev1) ? gti(ev1) : gti(ev2))
+
+    result = _cs_all_segments(
+        times(ev1), times(ev2), common_gti,
+        segment_size, dt;
+        norm=norm, silent=silent
+    )
+
+    if isnothing(result)
+        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
+    end
+
+    # Stack per-segment spectra into freq × time matrix
+    dyn_ps = hcat(result.all_cs...)
+    dyn_unnorm = hcat(result.all_unnorm_cs...)
+
+    # Compute unnorm_conversion: mean(normalized / unnormalized)
+    conv = dyn_ps ./ dyn_unnorm
+    unnorm_conv = Float64(real(Statistics.mean(filter(!isnan, conv))))
+
+    # Compute segment midpoints
+    tstart, _ = time_intervals_from_gtis(common_gti, segment_size)
+    seg_times = Float64.(tstart .+ 0.5 * segment_size)
+
+    return DynamicalCrossspectrum{Float64}(
+        Complex{Float64}.(dyn_ps),
+        result.freq,
+        seg_times,
+        result.df,
+        Float64(segment_size),
+        Float64(segment_size),
+        norm,
+        common_gti,
+        1,
+        result.nphots1,
+        result.nphots2,
+        unnorm_conv,
+        "dynamical_crossspectrum"
+    )
+end
+
+"""
+    DynamicalCrossspectrum(lc1::LightCurve, lc2::LightCurve, segment_size; kwargs...)
+
+Construct a `DynamicalCrossspectrum` from two `LightCurve` objects.
+
+# Arguments
+- `lc1::LightCurve`: Light curve for the subject band.
+- `lc2::LightCurve`: Light curve for the reference band.
+- `segment_size::Real`: Length of each segment in seconds.
+
+# Keyword Arguments
+- `norm::String="frac"`: Normalization ("frac", "abs", "leahy", "none").
+- `silent::Bool=false`: Suppress progress bars.
+"""
+function DynamicalCrossspectrum(lc1::LightCurve, lc2::LightCurve,
+                                segment_size::Real;
+                                norm::String="frac",
+                                silent::Bool=false)
+    dt_val = lc1.dt isa AbstractVector ? lc1.dt[1] : lc1.dt
+
+    if segment_size < 2 * dt_val
+        throw(ArgumentError("segment_size must be >= 2 * dt"))
+    end
+
+    lc1_gti = [lc1.metadata.time_range[1] lc1.metadata.time_range[2]]
+    lc2_gti = [lc2.metadata.time_range[1] lc2.metadata.time_range[2]]
+    common_gti = operations_on_gtis([lc1_gti, lc2_gti], intersect)
+
+    total_duration = common_gti[1, 2] - common_gti[1, 1]
+    if segment_size > total_duration
+        throw(ArgumentError(
+            "segment_size ($segment_size s) is longer than total duration ($total_duration s)"))
+    end
+
+    result = _cs_all_segments(
+        lc1.time, lc2.time, common_gti,
+        segment_size, dt_val;
+        norm=norm, silent=silent,
+        fluxes1=Float64.(lc1.counts),
+        fluxes2=Float64.(lc2.counts)
+    )
+
+    if isnothing(result)
+        throw(ArgumentError("No valid segments found. Check GTIs and segment_size."))
+    end
+
+    dyn_ps = hcat(result.all_cs...)
+    dyn_unnorm = hcat(result.all_unnorm_cs...)
+    conv = dyn_ps ./ dyn_unnorm
+    unnorm_conv = Float64(real(Statistics.mean(filter(!isnan, conv))))
+
+    tstart, _ = time_intervals_from_gtis(common_gti, segment_size)
+    seg_times = Float64.(tstart .+ 0.5 * segment_size)
+
+    return DynamicalCrossspectrum{Float64}(
+        Complex{Float64}.(dyn_ps),
+        result.freq,
+        seg_times,
+        result.df,
+        Float64(segment_size),
+        Float64(segment_size),
+        norm,
+        common_gti,
+        1,
+        result.nphots1,
+        result.nphots2,
+        unnorm_conv,
+        "dynamical_crossspectrum"
+    )
+end
+
+
