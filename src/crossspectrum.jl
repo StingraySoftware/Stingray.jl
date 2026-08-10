@@ -730,3 +730,44 @@ function DynamicalCrossspectrum(lc1::LightCurve, lc2::LightCurve,
 end
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# DynamicalCrossspectrum methods
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    rebin_frequency(dcs::DynamicalCrossspectrum, df_new; method=:mean)
+
+Rebin the frequency axis of the dynamical cross spectrum to a new resolution.
+
+# Arguments
+- `dcs::DynamicalCrossspectrum`: The dynamical cross spectrum.
+- `df_new::Real`: New frequency resolution (must be >= current `df`).
+
+# Keyword Arguments
+- `method::Symbol=:mean`: Rebinning method (`:mean` or `:sum`).
+
+# Returns
+A new `DynamicalCrossspectrum` with the rebinned frequency axis.
+"""
+function rebin_frequency(dcs::DynamicalCrossspectrum, df_new::Real; method::Symbol=:mean)
+    n_time = size(dcs.dyn_ps, 2)
+
+    # Rebin each time column
+    new_freq, col1, _, _ = rebin_data(dcs.freq, real.(dcs.dyn_ps[:, 1]), df_new; method=method)
+    n_freq_new = length(col1)
+
+    new_dyn = Matrix{Complex{Float64}}(undef, n_freq_new, n_time)
+    for j in 1:n_time
+        _, re, _, _ = rebin_data(dcs.freq, real.(dcs.dyn_ps[:, j]), df_new; method=method)
+        _, im_part, _, _ = rebin_data(dcs.freq, imag.(dcs.dyn_ps[:, j]), df_new; method=method)
+        new_dyn[:, j] = re .+ im .* im_part
+    end
+
+    return DynamicalCrossspectrum{Float64}(
+        new_dyn, Float64.(new_freq), dcs.time,
+        Float64(df_new), dcs.dt, dcs.segment_size,
+        dcs.norm, dcs.gti, dcs.m,
+        dcs.nphots1, dcs.nphots2, dcs.unnorm_conversion,
+        dcs.type
+    )
+end

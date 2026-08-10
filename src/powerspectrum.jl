@@ -342,3 +342,43 @@ function DynamicalPowerspectrum(lc::LightCurve, segment_size::Real;
     )
 end
 
+# ──────────────────────────────────────────────────────────────────────────────
+# DynamicalPowerspectrum methods
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    rebin_frequency(dps::DynamicalPowerspectrum, df_new; method=:mean)
+
+Rebin the frequency axis of the dynamical power spectrum to a new resolution.
+
+# Arguments
+- `dps::DynamicalPowerspectrum`: The dynamical power spectrum.
+- `df_new::Real`: New frequency resolution (must be >= current `df`).
+
+# Keyword Arguments
+- `method::Symbol=:mean`: Rebinning method (`:mean` or `:sum`).
+
+# Returns
+A new `DynamicalPowerspectrum` with the rebinned frequency axis.
+"""
+function rebin_frequency(dps::DynamicalPowerspectrum, df_new::Real; method::Symbol=:mean)
+    n_time = size(dps.dyn_ps, 2)
+
+    # Rebin each time column
+    new_freq, col1, _, _ = rebin_data(dps.freq, dps.dyn_ps[:, 1], df_new; method=method)
+    n_freq_new = length(col1)
+
+    new_dyn = Matrix{Float64}(undef, n_freq_new, n_time)
+    for j in 1:n_time
+        _, ybin, _, _ = rebin_data(dps.freq, dps.dyn_ps[:, j], df_new; method=method)
+        new_dyn[:, j] = ybin
+    end
+
+    return DynamicalPowerspectrum{Float64}(
+        new_dyn, Float64.(new_freq), dps.time,
+        Float64(df_new), dps.dt, dps.segment_size,
+        dps.norm, dps.gti, dps.m,
+        dps.nphots, dps.meanrate, dps.unnorm_conversion,
+        dps.type
+    )
+end
