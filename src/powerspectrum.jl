@@ -465,3 +465,42 @@ function rebin_by_n_intervals(dps::DynamicalPowerspectrum, n::Int; method::Symbo
         dps.type
     )
 end
+
+"""
+    trace_maximum(dps::DynamicalPowerspectrum; min_freq=nothing, max_freq=nothing)
+
+Find the frequency index of the maximum power for each time segment.
+
+# Arguments
+- `dps::DynamicalPowerspectrum`: The dynamical power spectrum.
+
+# Keyword Arguments
+- `min_freq::Union{Nothing, Real}=nothing`: Lower frequency bound.
+- `max_freq::Union{Nothing, Real}=nothing`: Upper frequency bound.
+
+# Returns
+A `Vector{Int}` of frequency indices (into `dps.freq`) of the peak power
+for each time segment.
+"""
+function trace_maximum(dps::DynamicalPowerspectrum;
+                       min_freq::Union{Nothing, Real}=nothing,
+                       max_freq::Union{Nothing, Real}=nothing)
+    freq = dps.freq
+    mask = trues(length(freq))
+    if !isnothing(min_freq)
+        mask .&= freq .>= min_freq
+    end
+    if !isnothing(max_freq)
+        mask .&= freq .<= max_freq
+    end
+    idx_range = findall(mask)
+
+    n_time = size(dps.dyn_ps, 2)
+    result = Vector{Int}(undef, n_time)
+    for j in 1:n_time
+        col = dps.dyn_ps[idx_range, j]
+        local_idx = argmax(col)
+        result[j] = idx_range[local_idx]
+    end
+    return result
+end
