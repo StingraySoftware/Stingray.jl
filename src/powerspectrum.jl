@@ -539,3 +539,95 @@ function shift_and_add(dps::DynamicalPowerspectrum, f0_list::AbstractVector;
     return (freq=final_freqs, power=final_powers, m=count,
             df=dps.df, norm=dps.norm)
 end
+
+"""
+    power_colors(dps::DynamicalPowerspectrum; freq_edges, freqs_to_exclude, poisson_power)
+
+Compute power colors for each time segment of the dynamical power spectrum.
+
+Calls `power_color` for each segment independently.
+
+# Keyword Arguments
+- `freq_edges::Vector{Float64}=[1/256, 1/32, 0.25, 2.0, 16.0]`: Frequency band edges.
+- `freqs_to_exclude::Union{Nothing, Vector}=nothing`: Frequency ranges to exclude.
+- `poisson_power::Union{Nothing, Real}=nothing`: Poisson noise level.
+  If `nothing`, computed from the normalization and mean rate.
+
+# Returns
+`(pc0, pc0_err, pc1, pc1_err)` — Vectors of power colors for each segment.
+"""
+function power_colors(dps::DynamicalPowerspectrum;
+                      freq_edges::Vector{Float64}=[1/256, 1/32, 0.25, 2.0, 16.0],
+                      freqs_to_exclude::Union{Nothing, Vector}=nothing,
+                      poisson_power::Union{Nothing, Real}=nothing)
+    if isnothing(poisson_power)
+        poisson_power = poisson_level(dps.norm;
+                                      meanrate=dps.meanrate,
+                                      n_ph=dps.nphots)
+    end
+
+    n_time = size(dps.dyn_ps, 2)
+    pc0 = Vector{Float64}(undef, n_time)
+    pc0_err = Vector{Float64}(undef, n_time)
+    pc1 = Vector{Float64}(undef, n_time)
+    pc1_err = Vector{Float64}(undef, n_time)
+
+    for j in 1:n_time
+        p0, p0e, p1, p1e = power_color(
+            dps.freq, dps.dyn_ps[:, j];
+            freq_edges=freq_edges,
+            df=dps.df, m=dps.m,
+            freqs_to_exclude=freqs_to_exclude,
+            poisson_power=poisson_power
+        )
+        pc0[j] = p0
+        pc0_err[j] = p0e
+        pc1[j] = p1
+        pc1_err[j] = p1e
+    end
+
+    return (pc0=pc0, pc0_err=pc0_err, pc1=pc1, pc1_err=pc1_err)
+end
+
+"""
+    compute_rms(dps::DynamicalPowerspectrum, min_freq, max_freq; poisson_noise_level=0)
+
+Compute the fractional RMS for each time segment of the dynamical power spectrum.
+
+Uses `integrate_power_in_frequency_range` on each segment.
+
+# Arguments
+- `dps::DynamicalPowerspectrum`: The dynamical power spectrum.
+- `min_freq::Real`: Lower frequency bound for integration.
+- `max_freq::Real`: Upper frequency bound for integration.
+
+# Keyword Arguments
+- `poisson_noise_level::Real=0`: Poisson noise level to subtract.
+
+# Returns
+`(rms, rms_err)` — Vectors of fractional RMS and error for each segment.
+"""
+function compute_rms(dps::DynamicalPowerspectrum, min_freq::Real, max_freq::Real;
+                     poisson_noise_level::Real=0)
+    n_time = size(dps.dyn_ps, 2)
+    rms = Vector{Float64}(undef, n_time)
+    rms_err = Vector{Float64}(undef, n_time)
+
+    for j in 1:n_time
+        power_int, power_int_err = integrate_power_in_frequency_range(
+            dps.freq, dps.dyn_ps[:, j], [min_freq, max_freq];
+            df=dps.df, m=dps.m,
+            poisson_power=poisson_noise_level
+        )
+        # Fractional RMS = sqrt(integrated_power) if frac-normalized
+        if power_int > 0
+            rms[j] = sqrt(abs(power_int))
+            rms_err[j] = power_int_err / (2 * rms[j])
+        else
+            rms[j] = 0.0
+            rms_err[j] = 0.0
+        end
+    end
+
+    return (rms=rms, rms_err=rms_err)
+end
