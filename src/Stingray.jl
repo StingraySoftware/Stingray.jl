@@ -94,11 +94,20 @@ export HuePlot
 include("crossspectrum.jl")
 export AbstractCrossspectrum
 export Crossspectrum
+export DynamicalCrossspectrum
 export rebin_data
 export rebin_data_log
+export rebin_frequency
+export rebin_time
+export rebin_by_n_intervals
+export trace_maximum
+export shift_and_add
+export power_colors
+export compute_rms
 
 include("powerspectrum.jl")
 export AbstractPowerspectrum
 export Powerspectrum
+export DynamicalPowerspectrum
 
 end
