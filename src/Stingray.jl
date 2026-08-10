@@ -94,6 +94,8 @@ export HuePlot
 include("crossspectrum.jl")
 export AbstractCrossspectrum
 export Crossspectrum
+export rebin_data
+export rebin_data_log
 
 include("powerspectrum.jl")
 export AbstractPowerspectrum
