@@ -1144,20 +1144,32 @@ julia> _safe_array_slice_indices(6, 6, 3)  # slice goes past right edge
 ```
 """
 function _safe_array_slice_indices(input_size::Int, center_idx::Int, nbins::Int)
-    minbin = center_idx - nbins ÷ 2
-    maxbin = minbin + nbins
+    # Convert to 0-based for easier reasoning matching Python
+    input_size0 = input_size
+    center_idx0 = center_idx - 1
+    minbin0 = center_idx0 - nbins ÷ 2
+    maxbin0 = minbin0 + nbins
 
-    if minbin < 1
-        output_range = (1 - minbin + 1):min(nbins, input_size - minbin + 1)
-        input_range = 1:(minbin + nbins)
-    elseif maxbin > input_size + 1
-        output_range = 1:(nbins - (maxbin - input_size - 1))
-        input_range = minbin:input_size
+    if minbin0 < 0
+        out_start0 = -minbin0
+        out_end0 = min(nbins, input_size0 - minbin0)
+        in_start0 = 0
+        in_end0 = minbin0 + nbins
+    elseif maxbin0 > input_size0
+        out_start0 = 0
+        out_end0 = nbins - (maxbin0 - input_size0)
+        in_start0 = minbin0
+        in_end0 = input_size0
     else
-        output_range = 1:nbins
-        input_range = minbin:(maxbin - 1)
+        out_start0 = 0
+        out_end0 = nbins
+        in_start0 = minbin0
+        in_end0 = maxbin0
     end
 
+    input_range = (in_start0 + 1):in_end0
+    output_range = (out_start0 + 1):out_end0
+    
     return input_range, output_range
 end
 
