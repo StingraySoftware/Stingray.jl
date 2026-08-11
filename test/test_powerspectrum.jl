@@ -308,7 +308,7 @@ end
     end
 
     @testset "shift_and_add" begin
-        f0_list = dps.freq[argmax(dps.dyn_ps[:, j]) for j in 1:size(dps.dyn_ps, 2)]
+        f0_list = [dps.freq[argmax(dps.dyn_ps[:, j])] for j in 1:size(dps.dyn_ps, 2)]
         result = shift_and_add(dps, f0_list; nbins=50)
         @test haskey(result, :freq)
         @test haskey(result, :power)
