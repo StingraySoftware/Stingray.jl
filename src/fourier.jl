@@ -843,3 +843,354 @@ function integrate_power_in_frequency_range(
 
     return power_integrated, power_err_integrated
 end
+
+"""
+    _get_rms_from_unnorm_periodogram(unnorm_power, nphots, df;
+        M=1, poisson_noise_unnorm=0, segment_size=nothing, kind="frac")
+
+Internal function to compute the fractional or absolute rms amplitude from an unnormalized periodogram.
+
+# Arguments
+- `unnorm_power::AbstractVector{<:Real}`: Unnormalized power spectrum (real part).
+- `nphots::Real`: Total number of photons (or mean count rate if segment_size is nothing).
+- `df::Union{Real, AbstractVector{<:Real}}`: Frequency resolution.
+
+# Keyword Arguments
+- `M::Union{Real, AbstractVector{<:Real}}=1`: Number of averaged segments.
+- `poisson_noise_unnorm::Real=0`: Poisson noise level in unnormalized units.
+- `segment_size::Union{Nothing, Real}=nothing`: Length of the light curve segment.
+- `kind::String="frac"`: Type of RMS to compute. Either "frac" or "abs".
+
+# Returns
+- `(rms, rms_err)` — rms amplitude and its uncertainty.
+"""
+function _get_rms_from_unnorm_periodogram(
+    unnorm_power::AbstractVector{<:Real},
+    nphots::Real,
+    df::Union{Real, AbstractVector{<:Real}};
+    M::Union{Real, AbstractVector{<:Real}}=1,
+    poisson_noise_unnorm::Real=0,
+    segment_size::Union{Nothing, Real}=nothing,
+    kind::String="frac"
+)
+    seg_size = isnothing(segment_size) ? 1.0 / minimum(df) : float(segment_size)
+    mean_rate = nphots / seg_size
+
+    function to_norm(powers)
+        leahy = powers .* (2.0 / nphots)
+        if kind == "frac"
+            return leahy ./ mean_rate
+        elseif kind == "abs"
+            return leahy .* mean_rate
+        else
+            throw(ArgumentError("Only 'frac' or 'abs' rms are supported."))
+        end
+    end
+
+    powers_norm = to_norm(unnorm_power)
+    poisson_norm = to_norm(poisson_noise_unnorm)
+
+    pow_err_norm = powers_norm ./ sqrt.(M)
+
+    power_integrated = sum((powers_norm .- poisson_norm) .* df)
+    power_err_integrated = sqrt(sum((pow_err_norm .* df) .^ 2))
+
+    if power_integrated < 0
+        rms = 0.0
+    else
+        rms = sqrt(power_integrated)
+    end
+
+    if rms > 0
+        rms_err = power_err_integrated / (2 * rms)
+    else
+        rms_err = sqrt(power_err_integrated)
+    end
+
+    return rms, rms_err
+end
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Lomb-Scargle Fourier Transform algorithms
+# ──────────────────────────────────────────────────────────────────────────────
+
+"""
+    lsft_slow(y, t, freqs)
+
+Compute the Lomb-Scargle Fourier Transform of unevenly sampled data using
+the direct O(n²) summation method.
+
+Mirrors Python Stingray's `fourier.lsft_slow`.
+
+# Arguments
+- `y::AbstractVector{<:Real}`: Signal values at each time sample.
+- `t::AbstractVector{<:Real}`: Time stamps of each sample (may be unevenly spaced).
+- `freqs::AbstractVector{<:Real}`: Frequency grid at which to evaluate the transform.
+
+# Returns
+- `Vector{ComplexF64}`: The Fourier amplitudes at each frequency.
+
+# Mathematical Definition
+```math
+F(\\nu_k) = \\sum_{j=1}^{N} y_j \\, e^{-2\\pi i \\, \\nu_k \\, t_j}
+```
+
+# Examples
+```julia
+t = [0.0, 1.0, 2.0, 3.0, 4.0]
+y = [1.0, 0.0, -1.0, 0.0, 1.0]
+freqs = [0.1, 0.2, 0.3, 0.4, 0.5]
+ft = lsft_slow(y, t, freqs)
+```
+
+# References
+- Scargle, J. D. (1989), "Studies in astronomical time series analysis. III",
+  ApJ 343, 874–887.
+"""
+function lsft_slow(y::AbstractVector{<:Real},
+                   t::AbstractVector{<:Real},
+                   freqs::AbstractVector{<:Real})
+    n = length(y)
+    if length(t) != n
+        throw(ArgumentError("y and t must have the same length (got $(length(y)) and $(length(t)))"))
+    end
+
+    nf = length(freqs)
+    ft = zeros(ComplexF64, nf)
+
+    @inbounds for k in 1:nf
+        ν = freqs[k]
+        s = zero(ComplexF64)
+        for j in 1:n
+            s += y[j] * exp(-2π * im * ν * t[j])
+        end
+        ft[k] = s
+    end
+
+    return ft
+end
+
+"""
+    _extirpolate!(result, y, t, freqs, oversampling)
+
+Internal helper for `lsft_fast`. Grids (extirpolates) unevenly sampled data
+onto a regular oversampled grid using a triangle-window spreading kernel.
+
+Each sample `y[j]` at time `t[j]` is spread to the two nearest grid points
+with weights proportional to the distance to each point (linear interpolation
+in reverse, i.e., "extirpolation").
+
+# Arguments
+- `result::Vector{ComplexF64}`: Pre-allocated output grid (zeroed).
+- `y::AbstractVector{<:Real}`: Signal values.
+- `t::AbstractVector{<:Real}`: Time stamps.
+- `freqs::AbstractVector{<:Real}`: Frequency grid (used to determine grid spacing).
+- `oversampling::Int`: Oversampling factor for the regular grid.
+"""
+function _extirpolate!(result::Vector{ComplexF64},
+                       y::AbstractVector{<:Real},
+                       t::AbstractVector{<:Real},
+                       freqs::AbstractVector{<:Real},
+                       oversampling::Int)
+    n_grid = length(result)
+    df = length(freqs) > 1 ? freqs[2] - freqs[1] : freqs[1]
+    dt_grid = 1.0 / (n_grid * df)
+
+    for j in eachindex(y)
+        # Map time to grid index (0-based fractional position)
+        pos = t[j] / dt_grid
+        # Wrap into [0, n_grid)
+        pos = mod(pos, n_grid)
+
+        # Two nearest grid points
+        idx_lo = floor(Int, pos)
+        frac = pos - idx_lo
+
+        # Julia 1-indexed, with wrapping
+        i_lo = mod(idx_lo, n_grid) + 1
+        i_hi = mod(idx_lo + 1, n_grid) + 1
+
+        # Triangle-window weights
+        result[i_lo] += y[j] * (1.0 - frac)
+        result[i_hi] += y[j] * frac
+    end
+end
+
+"""
+    lsft_fast(y, t, freqs; oversampling=5)
+
+Compute the Lomb-Scargle Fourier Transform using the fast O(n·log n)
+Press & Rybicki algorithm.
+
+The method works by:
+1. Gridding ("extirpolating") the unevenly sampled data onto a regular
+   oversampled grid via triangle-window spreading.
+2. Computing an FFT of the gridded data.
+3. Interpolating the FFT result back to the requested frequency grid.
+
+Mirrors Python Stingray's `fourier.lsft_fast`.
+
+# Arguments
+- `y::AbstractVector{<:Real}`: Signal values at each time sample.
+- `t::AbstractVector{<:Real}`: Time stamps (may be unevenly spaced).
+- `freqs::AbstractVector{<:Real}`: Frequency grid at which to evaluate the transform.
+
+# Keyword Arguments
+- `oversampling::Int=5`: Oversampling factor for the internal regular grid.
+  Higher values improve accuracy at the cost of memory and speed.
+
+# Returns
+- `Vector{ComplexF64}`: The Fourier amplitudes at each frequency.
+
+# Examples
+```julia
+t = collect(0.0:0.1:10.0) .+ 0.01 .* randn(101)
+y = sin.(2π .* 0.5 .* t)
+freqs = collect(0.01:0.01:5.0)
+ft = lsft_fast(y, t, freqs; oversampling=5)
+```
+
+# References
+- Press, W. H. & Rybicki, G. B. (1989), "Fast algorithm for spectral analysis
+  of unevenly sampled data", ApJ 338, 277.
+"""
+function lsft_fast(y::AbstractVector{<:Real},
+                   t::AbstractVector{<:Real},
+                   freqs::AbstractVector{<:Real};
+                   oversampling::Int=5)
+    n = length(y)
+    if length(t) != n
+        throw(ArgumentError("y and t must have the same length (got $(length(y)) and $(length(t)))"))
+    end
+    if oversampling < 1
+        throw(ArgumentError("oversampling must be ≥ 1 (got $oversampling)"))
+    end
+
+    nf = length(freqs)
+    # Size of the oversampled grid
+    n_grid = nf * oversampling
+
+    # Step 1: Extirpolate onto the regular grid
+    gridded = zeros(ComplexF64, n_grid)
+    _extirpolate!(gridded, y, t, freqs, oversampling)
+
+    # Step 2: FFT the gridded data
+    ft_grid = fft(gridded)
+
+    # Step 3: Interpolate to the requested frequencies
+    df = nf > 1 ? freqs[2] - freqs[1] : freqs[1]
+    ft = zeros(ComplexF64, nf)
+
+    @inbounds for k in 1:nf
+        # Map the requested frequency to a grid index
+        grid_idx = freqs[k] / df
+        idx_lo = floor(Int, grid_idx)
+        frac = grid_idx - idx_lo
+
+        # 1-indexed with wrapping
+        i_lo = mod(idx_lo, n_grid) + 1
+        i_hi = mod(idx_lo + 1, n_grid) + 1
+
+        # Linear interpolation between neighboring FFT bins
+        ft[k] = ft_grid[i_lo] * (1.0 - frac) + ft_grid[i_hi] * frac
+    end
+
+    return ft
+end
+
+"""
+    impose_symmetry_lsft(ft, sum_y, n, freqs)
+
+Create the full (positive + negative frequency) spectrum from a one-sided
+Lomb-Scargle Fourier Transform by imposing Hermitian symmetry.
+
+For a real-valued signal, the Fourier transform satisfies `F(-ν) = conj(F(ν))`.
+This function constructs the full spectrum by:
+1. Computing the DC component as `sum_y` (total signal).
+2. Prepending the negative frequencies as conjugates of the positive ones (reversed).
+3. Prepending the corresponding negative frequency values.
+
+Mirrors Python Stingray's `fourier.impose_symmetry_lsft`.
+
+# Arguments
+- `ft::AbstractVector{<:Complex}`: One-sided (positive frequency) Fourier amplitudes.
+- `sum_y::Real`: Sum of the signal values (DC component).
+- `n::Int`: Number of data points in the original signal.
+- `freqs::AbstractVector{<:Real}`: Positive frequency grid.
+
+# Returns
+- `(ft_full, freqs_full)`: Tuple of the full spectrum and full frequency grid.
+  - `ft_full` has length `2 * length(ft) + 1` (negative freqs + DC + positive freqs).
+  - `freqs_full` is symmetric around 0.
+
+# Examples
+```julia
+freqs = [0.1, 0.2, 0.3, 0.4, 0.5]
+ft = lsft_slow(y, t, freqs)
+ft_full, freqs_full = impose_symmetry_lsft(ft, sum(y), length(y), freqs)
+```
+"""
+function impose_symmetry_lsft(ft::AbstractVector{<:Complex},
+                               sum_y::Real,
+                               n::Int,
+                               freqs::AbstractVector{<:Real})
+    # Negative frequency part: reversed conjugate of positive frequencies
+    ft_neg = conj.(reverse(ft))
+    freqs_neg = -reverse(freqs)
+
+    # DC component
+    dc = ComplexF64(sum_y)
+
+    # Full spectrum: [negative freqs | DC | positive freqs]
+    ft_full = vcat(ft_neg, [dc], ComplexF64.(ft))
+    freqs_full = vcat(freqs_neg, [0.0], Float64.(freqs))
+
+    return ft_full, freqs_full
+end
+
+"""
+    unnormalize_periodograms(power, dt, n_bin, nphots; norm="frac", mean_flux=nothing)
+
+Invert the normalization applied to a periodogram, converting normalized
+power values back to unnormalized form.
+
+This is the inverse of `normalize_periodograms` and is needed for computing
+RMS amplitudes from normalized power spectra (e.g., in Lomb-Scargle context).
+
+Mirrors Python Stingray's `fourier.unnormalize_periodograms`.
+
+# Arguments
+- `power::AbstractVector{<:Number}`: Normalized power values.
+- `dt::Real`: Time resolution of the data.
+- `n_bin::Int`: Number of bins per segment.
+- `nphots::Real`: Total number of photons (or geometric mean for cross-spectra).
+
+# Keyword Arguments
+- `norm::String="frac"`: The normalization that was applied.
+  Must be one of `"frac"`, `"abs"`, `"leahy"`, `"none"`.
+- `mean_flux::Union{Nothing, Real}=nothing`: Mean count rate. If `nothing`,
+  computed as `nphots / n_bin`.
+
+# Returns
+- `Vector`: Unnormalized power values.
+"""
+function unnormalize_periodograms(power::AbstractVector{<:Number},
+                                  dt::Real, n_bin::Int, nphots::Real;
+                                  norm::String="frac",
+                                  mean_flux::Union{Nothing, Real}=nothing)
+    if isnothing(mean_flux)
+        mean_flux = nphots / n_bin
+    end
+
+    if norm == "leahy"
+        return @. power * nphots / 2.0
+    elseif norm == "frac"
+        return @. power * mean_flux^2 * n_bin / (2.0 * dt)
+    elseif norm == "abs"
+        return @. power * n_bin * dt / 2.0
+    elseif norm == "none"
+        return collect(power)
+    else
+        throw(ArgumentError("Unknown value for norm: $norm"))
+    end
+end

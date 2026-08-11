@@ -103,4 +103,13 @@ export AbstractPowerspectrum
 export Powerspectrum
 export compute_rms
 
+include("lombscargle.jl")
+export LombScargleCrossspectrum
+export LombScarglePowerspectrum
+export autofrequency
+export lsft_slow, lsft_fast
+export impose_symmetry_lsft
+export unnormalize_periodograms
+export phase_lag, time_lag
+
 end
