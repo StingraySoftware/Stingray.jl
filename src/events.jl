@@ -43,9 +43,12 @@ mutable struct FITSMetadata{H}
 end
 
 function Base.show(io::IO, ::MIME"text/plain", m::FITSMetadata)
-    println(io, "FITSMetadata for $(basename(m.filepath))[$(m.hdu)] with $(length(m.extra_columns)) extra column(s)")
+    println(
+        io,
+        "FITSMetadata for $(basename(m.filepath))[$(m.hdu)] with $(length(m.extra_columns)) extra column(s)",
+    )
     if !isnothing(m.gti)
-        gti_exposure = sum(diff(m.gti; dims=2))
+        gti_exposure = sum(diff(m.gti; dims = 2))
         println(io, "GTI: $(size(m.gti, 1)) intervals, total exposure: $(gti_exposure) s")
     end
     if !isnothing(m.mjd_ref)
@@ -124,7 +127,7 @@ function EventList(times::Vector{T}, energies::Union{Nothing,Vector{T}} = nothin
         nothing,                       # time_unit
         nothing,                       # time_sys
         nothing,                       # time_pixr
-        nothing                        # time_del
+        nothing,                        # time_del
     )
     EventList(times, energies, dummy_meta)
 end
@@ -278,7 +281,7 @@ println("Live time fraction: \$(exposure / time_span)")
 """
 function gti_exposure(ev::EventList)
     if has_gti(ev)
-        return sum(diff(ev.meta.gti; dims=2))
+        return sum(diff(ev.meta.gti; dims = 2))
     else
         return isempty(ev.times) ? 0.0 : maximum(ev.times) - minimum(ev.times)
     end
@@ -321,9 +324,10 @@ function gti_info(ev::EventList)
         @warn "No GTI information available"
         return
     end
-    
+
     gti_matrix = ev.meta.gti
-    @debug "GTI Information" source=ev.meta.gti_source intervals=size(gti_matrix, 1) exposure=gti_exposure(ev) time_range=(minimum(gti_matrix), maximum(gti_matrix))
+    @debug "GTI Information" source = ev.meta.gti_source intervals = size(gti_matrix, 1) exposure =
+        gti_exposure(ev) time_range = (minimum(gti_matrix), maximum(gti_matrix))
 end
 
 # ============================================================================
@@ -418,11 +422,16 @@ by applying the same filtering mask derived from the source column.
 function filter_on!(f, src_col::AbstractVector, ev::EventList)
     @assert size(src_col) == size(ev.times) "Source column size must match times size"
 
+    # Handle empty input - return immediately
+    if isempty(src_col) || isempty(ev.times)
+        return ev
+    end
+
     # Modified from Base.filter! implementation for multiple arrays
     # Use two pointers: i for reading, j for writing
     j = firstindex(ev.times)
 
-    for i in eachindex(ev.times)
+    for i in eachindex(src_col)  # Use src_col indices, not ev.times
         predicate = f(src_col[i])::Bool
 
         if predicate
@@ -442,18 +451,18 @@ function filter_on!(f, src_col::AbstractVector, ev::EventList)
         end
     end
 
-    # Resize all arrays to new length
-    if j <= lastindex(ev.times)
-        new_length = j - 1
-        resize!(ev.times, new_length)
+    # Calculate new length correctly
+    new_length = j - firstindex(ev.times)
+    
+    # Resize all arrays to new length (handles 0 length correctly)
+    resize!(ev.times, new_length)
 
-        if !isnothing(ev.energies)
-            resize!(ev.energies, new_length)
-        end
+    if !isnothing(ev.energies)
+        resize!(ev.energies, new_length)
+    end
 
-        for (_, col) in ev.meta.extra_columns
-            resize!(col, new_length)
-        end
+    for (_, col) in ev.meta.extra_columns
+        resize!(col, new_length)
     end
 
     ev
@@ -673,14 +682,16 @@ end
 - Errors in individual HDUs are logged but don't stop the search
 - Auto-detection looks for any HDU with "START" and "STOP" columns
 """
-function read_gti_from_fits(fits_file::String; 
-                           gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"],
-                           gti_hdu_indices::Union{Vector{Int}, Nothing} = nothing,
-                           combine_gtis::Bool = true)::Tuple{Union{Nothing,Matrix{Float64}}, Union{Nothing,String}}
-    
+function read_gti_from_fits(
+    fits_file::String;
+    gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"],
+    gti_hdu_indices::Union{Vector{Int},Nothing} = nothing,
+    combine_gtis::Bool = true,
+)::Tuple{Union{Nothing,Matrix{Float64}},Union{Nothing,String}}
+
     all_gtis = Matrix{Float64}[]
     gti_sources = String[]
-    
+
     FITS(fits_file, "r") do f
         for gti_name in gti_hdu_candidates
             try
@@ -700,7 +711,7 @@ function read_gti_from_fits(fits_file::String;
         else
             gti_hdu_indices
         end
-        
+
         for gti_idx in hdu_indices
             try
                 if length(f) >= gti_idx
@@ -715,21 +726,21 @@ function read_gti_from_fits(fits_file::String;
             end
         end
     end
-    
+
     if isempty(all_gtis)
         return nothing, nothing
     end
-    
+
     if combine_gtis && length(all_gtis) > 1
         # Combine all GTIs into one matrix
         combined_gti = vcat(all_gtis...)
         # Sort by start time
         sort_indices = sortperm(combined_gti[:, 1])
         combined_gti = combined_gti[sort_indices, :]
-        
+
         # Merge overlapping intervals
         merged_gti = merge_overlapping_gtis(combined_gti)
-        
+
         return merged_gti, "combined_" * join(gti_sources, "_")
     else
         # Return the first GTI found
@@ -779,7 +790,7 @@ function extract_timing_keywords(header)
             return Float64(val)
         end
     end
-    
+
     # Extract MJD reference
     mjd_ref = nothing
     if haskey(header, "MJDREF")
@@ -1031,6 +1042,9 @@ Times are ready for direct use in timing analysis without additional corrections
 """
 function readevents(
     path::AbstractString;
+    mission::Union{String,Nothing} = nothing,
+    instrument::Union{String,Nothing} = nothing,
+    epoch::Union{Float64,Nothing} = nothing,
     hdu::Int = 2,
     T::Type = Float64,
     sort::Bool = false,
@@ -1038,21 +1052,36 @@ function readevents(
     energy_alternatives::Vector{String} = ["ENERGY", "PI", "PHA"],
     load_gti::Bool = true,
     gti_hdu_candidates::Vector{String} = ["GTI", "STDGTI"],
-    gti_hdu_indices::Union{Vector{Int}, Nothing} = nothing,
+    gti_hdu_indices::Union{Vector{Int},Nothing} = nothing,
     combine_gtis::Bool = true,
     apply_gti_filter::Bool = false,
-    convert_to_mjd::Bool = false,  # New parameter to control MJD conversion
+    convert_to_mjd::Bool = false,
     kwargs...,
 )::EventList{Vector{T},FITSMetadata{FITSIO.FITSHeader}}
+
+    # Get mission support if specified
+    mission_support = if !isnothing(mission)
+        ms = get_mission_support(mission, instrument, epoch)
+        # Use mission-specific energy alternatives if available
+        energy_alternatives = ms.energy_alternatives
+        ms
+    else
+        nothing
+    end
 
     # Read GTI first if requested
     gti_data, gti_source = nothing, nothing
     if load_gti
-        gti_data, gti_source = read_gti_from_fits(path; 
-            gti_hdu_candidates, gti_hdu_indices, combine_gtis)
-        
+        gti_data, gti_source = read_gti_from_fits(
+            path; 
+            gti_hdu_candidates, 
+            gti_hdu_indices, 
+            combine_gtis
+        )
+
         if !isnothing(gti_data)
-            @debug "Found GTI data" n_intervals=size(gti_data, 1) time_range=(minimum(gti_data), maximum(gti_data))
+            @debug "Found GTI data" n_intervals = size(gti_data, 1) time_range =
+                (minimum(gti_data), maximum(gti_data))
         else
             @debug "No GTI data found"
         end
@@ -1072,16 +1101,32 @@ function readevents(
     time_del::Union{Nothing,Float64} = FITS(path, "r") do f
 
         selected_hdu = f[hdu]
+
+        # Apply mission-specific FITS interpretation if available
+        if !isnothing(mission_support) && !isnothing(mission_support.interpretation_func)
+            interpret_fits_data!(f, mission_support)
+        end
+
         header = read_header(selected_hdu)
         all_cols = FITSIO.colnames(selected_hdu)
         time = convert(Vector{T}, read(selected_hdu, "TIME", case_sensitive = false))
 
-        # Read energy column
+        # Read energy column using mission-specific alternatives
         energy_column, energy = read_energy_column(
             selected_hdu;
             T = T,
             energy_alternatives = energy_alternatives,
         )
+
+        # Apply mission-specific calibration if we have PI data and mission support
+        if !isnothing(energy) &&
+           !isnothing(mission_support) &&
+           !isnothing(energy_column) &&
+           uppercase(energy_column) == "PI"
+            energy = convert(Vector{T}, apply_calibration(mission_support, energy))
+            # Update the energy column name to reflect that it's now calibrated
+            energy_column = "ENERGY"
+        end
 
         # Read extra columns
         extra_data = Dict{String,Vector}()
@@ -1096,9 +1141,39 @@ function readevents(
         end
 
         # Extract timing keywords
-        mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del = extract_timing_keywords(header)
+        mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del =
+            extract_timing_keywords(header)
 
-        (time, energy, energy_column, header, extra_data, mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
+        (
+            time,
+            energy,
+            energy_column,
+            header,
+            extra_data,
+            mjd_ref,
+            time_zero,
+            time_unit,
+            time_sys,
+            time_pixr,
+            time_del,
+        )
+    end
+
+    # Apply mission-specific header patches if available
+    if !isnothing(mission_support)
+        # Convert header to dictionary for patching
+        header_dict = Dict{String,Any}()
+
+        # Use the proper way to access FITSHeader keys and values
+        for key in keys(header)
+            header_dict[key] = header[key]
+        end
+
+        # Apply mission patches
+        patched_header_dict = patch_mission_info(header_dict, mission)
+
+        # Note: We keep the original header structure but could extend this
+        # to update the header with patched information if needed
     end
 
     # Apply time corrections and optionally convert to MJD
@@ -1110,24 +1185,63 @@ function readevents(
         if !isnothing(time_del) && time_del > 0.0
             effective_timepixr = isnothing(time_pixr) ? 0.0 : time_pixr
             bin_center_correction = (0.5 - effective_timepixr) * time_del
-            
+
             corrected_time = time .+ effective_timezero .+ bin_center_correction
-            @debug "Applied bin-centering correction" time_zero=effective_timezero timedel=time_del timepixr=effective_timepixr bin_correction=bin_center_correction
+            @debug "Applied bin-centering correction" time_zero = effective_timezero timedel =
+                time_del timepixr = effective_timepixr bin_correction = bin_center_correction
         else
             corrected_time = time .+ effective_timezero
-            @debug "Applied time zero correction" time_zero=effective_timezero
+            @debug "Applied time zero correction" time_zero = effective_timezero
         end
-        
+
         # Convert to MJD only if requested
         if convert_to_mjd
             time = convert(Vector{T}, sec_to_mjd(corrected_time, mjd_ref))
-            @debug "Converted to MJD(TT)" mjd_ref=mjd_ref
+            
+            # Apply the same time corrections to GTI data
+            if !isnothing(gti_data)
+                # Apply time zero correction to GTI
+                gti_corrected = gti_data .+ effective_timezero
+                
+                # Apply bin-centering correction to GTI if applicable
+                if !isnothing(time_del) && time_del > 0.0
+                    effective_timepixr = isnothing(time_pixr) ? 0.0 : time_pixr
+                    bin_center_correction = (0.5 - effective_timepixr) * time_del
+                    gti_corrected = gti_corrected .+ bin_center_correction
+                end
+                
+                # Convert GTI to MJD using the same reference
+                gti_data = sec_to_mjd.(gti_corrected, mjd_ref)
+                @debug "Applied same time corrections to GTI data"
+            end
+            
+            @debug "Converted to MJD(TT)" mjd_ref = mjd_ref
         else
             time = convert(Vector{T}, corrected_time)
-            @debug "Kept times in seconds (corrected)" 
+            
+            # Apply time corrections to GTI even when not converting to MJD
+            if !isnothing(gti_data)
+                # Apply time zero correction to GTI
+                gti_corrected = gti_data .+ effective_timezero
+                
+                # Apply bin-centering correction to GTI if applicable
+                if !isnothing(time_del) && time_del > 0.0
+                    effective_timepixr = isnothing(time_pixr) ? 0.0 : time_pixr
+                    bin_center_correction = (0.5 - effective_timepixr) * time_del
+                    gti_corrected = gti_corrected .+ bin_center_correction
+                end
+                
+                gti_data = gti_corrected
+                @debug "Applied time corrections to GTI data"
+            end
+            
+            @debug "Kept times in seconds (corrected)"
         end
-        
-        @debug "Final time range" time_range=(minimum(time), maximum(time))
+
+        @debug "Final time range" time_range = (minimum(time), maximum(time))
+        if !isnothing(gti_data)
+            @debug "Final GTI range" gti_range = (minimum(gti_data), maximum(gti_data))
+        end
     end
 
     # Validate data consistency
@@ -1137,14 +1251,28 @@ function readevents(
 
     # Apply GTI filtering if requested
     if apply_gti_filter && !isnothing(gti_data)
-        gti_mask, _ = create_gti_mask(time, gti_data)
+        @debug "Applying GTI filter" n_events_before = length(time)
         
-        time = time[gti_mask]
-        if !isnothing(energy)
-            energy = energy[gti_mask]
-        end
-        for (col_name, col_data) in extra_data
-            extra_data[col_name] = col_data[gti_mask]
+        try
+            gti_mask, _ = create_gti_mask(time, gti_data)
+            n_kept = sum(gti_mask)
+            
+            @debug "GTI filter results" events_kept = n_kept events_removed = (length(time) - n_kept)
+            
+            if n_kept > 0
+                time = time[gti_mask]
+                if !isnothing(energy)
+                    energy = energy[gti_mask]
+                end
+                for (col_name, col_data) in extra_data
+                    extra_data[col_name] = col_data[gti_mask]
+                end
+                @debug "Successfully applied GTI filter"
+            else
+                @warn "GTI filtering removed all events - check time system consistency" event_range = extrema(time) gti_range = extrema(gti_data)
+            end
+        catch e
+            @warn "GTI filtering failed: $e - proceeding without GTI filter"
         end
     end
 
@@ -1161,13 +1289,28 @@ function readevents(
             for (col_name, col_data) in extra_data
                 extra_data[col_name] = col_data[sort_indices]
             end
+            @debug "Events sorted by time"
         else
             @assert false "Times are not sorted (pass `sort = true` to force sorting)"
         end
     end
-    
-    meta = FITSMetadata(path, hdu, energy_col, extra_data, header, gti_data, gti_source, 
-                       mjd_ref, time_zero, time_unit, time_sys, time_pixr, time_del)
+
+    # Create metadata with all timing information
+    meta = FITSMetadata(
+        path,
+        hdu,
+        energy_col,
+        extra_data,
+        header,
+        gti_data,
+        gti_source,
+        mjd_ref,
+        time_zero,
+        time_unit,
+        time_sys,
+        time_pixr,
+        time_del,
+    )
     return EventList(time, energy, meta)
 end
 # ============================================================================
@@ -1200,9 +1343,9 @@ println(summary(ev))
 function Base.summary(ev::EventList)
     n_events = length(ev)
     time_span = isempty(ev.times) ? 0.0 : maximum(ev.times) - minimum(ev.times)
-    
+
     summary_str = "EventList: $n_events events over $(time_span) time units"
-    
+
     if has_energies(ev)
         energy_range = extrema(ev.energies)
         summary_str *= ", energies: $(energy_range[1]) - $(energy_range[2])"
@@ -1227,6 +1370,6 @@ function Base.summary(ev::EventList)
         effective_extra = max(1, n_extra)  # At least 1 when GTI is present
         summary_str *= ", $effective_extra extra columns"
     end
-    
+
     return summary_str
 end
